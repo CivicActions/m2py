@@ -520,11 +520,12 @@ KillArgument:
     exclusive?='(' except+=VARNAME[/,/] ')' | target=KillTarget
 ;
 
-// KILL target can be a naked global, global, local variable, or indirection (@expr)
+// KILL target can be a naked global, global, extended global, local variable, or indirection (@expr)
+// Extended globals (^|"env"|X, ^["env"]X) MUST come before GlobalVariable
 // NakedGlobal MUST come before GlobalVariable since both start with ^
 // NakedGlobal is ^(...) while GlobalVariable is ^name(...)
 KillTarget:
-    NakedGlobal | GlobalVariable | Indirection | LocalVariable
+    ExtendedGlobalPipe | ExtendedGlobalBracket | NakedGlobal | GlobalVariable | Indirection | LocalVariable
 ;
 
 // =============================================================================

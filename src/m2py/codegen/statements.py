@@ -49,6 +49,7 @@ from m2py.asg.statements import (
     MKSubscriptsStatement,
     MKValueStatement,
     MLockStatement,
+    MLockTarget,
     MMergeStatement,
     MNewStatement,
     MOpenStatement,
@@ -854,7 +855,7 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     elif isinstance(stmt, MZStepStatement):
         raise NotImplementedError("LIM-015: ZSTEP command not supported")
     elif isinstance(stmt, MZSystemStatement):
-        raise NotImplementedError("LIM-015: ZSYSTEM command not supported")
+        _generate_zsystem(stmt, ctx)
     elif isinstance(stmt, MZTriggerStatement):
         raise NotImplementedError("LIM-015: ZTRIGGER command not supported")
     # ANSI commands not supported by YDB (LIM-016)
@@ -1102,6 +1103,7 @@ def _generate_single_assignment(
         return
 
     # Spec 013 Phase 12: Handle special variable assignments ($ETRAP, $ECODE, $ZERROR)
+    # Spec 021 Phase 5: Add $ZTRAP, $ZSTATUS, $ZPOSITION
     if isinstance(assignment.target, MSpecialVariable):
         value_expr = generate_expr(assignment.value, ctx)
         svar_name = assignment.target.name.upper()
@@ -1111,6 +1113,12 @@ def _generate_single_assignment(
             ctx.emitter.line(f"_rt.set_ecode({value_expr})")
         elif svar_name in ("ZERROR", "ZE"):
             ctx.emitter.line(f"_rt.set_zerror({value_expr})")
+        elif svar_name in ("ZTRAP", "ZT"):
+            ctx.emitter.line(f"_rt.set_ztrap({value_expr})")
+        elif svar_name in ("ZSTATUS", "ZS"):
+            ctx.emitter.line(f"_rt.set_zstatus({value_expr})")
+        elif svar_name in ("ZPOSITION", "ZP"):
+            ctx.emitter.line(f"_rt.set_zposition({value_expr})")
         else:
             raise NotImplementedError(f"SET ${assignment.target.name} not supported")
         return
@@ -1202,10 +1210,9 @@ def _generate_single_assignment(
         _generate_global_set(assignment, ctx)
         return
 
-    elif isinstance(assignment.target, ExtendedGlobalBracket):
-        # Spec 017: Handle extended global reference SET targets
-        # For m2py, environment is ignored - treat as regular global
-        # Generate: _rt.globals.set("NAME", (subscripts,), value)
+    elif isinstance(assignment.target, (ExtendedGlobalBracket, ExtendedGlobalPipe)):
+        # Spec 021 Phase 15: Handle extended global reference SET targets
+        # Pass namespace through to _rt.globals.set_ns()
         _generate_extended_global_set(assignment, ctx)
         return
 
@@ -1270,6 +1277,14 @@ def _build_lhs_getter_setter(
         subscripts_tuple = gen_subscripts_tuple(target.subscripts, ctx, str_wrap=True)
         getter = f'lambda: _rt.globals.get("{global_name}", {subscripts_tuple}) or ""'
         setter = f'lambda v: _rt.globals.set("{global_name}", {subscripts_tuple}, v)'
+    elif isinstance(target, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
+        # Spec 021 Phase 15: Extended global LHS with namespace prefix
+        global_name = target.name
+        ns = getattr(target.environment, "value", "") if target.environment else ""
+        ns_name = f"{ns}:{global_name}" if ns else global_name
+        subscripts_tuple = gen_subscripts_tuple(target.subscripts, ctx, str_wrap=True)
+        getter = f'lambda: _rt.globals.get("{ns_name}", {subscripts_tuple}) or ""'
+        setter = f'lambda v: _rt.globals.set("{ns_name}", {subscripts_tuple}, v)'
     elif isinstance(target, NakedGlobal):
         # Naked global: resolve ONCE before the m_set_piece/m_set_extract call.
         # resolve_naked() returns (name, subscripts) from the naked indicator.
@@ -1540,26 +1555,27 @@ def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> No
 def _generate_extended_global_set(
     assignment: MAssignment, ctx: "GeneratorContext"
 ) -> None:
-    """Generate _rt.globals.set() call for extended global reference SET.
+    """Generate _rt.globals.set_ns() call for extended global reference SET.
 
-    Spec 017: Generate code for S ^["env"]NAME(subscripts)=value
+    Spec 021 Phase 15: Generate code for S ^["env"]NAME(subscripts)=value
+    and S ^|"env"|NAME(subscripts)=value.
 
-    For m2py, the environment parameter is ignored - the global is accessed
-    as a regular global. This handles the syntax but doesn't implement
-    multi-environment global access.
+    The namespace is passed to the runtime's set_ns() method which prefixes
+    the global name internally, allowing isolation per environment.
 
     Args:
-        assignment: MAssignment with ExtendedGlobalBracket target
+        assignment: MAssignment with ExtendedGlobalBracket or ExtendedGlobalPipe target
         ctx: Generator context
 
-    The generated code calls _rt.globals.set() ignoring the environment:
-        _rt.globals.set("NAME", ("sub1", "sub2"), "value")
+    The generated code calls _rt.globals.set_ns() with the namespace:
+        _rt.globals.set_ns("NAME", ("sub1", "sub2"), "value", namespace="env")
     """
-    assert isinstance(assignment.target, ExtendedGlobalBracket)
+    assert isinstance(assignment.target, (ExtendedGlobalBracket, ExtendedGlobalPipe))
     ext_global = assignment.target
 
-    # Get global name (environment is ignored)
+    # Get global name and namespace
     global_name = ext_global.name
+    ns = getattr(ext_global.environment, "value", "") if ext_global.environment else ""
 
     # Generate subscript expressions
     # DO NOT wrap in str() - let runtime handle canonicalization
@@ -1573,10 +1589,11 @@ def _generate_extended_global_set(
     assert assignment.value is not None, "Global SET requires a value"
     value_expr = generate_expr(assignment.value, ctx)
 
-    # Emit _rt.globals.set() call
+    # Emit _rt.globals.set_ns() call with namespace
     # Use m_str() to format numbers in MUMPS canonical form (no E-notation)
     ctx.emitter.line(
-        f"_rt.globals.set({global_name!r}, {subscripts_tuple}, m_str({value_expr}))"
+        f"_rt.globals.set_ns({global_name!r}, {subscripts_tuple}, "
+        f"m_str({value_expr}), namespace={ns!r})"
     )
 
 
@@ -4006,7 +4023,12 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line("_rt._in_extrinsic = False")
 
         # Increment execution level (spec §6.3) - $STACK increases inside DO blocks
-        ctx.emitter.line("_rt.push_frame()")
+        # T006: Pass routine/label metadata for $STACK introspection
+        _routine_name = ctx.routine.name or ""
+        _label_name_str = ctx.current_label.name if ctx.current_label else ""
+        ctx.emitter.line(
+            f'_rt.push_stack_frame("DO", routine={_routine_name!r}, label={_label_name_str!r})'
+        )
 
         # Wrap in try/finally to ensure stack cleanup even on exceptions
         ctx.emitter.line("try:")
@@ -4025,7 +4047,7 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line("finally:")
         with ctx.emitter.indented():
             # Decrement execution level (spec §6.3)
-            ctx.emitter.line("_rt.pop_frame()")
+            ctx.emitter.line("_rt.pop_stack_frame()")
 
         # Restore $TEST and _in_extrinsic after block
         ctx.emitter.line("_test = _saved_test")
@@ -4094,6 +4116,14 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # T075b: For TRAMPOLINE with dynamic locals, sync state._locals to _scope
         # before calling external routine so callee can see caller's variables
         emit_state_to_scope_sync(ctx)
+
+        # T007: Push DO stack frame for external subroutine call
+        # T006: Pass routine/label metadata for $STACK introspection
+        _ext_label = repr(target.name) if target.name else "''"
+        _ext_routine = repr(target.routine) if target.routine else "''"
+        ctx.emitter.line(
+            f'_rt.push_stack_frame("DO", routine={_ext_routine}, label={_ext_label})'
+        )
 
         # Handle different external DO patterns
         if target.offset is not None:
@@ -4206,6 +4236,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         ctx.emitter.line("_rt._current_routine = _saved_routine")
         ctx.emitter.line("_rt._current_source_lines = _saved_source_lines")
         ctx.emitter.line("_rt._current_label_lines = _saved_label_lines")
+        # T007: Pop DO stack frame after external subroutine returns
+        ctx.emitter.line("_rt.pop_stack_frame()")
         # Sync $TEST from runtime after cross-module call
         # DO calls don't stack $TEST - callee's changes must be visible to caller
         ctx.emitter.line("_test = _rt._test")
@@ -4221,6 +4253,14 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
     # Internal DO calls are subroutine invocations, so $QUIT=0 inside them
     ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
     ctx.emitter.line("_rt._in_extrinsic = False")
+
+    # T007: Push DO stack frame for internal subroutine call
+    # T006: Pass routine/label metadata for $STACK introspection
+    _int_routine = repr(ctx.routine.name) if ctx.routine.name else "''"
+    _int_label = repr(target.name) if target.name else "''"
+    ctx.emitter.line(
+        f'_rt.push_stack_frame("DO", routine={_int_routine}, label={_int_label})'
+    )
 
     # Spec 007 (T025-T028c): Handle DO with offset
     # In TRAMPOLINE strategy, call the internal function with _start_offset
@@ -4311,6 +4351,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             with ctx.emitter.indented():
                 _emit_goto_external_handler(ctx)
                 ctx.emitter.line("_do_target = None")
+        # T007: Pop DO stack frame
+        ctx.emitter.line("_rt.pop_stack_frame()")
         # Phase 21: Restore _in_extrinsic for $QUIT tracking
         ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
         return
@@ -4424,6 +4466,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # T075k: Wrap plain values in MArray when syncing back (callee may use static state)
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             emit_scope_to_state_sync(ctx)
+    # T007: Pop DO stack frame
+    ctx.emitter.line("_rt.pop_stack_frame()")
     # Phase 21: Restore _in_extrinsic for $QUIT tracking
     ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
 
@@ -4519,6 +4563,18 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                 f"_naked_name, _naked_subs = _rt.globals.resolve_naked({subscripts_tuple})"
             )
             ctx.emitter.line("_rt.globals.kill(_naked_name, _naked_subs)")
+
+        elif isinstance(target, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
+            # Spec 021 Phase 15: Extended global KILL with namespace
+            global_name = target.name
+            ns = getattr(target.environment, "value", "") if target.environment else ""
+            subscripts_tuple = gen_subscripts_tuple(
+                target.subscripts or [], ctx, str_wrap=True
+            )
+            ctx.emitter.line(
+                f"_rt.globals.kill_ns({global_name!r}, {subscripts_tuple}, "
+                f"namespace={ns!r})"
+            )
 
         elif isinstance(target, MVariable):
             # Local variable: K X or K X(subs)
@@ -4782,9 +4838,51 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                 else:
                     ctx.emitter.line("_rt.set_zerror('')")
             elif svar_name in ("ESTACK", "ES"):
-                # $ESTACK is typically NEW'd together with $ETRAP
-                # For now, treat as no-op since we don't have full stack tracking
-                pass
+                # Spec 021 (T022): NEW $ESTACK resets the error stack tracking
+                # Sets a marker so that QUIT from this level ignores $ECODE errors
+                # This allows routines to establish a "clean" error handling frame
+                if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+                    if ctx.new_scope_manager_var:
+                        # Save current estack level and reset to current depth
+                        ctx.emitter.line(
+                            f"{ctx.new_scope_manager_var}.new_special_var('estack', "
+                            f"_rt._etrap_set_level, lambda v: setattr(_rt, '_etrap_set_level', v))"
+                        )
+                        # Reset to current stack depth
+                        ctx.emitter.line(
+                            "_rt._etrap_set_level = len(_rt._stack_frames)"
+                        )
+                    else:
+                        # Fallback: just reset level
+                        ctx.emitter.line(
+                            "_rt._etrap_set_level = len(_rt._stack_frames)"
+                        )
+                else:
+                    ctx.emitter.line("_rt._etrap_set_level = len(_rt._stack_frames)")
+            elif svar_name in ("ZTRAP", "ZT"):
+                # Spec 021 (T033): NEW $ZTRAP saves/restores on scope exit
+                if ctx.new_scope_manager_var:
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_special_var('ztrap', _rt.ztrap(), _rt.set_ztrap)"
+                    )
+                else:
+                    ctx.emitter.line("_rt.set_ztrap('')")
+            elif svar_name in ("ZSTATUS", "ZS"):
+                # Spec 021 (T033): NEW $ZSTATUS saves/restores on scope exit
+                if ctx.new_scope_manager_var:
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_special_var('zstatus', _rt.zstatus(), _rt.set_zstatus)"
+                    )
+                else:
+                    ctx.emitter.line("_rt.set_zstatus('')")
+            elif svar_name in ("ZPOSITION", "ZP"):
+                # Spec 021 (T033): NEW $ZPOSITION saves/restores on scope exit
+                if ctx.new_scope_manager_var:
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_special_var('zposition', _rt.zposition(), _rt.set_zposition)"
+                    )
+                else:
+                    ctx.emitter.line("_rt.set_zposition('')")
             else:
                 raise NotImplementedError(f"NEW ${var.name} not supported")
         else:
@@ -4884,11 +4982,13 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
 
         elif isinstance(src, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
             # Source is extended global: ^|"env"|name or ^["gld"]name
-            # For now, ignore environment and treat as regular global
+            # Spec 021 Phase 15: Use namespace-qualified key for isolation
             src_name = src.name
+            src_ns = getattr(src.environment, "value", "") if src.environment else ""
             src_subs = gen_subscripts_tuple(src.subscripts, ctx, str_wrap=True)
+            ns_name = f"{src_ns}:{src_name}" if src_ns else src_name
 
-            src_tree_expr = f'_rt.globals.get_tree("{src_name}", {src_subs})'
+            src_tree_expr = f'_rt.globals.get_tree("{ns_name}", {src_subs})'
 
         elif isinstance(src, MIndirection):
             # Source is indirection: @VAR or @VAR@(subs)
@@ -4999,16 +5099,17 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
 
         elif isinstance(dest, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
             # Extended global: ^|"env"|name or ^["gld"]name
-            # For now, ignore environment and treat as regular global
-            # (m2py uses single global namespace)
+            # Spec 021 Phase 15: Use namespace-qualified key for isolation
             dest_name = dest.name
+            dest_ns = getattr(dest.environment, "value", "") if dest.environment else ""
             dest_subs = gen_subscripts_tuple(dest.subscripts, ctx, str_wrap=True)
+            ns_name = f"{dest_ns}:{dest_name}" if dest_ns else dest_name
 
             ctx.emitter.line(f"_merge_src = {src_tree_expr}")
             ctx.emitter.line("if _merge_src is not None:")
             ctx.emitter.indent()
             ctx.emitter.line(
-                f'_rt.globals.merge_tree("{dest_name}", {dest_subs}, _merge_src)'
+                f'_rt.globals.merge_tree("{ns_name}", {dest_subs}, _merge_src)'
             )
             ctx.emitter.dedent()
 
@@ -5112,7 +5213,28 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         # Spec 018 (T041): Indirection target: R @A - uses unified set_indirected
         # Type narrowing: we know target.variable is MIndirection from is_indirection check
         ind_var = cast(MIndirectionType, target.variable)
-        if target.timeout is not None:
+        if target.fixed_length is not None and target.timeout is not None:
+            # R @A#n:t — maxlen + timeout with indirection
+            maxlen_expr = generate_expr(target.fixed_length, ctx)
+            timeout_expr = generate_expr(target.timeout, ctx)
+            ctx.emitter.line(
+                f"_read_val, _read_key, _test = m_read_maxlen_timeout("
+                f"int({maxlen_expr}), {timeout_expr})"
+            )
+            ctx.emitter.line("_rt._test = _test")
+            ctx.emitter.line("_rt._key = _read_key")
+            set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
+            ctx.emitter.line(set_stmt)
+        elif target.fixed_length is not None:
+            # R @A#n — maxlen with indirection
+            maxlen_expr = generate_expr(target.fixed_length, ctx)
+            ctx.emitter.line(
+                f"_read_val, _read_key = m_read_maxlen(int({maxlen_expr}))"
+            )
+            ctx.emitter.line("_rt._key = _read_key")
+            set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
+            ctx.emitter.line(set_stmt)
+        elif target.timeout is not None:
             # Timeout read with indirection: R @A:n
             timeout_expr = generate_expr(target.timeout, ctx)
             ctx.emitter.line(f"_read_val, _test = m_read_timeout({timeout_expr})")
@@ -5146,7 +5268,40 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         # Could be array subscript or global - generate expression
         storage_target = generate_expr(target.variable, ctx)
 
-    if target.timeout is not None:
+    if target.fixed_length is not None and target.timeout is not None:
+        # R X#n:t — maxlen + timeout
+        maxlen_expr = generate_expr(target.fixed_length, ctx)
+        timeout_expr = generate_expr(target.timeout, ctx)
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            ctx.emitter.line(
+                f"_read_val, _read_key, _test = m_read_maxlen_timeout("
+                f"int({maxlen_expr}), {timeout_expr})"
+            )
+            ctx.emitter.line("_rt._test = _test")
+            ctx.emitter.line("_rt._key = _read_key")
+            ctx.emitter.line(f"{storage_target} = _read_val")
+        else:
+            ctx.emitter.line(
+                f"{storage_target}, _read_key, _test = m_read_maxlen_timeout("
+                f"int({maxlen_expr}), {timeout_expr})"
+            )
+            ctx.emitter.line("_rt._test = _test")
+            ctx.emitter.line("_rt._key = _read_key")
+    elif target.fixed_length is not None:
+        # R X#n — maxlen read
+        maxlen_expr = generate_expr(target.fixed_length, ctx)
+        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            ctx.emitter.line(
+                f"_read_val, _read_key = m_read_maxlen(int({maxlen_expr}))"
+            )
+            ctx.emitter.line("_rt._key = _read_key")
+            ctx.emitter.line(f"{storage_target} = _read_val")
+        else:
+            ctx.emitter.line(
+                f"{storage_target}, _read_key = m_read_maxlen(int({maxlen_expr}))"
+            )
+            ctx.emitter.line("_rt._key = _read_key")
+    elif target.timeout is not None:
         # Timeout read: R X:n
         timeout_expr = generate_expr(target.timeout, ctx)
         # Use runtime helper for timeout read - returns (value, test_flag)
@@ -5177,40 +5332,35 @@ def _generate_tstart(stmt: MTStartStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for TSTART command.
 
     Spec 013 FR-015: Begin transaction via database abstraction.
+    Spec 021 Phase 8: TSTART restart variable snapshots.
 
-    MUMPS: TS, TSTART, TS (), TS (A,B), TS ():serial
+    MUMPS: TS, TSTART, TS (), TS (A,B), TS *
 
-    Generated: _rt.globals.transaction_start()
-
-    Note: Restart variables (A,B) and restart_all (*) require transaction
-    restart infrastructure that is not yet implemented.
+    Generated:
+        _rt.globals.transaction_start()
+        _rt.snapshot_locals(_scope, var_names=[...])  # if restart vars specified
+        _rt.snapshot_locals(_scope, all_vars=True)     # if TSTART *
 
     Args:
         stmt: MTStartStatement node
         ctx: Generator context
-
-    Raises:
-        NotImplementedError: If restart_vars or restart_all is specified
     """
-    # Check for restart variables or restart_all - these require infrastructure
-    # for saving and restoring variable state on TRESTART which is not implemented
-    if stmt.restart_vars or stmt.restart_all:
-        if stmt.restart_all:
-            raise NotImplementedError(
-                "TSTART (*) restart variables not implemented - "
-                "transaction restart infrastructure required"
-            )
-        else:
-            # restart_vars contains MVariable instances (which have .name)
-            # Use getattr for type safety since the type annotation is MExpr
-            var_names = ", ".join(getattr(v, "name", str(v)) for v in stmt.restart_vars)
-            raise NotImplementedError(
-                f"TSTART ({var_names}) restart variables not implemented - "
-                "transaction restart infrastructure required"
-            )
+    scope_expr = scope_dict_expr(ctx)
 
-    # Basic implementation - call transaction_start on global storage
+    # Start the global transaction first
     ctx.emitter.line("_rt.globals.transaction_start()")
+
+    # Snapshot locals for restart variables if specified
+    if stmt.restart_all:
+        ctx.emitter.line(f"_rt.snapshot_locals({scope_expr}, all_vars=True)")
+    elif stmt.restart_vars:
+        # Build list of variable names from MVariable nodes
+        var_names = [getattr(v, "name", str(v)) for v in stmt.restart_vars]
+        var_list = "[" + ", ".join(repr(n) for n in var_names) + "]"
+        ctx.emitter.line(f"_rt.snapshot_locals({scope_expr}, var_names={var_list})")
+    else:
+        # No restart vars — still create an empty snapshot to track nesting
+        ctx.emitter.line(f"_rt.snapshot_locals({scope_expr})")
 
 
 def _generate_tcommit(stmt: MTCommitStatement, ctx: "GeneratorContext") -> None:
@@ -5232,6 +5382,7 @@ def _generate_tcommit(stmt: MTCommitStatement, ctx: "GeneratorContext") -> None:
         ctx: Generator context
     """
     ctx.emitter.line("_rt.globals.transaction_commit()")
+    ctx.emitter.line("_rt.discard_local_snapshot()")
 
 
 def _generate_trollback(stmt: MTRollbackStatement, ctx: "GeneratorContext") -> None:
@@ -5261,8 +5412,10 @@ def _generate_trollback(stmt: MTRollbackStatement, ctx: "GeneratorContext") -> N
             "LIM-016: TROLLBACK:n (rollback to specific level) not supported"
         )
 
-    # Basic implementation - roll back entire transaction
+    # Roll back globals and discard all local snapshots
+    # TROLLBACK rolls back to $TLEVEL=0, so discard all snapshots
     ctx.emitter.line("_rt.globals.transaction_rollback()")
+    ctx.emitter.line("_rt.discard_all_local_snapshots()")
 
 
 # =============================================================================
@@ -5320,13 +5473,15 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
         lock_type = target_lockop if target_lockop else stmt_lock_type
         # For exclusive lock, use "+" since we already released all above
         if lock_type == "":
-            lock_type = "+"
+            effective_lockop = "+"
+        else:
+            effective_lockop = lock_type
 
         # Handle indirection
         if lock_target.is_indirect:
-            # Indirection - need runtime resolution
-            # For now, emit a comment about unsupported feature
-            ctx.emitter.line("# LOCK indirection not yet supported")
+            # Spec 021-correctness-features Phase 6 (T040):
+            # Generate code for LOCK indirection using lock_indirected()
+            _generate_lock_indirection_call(lock_target, stmt, effective_lockop, ctx)
             continue
 
         # Get the name from the MLockTarget
@@ -5356,7 +5511,7 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
         if timeout_expr is not None:
             # Timed lock - sets $TEST
             timeout_val = generate_expr(timeout_expr, ctx)
-            if lock_type == "-":
+            if effective_lockop == "-":
                 # LOCK -name:timeout always sets $TEST to 1
                 ctx.emitter.line(
                     f'_rt.globals.lock("{name}", {subs_str}, lock_type="-")'
@@ -5367,14 +5522,112 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
                 # LOCK +name:timeout sets $TEST based on success/timeout
                 ctx.emitter.line(
                     f'_test = _rt.globals.lock("{name}", {subs_str}, '
-                    f'timeout={timeout_val}, lock_type="{lock_type}")'
+                    f'timeout={timeout_val}, lock_type="{effective_lockop}")'
                 )
                 ctx.emitter.line("_rt._test = _test")
         else:
             # Untimed lock - does NOT modify $TEST
             ctx.emitter.line(
-                f'_rt.globals.lock("{name}", {subs_str}, lock_type="{lock_type}")'
+                f'_rt.globals.lock("{name}", {subs_str}, lock_type="{effective_lockop}")'
             )
+
+
+def _generate_lock_indirection_call(
+    lock_target: "MLockTarget",
+    stmt: "MLockStatement",
+    lockop: str,
+    ctx: "GeneratorContext",
+) -> None:
+    """Generate code for LOCK indirection target.
+
+    Spec 021-correctness-features Phase 6 (T040):
+    Emits _rt.lock_indirected() call for @NAME lock targets.
+
+    Args:
+        lock_target: MLockTarget with is_indirect=True
+        stmt: Parent MLockStatement (for statement-level timeout)
+        lockop: Effective lock operation ("", "+", "-")
+        ctx: Generator context
+    """
+    from m2py.asg.expressions import MIndirection as MIndirectionType
+    from m2py.asg.expressions import MVariable
+    from m2py.codegen.indirection import (
+        _count_indirection_levels_with_subscripts,
+        generate_lock_indirection,
+    )
+    from m2py.parser.textx_classes import GlobalVariable
+
+    ind = lock_target.indirection
+    if ind is None:
+        ctx.emitter.line("# LOCK indirection: missing indirection expression")
+        return
+
+    # Ensure we have an indirection expression
+    if not isinstance(ind, MIndirectionType):
+        ctx.emitter.line(
+            f"# LOCK indirection: expected MIndirection, got {type(ind).__name__}"
+        )
+        return
+
+    # Count indirection levels and get inner expression
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(ind)
+
+    # Build source expression
+    if isinstance(inner_expr, MVariable):
+        source_name = inner_expr.name
+        if inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = (
+                f'"{source_name}(" + ",".join(_format_subscript(s) for s in '
+                f'[{subs_str}]) + ")"'
+            )
+        else:
+            source_expr = f'"{source_name}"'
+    elif isinstance(inner_expr, GlobalVariable):
+        source_name = f"^{inner_expr.name}"
+        if hasattr(inner_expr, "subscripts") and inner_expr.subscripts:
+            sub_exprs = [generate_expr(s, ctx) for s in inner_expr.subscripts]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = (
+                f'"{source_name}(" + ",".join(_format_subscript(s) for s in '
+                f'[{subs_str}]) + ")"'
+            )
+        else:
+            source_expr = f'"{source_name}"'
+    else:
+        # Complex expression - evaluate to get source string
+        source_expr = f"str({generate_expr(inner_expr, ctx)})"
+
+    # Build per-level subscripts if present
+    if all_subscripts and any(all_subscripts):
+        per_level_subs = []
+        for sub_list in all_subscripts:
+            if sub_list:
+                sub_exprs = [generate_expr(s, ctx) for s in sub_list]
+                per_level_subs.append(f"[{', '.join(sub_exprs)}]")
+            else:
+                per_level_subs.append("[]")
+        subscripts_expr = f"[{', '.join(per_level_subs)}]"
+    else:
+        subscripts_expr = None
+
+    # Get timeout from target or statement
+    timeout_expr = lock_target.timeout
+    if timeout_expr is None and stmt.timeout is not None:
+        timeout_expr = stmt.timeout
+
+    timeout_val = generate_expr(timeout_expr, ctx) if timeout_expr else None
+
+    # Generate the lock_indirected call
+    code = generate_lock_indirection(
+        lock_expr=source_expr,
+        lockop=lockop,
+        timeout_expr=timeout_val,
+        subscripts_expr=subscripts_expr,
+        levels=levels,
+    )
+    ctx.emitter.line(code)
 
 
 # =============================================================================
@@ -6376,6 +6629,28 @@ def _generate_zlink(stmt: MZLinkStatement, ctx: "GeneratorContext") -> None:
     for arg in stmt.args:
         routine_expr = generate_expr(arg, ctx)
         ctx.emitter.line(f"_rt.zlink({routine_expr})")
+
+
+def _generate_zsystem(stmt: MZSystemStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZSYSTEM command.
+
+    Spec 021 Phase 11 (T075): ZSYSTEM executes a shell command.
+
+    Example:
+        ZSYSTEM "echo hello"
+        ZSY command_var
+
+    Args:
+        stmt: MZSystemStatement node
+        ctx: Generator context
+    """
+    if not stmt.args:
+        ctx.emitter.line("_rt.zsystem()")
+        return
+
+    for arg in stmt.args:
+        cmd_expr = generate_expr(arg, ctx)
+        ctx.emitter.line(f"_rt.zsystem(m_str({cmd_expr}))")
 
 
 def _generate_zshow(stmt: MZShowStatement, ctx: "GeneratorContext") -> None:

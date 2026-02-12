@@ -311,9 +311,10 @@ class RoutineGenerator:
         # Spec 011 Phase 20: Import READ command helpers
         # Spec 017 Phase 18: Import m_var_value for cross-routine variable access
         # Spec 017 Phase 19: Import _format_subscript for building var name strings with proper quoting
+        # Spec 021 Phase 10: Import m_zdate for $ZDATE function
         # Note: Contains ([) and follows (]) are inlined as Python expressions
         ctx.emitter.line(
-            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_increment, m_increment_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, m_translate, NewScopeManager, m_read_timeout, m_read_char, m_var_value, _format_subscript, unwind_new_stack, unwind_new_stack"
+            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_increment, m_increment_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, m_translate, NewScopeManager, m_read_timeout, m_read_char, m_read_maxlen, m_read_maxlen_timeout, m_var_value, _format_subscript, unwind_new_stack, m_zdate, m_zmessage"
         )
         # Spec 010: Import $RANDOM helper (Phase 8)
         ctx.emitter.line("from m2py.codegen.expressions import _m_random_checked")
@@ -408,6 +409,11 @@ class RoutineGenerator:
             ctx.emitter.line("_saved = _test")
             # Spec 011: Save/restore _in_extrinsic for $QUIT tracking
             ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
+            # T007: Push $$ stack frame for extrinsic function call
+            # T006: Pass label from the function being called for $STACK introspection
+            ctx.emitter.line(
+                '_rt.push_stack_frame("$$", label=getattr(_ef, "__name__", ""))'
+            )
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
                 # Spec 011: Mark that we're in an extrinsic for $QUIT
@@ -446,6 +452,8 @@ class RoutineGenerator:
                 ctx.emitter.line("return _result")
             ctx.emitter.line("finally:")
             with ctx.emitter.indented():
+                # T007: Pop $$ stack frame
+                ctx.emitter.line("_rt.pop_stack_frame()")
                 ctx.emitter.line("_test = _saved")
                 # Sync $TEST to runtime after restore (extrinsic preserves caller's $TEST)
                 ctx.emitter.line("_rt._test = _test")

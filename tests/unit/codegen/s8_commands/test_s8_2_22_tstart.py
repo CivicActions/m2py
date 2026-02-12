@@ -45,37 +45,34 @@ TEST
         # SERIAL is parsed but basic transaction_start is generated
         assert "_rt.globals.transaction_start()" in result
 
-    def test_tstart_restart_vars_not_supported(self, generate_python):
-        """TSTART (A,B) raises NotImplementedError (§8.2.22).
+    def test_tstart_restart_vars_generates_snapshot(self, generate_python):
+        """TSTART (A,B) generates snapshot_locals() call (§8.2.22).
 
-        T038: Restart variables require infrastructure for saving and restoring
-        variable state on TRESTART, which is not yet implemented.
+        Spec 021 Phase 8: Restart variables snapshot locals for potential
+        TRESTART support.
         """
         code = """\
 TEST
  TS (A,B)
  Q
 """
-        with pytest.raises(
-            NotImplementedError, match="restart variables not implemented"
-        ):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.globals.transaction_start()" in result
+        assert "_rt.snapshot_locals(_scope, var_names=['A', 'B'])" in result
 
-    def test_tstart_restart_all_not_supported(self, generate_python):
-        """TSTART * raises NotImplementedError (§8.2.22).
+    def test_tstart_restart_all_generates_snapshot(self, generate_python):
+        """TSTART * generates snapshot_locals(all_vars=True) call (§8.2.22).
 
-        T038: Restart all (*) requires infrastructure for saving and restoring
-        all variable state on TRESTART, which is not yet implemented.
+        Spec 021 Phase 8: TSTART * snapshots all local variables.
         """
         code = """\
 TEST
  TS *
  Q
 """
-        with pytest.raises(
-            NotImplementedError, match="restart variables not implemented"
-        ):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.globals.transaction_start()" in result
+        assert "_rt.snapshot_locals(_scope, all_vars=True)" in result
 
 
 @pytest.mark.codegen

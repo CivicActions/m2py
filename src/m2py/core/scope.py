@@ -30,27 +30,25 @@ class CurrentScope:
 
     FR-036, FR-037: Provides the "Current Scope" abstraction from spec.
     FR-038: Automatically extracts .value from MArray objects.
-    FR-025: Raises LVUNDEF in strict mode when accessing undefined variables.
+    FR-025: Unconditionally raises LVUNDEF (M6 error) when accessing undefined
+            local variables (Spec 021 Phase 12).
     """
 
     def __init__(
         self,
         scope_dict: Optional[Dict[str, Any]] = None,
         name_translator: Optional[NameTranslator] = None,
-        strict_mode: bool = False,
     ):
         """Initialize scope with available storage mechanisms.
 
         Args:
             scope_dict: The _scope dict passed through generated code
             name_translator: Optional custom translator (defaults to standard)
-            strict_mode: If True, raises LVUNDEFError on undefined variable access
 
         At least one storage mechanism should be provided for useful operation.
         """
         self._scope_dict = scope_dict
         self._name_translator = name_translator or NameTranslator()
-        self._strict_mode = strict_mode
 
     def get(self, name: str, default: Any = "") -> Any:
         """Get variable value by MUMPS name.
@@ -60,13 +58,14 @@ class CurrentScope:
             default: Value to return if not found (MUMPS undefined = "")
 
         Returns:
-            Variable value, or default if undefined
+            Variable value if defined
 
         Raises:
-            LVUNDEFError: In strict mode, if local variable is undefined
+            LVUNDEFError: If local variable is undefined (M6 error)
 
         Note: Handles subscripted names by parsing and traversing.
-        FR-025: In strict mode, raises LVUNDEF for undefined local variables.
+        FR-025: Unconditionally raises LVUNDEF for undefined local variables
+                (Spec 021 Phase 12 - no strict_mode conditional).
         FR-038: Extracts .value from MArray objects automatically.
         """
         # Handle subscripted names
@@ -80,11 +79,16 @@ class CurrentScope:
         # Look up in storage mechanisms - try both MUMPS and Python names
         value = self._lookup(py_name, _SENTINEL, mumps_name=name)
 
-        # Check for undefined in strict mode
+        # Spec 021 (T079): Unconditional LVUNDEF - always raise for undefined
         if value is _SENTINEL:
-            if self._strict_mode:
+            raise LVUNDEFError(name)
+
+        # Check for MArray without value (also undefined)
+        from m2py.runtime import MArray
+
+        if isinstance(value, MArray):
+            if value._value is None:
                 raise LVUNDEFError(name)
-            return default
 
         # Extract .value from MArray if needed
         return self._extract_value(value)
@@ -100,10 +104,10 @@ class CurrentScope:
             default: Value to return if not found
 
         Returns:
-            Value at NAME(subscripts), or default
+            Value at NAME(subscripts) if defined
 
         Raises:
-            LVUNDEFError: In strict mode, if subscripted variable is undefined
+            LVUNDEFError: If subscripted variable is undefined (M6 error)
 
         Example:
             get_subscripted("A", [1, 2]) → value of A(1,2)
@@ -112,11 +116,9 @@ class CurrentScope:
         base = self._lookup(py_name, None, mumps_name=name)
 
         if base is None:
-            if self._strict_mode:
-                # Format subscripts for error message
-                subs_str = ",".join(str(s) for s in subscripts)
-                raise LVUNDEFError(f"{name}({subs_str})")
-            return default
+            # Spec 021 (T079): Unconditional LVUNDEF
+            subs_str = ",".join(str(s) for s in subscripts)
+            raise LVUNDEFError(f"{name}({subs_str})")
 
         # For MArray, use defined() to check existence before navigation
         # This handles MUMPS auto-vivification properly
@@ -128,10 +130,9 @@ class CurrentScope:
             # data_code: 0=none, 1=value, 10=descendants, 11=both
             # LVUNDEF should fire if there's no value (data_code in 0, 10)
             if data_code in (0, 10):
-                if self._strict_mode:
-                    subs_str = ",".join(str(s) for s in subscripts)
-                    raise LVUNDEFError(f"{name}({subs_str})")
-                return default
+                # Spec 021 (T079): Unconditional LVUNDEF
+                subs_str = ",".join(str(s) for s in subscripts)
+                raise LVUNDEFError(f"{name}({subs_str})")
             # Navigate to get the actual value
             current = base
             for sub in canonical_subs:

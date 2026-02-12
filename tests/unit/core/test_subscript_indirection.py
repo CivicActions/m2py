@@ -7,6 +7,8 @@ Requirements: FR-018 (Subscript Indirection)
 Tasks: T036c, T036d
 """
 
+import pytest
+
 from m2py.core.indirection import IndirectionResolver, IndirectionContext
 from m2py.core.scope import CurrentScope
 
@@ -97,8 +99,11 @@ class TestSubscriptIndirectionContext:
 
         Feature: 018-unified-variable-system
         When the resolved value is a valid MUMPS variable name, SUBSCRIPT context
-        looks it up and returns the variable's value (or "" if undefined).
+        looks it up and returns the variable's value.
+        Per Spec 021, if undefined, LVUNDEF is raised.
         """
+        from m2py.core.exceptions import LVUNDEFError
+
         scope_dict = {"VAR": "TARGET"}  # VAR contains valid MUMPS name "TARGET"
         scope = CurrentScope(scope_dict=scope_dict)
         state = MockMState()
@@ -106,10 +111,9 @@ class TestSubscriptIndirectionContext:
 
         # resolve() with SUBSCRIPT context: VAR contains "TARGET",
         # so we resolve VAR → "TARGET", then since "TARGET" is a valid
-        # var name, we look it up and get "" (undefined)
-        result = resolver.resolve("VAR", 1, context=IndirectionContext.SUBSCRIPT)
-        # This tries to look up "TARGET" as a variable (which is undefined → "")
-        assert result == ""
+        # var name, we try to look it up - which raises LVUNDEF since undefined
+        with pytest.raises(LVUNDEFError):
+            resolver.resolve("VAR", 1, context=IndirectionContext.SUBSCRIPT)
 
     def test_subscript_context_invalid_varname_returns_as_is(self):
         """SUBSCRIPT context returns non-variable-name values as-is.

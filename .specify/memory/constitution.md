@@ -1,28 +1,29 @@
 <!--
   SYNC IMPACT REPORT
   ==================
-  Version Change: 1.1.0 → 1.2.0
-  
-  Modified Principles: None
-  
-  Added Sections:
-  - VII. Minimize Runtime Surface (new principle for inline Python preference)
-  - VIII. Research Before Implementation (new principle for structured research phases)
-  
+  Version Change: 1.2.0 → 1.3.0
+
+  Modified Principles:
+  - IV. Explicit Over Implicit: "Undefined variables return empty string
+    (not exception)" → "Undefined local variable access raises M6 error
+    (LVUNDEF), matching MUMPS standard §7.2 and YDB default behavior"
+
+  Added Sections: None
   Removed Sections: None
-  
+
   Templates Status:
   - plan-template.md: ✅ Compatible (Constitution Check section exists)
   - spec-template.md: ✅ Compatible (requirements align with principles)
-  - tasks-template.md: ⚠ Consider adding Research Phase before Phase 1
+  - tasks-template.md: ✅ Compatible
   - checklist-template.md: ✅ Compatible (generic structure)
-  
-  Follow-up TODOs:
-  - tasks-template.md: Consider adding explicit Research Phase section
-  
-  Rationale: Codegen plan introduces two additional principles:
-  (1) Runtime minimization enables Rope refactoring of generated code,
-  (2) Research phases ensure understanding of ASG structure before implementation.
+
+  Follow-up TODOs: None
+
+  Rationale: The previous bullet "Undefined variables return empty string"
+  contradicted MUMPS standard ANSI 1995 §7.2 (M6 error), YDB default
+  (LVUNDEF), and VistA assumptions (0/33,951 files use VIEW "NOUNDEF").
+  Corrected per Phase 3 spec FR-036/FR-037. This is a MINOR bump (material
+  expansion of guidance within an existing principle, not a removal).
 -->
 
 # M2PY Constitution
@@ -73,7 +74,7 @@ or generic analysis code into codegen. Codegen receives a complete ASG and emits
 MUMPS has many implicit behaviors that differ from Python. These MUST be made explicit
 in generated code through helper functions and runtime support.
 
-- Undefined variables return empty string (not exception)
+- Undefined local variable access raises M6 error (LVUNDEF), matching MUMPS standard §7.2 and YDB default behavior. `$GET` returns empty string for undefined variables — that is a distinct, correct mechanism.
 - All values are strings; numeric operations require explicit coercion via `m_num()`
 - Truth evaluation uses numeric interpretation via `m_truth()`
 - Left-to-right evaluation with no operator precedence
@@ -155,4 +156,4 @@ This constitution supersedes all other practices for M2PY development.
 - Amendments require documentation of rationale and impact assessment
 - Version follows semantic versioning: MAJOR (breaking principle changes), MINOR (additions), PATCH (clarifications)
 
-**Version**: 1.2.0 | **Ratified**: 2025-12-19 | **Last Amended**: 2026-01-09
+**Version**: 1.3.0 | **Ratified**: 2025-12-19 | **Last Amended**: 2026-02-10

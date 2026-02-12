@@ -20,15 +20,26 @@ class TestBasicGetSet:
         scope.set("X", 5)
         assert scope.get("X") == 5
 
-    def test_get_undefined_returns_empty_string(self):
-        """Undefined variables return empty string (MUMPS behavior)."""
-        scope = CurrentScope(scope_dict={})
-        assert scope.get("Y") == ""
+    def test_get_undefined_raises_lvundef(self):
+        """Undefined variables raise LVUNDEF (Spec 021)."""
+        from m2py.core.exceptions import LVUNDEFError
 
-    def test_get_with_custom_default(self):
-        """Get with custom default value."""
         scope = CurrentScope(scope_dict={})
-        assert scope.get("Z", default=42) == 42
+        import pytest
+
+        with pytest.raises(LVUNDEFError):
+            scope.get("Y")
+
+    def test_get_with_custom_default_still_raises(self):
+        """Custom default is ignored - LVUNDEF is always raised (Spec 021)."""
+        from m2py.core.exceptions import LVUNDEFError
+
+        scope = CurrentScope(scope_dict={})
+        import pytest
+
+        # With unconditional LVUNDEF, default is ignored
+        with pytest.raises(LVUNDEFError):
+            scope.get("Z", default=42)
 
     def test_set_overwrites(self):
         """Setting a variable overwrites previous value."""
@@ -172,11 +183,17 @@ class TestSubscriptedAccess:
         scope.set("A(1,2)", "hello")
         assert scope.get_subscripted("A", ["1", "2"]) == "hello"
 
-    def test_undefined_subscript_returns_default(self):
-        """Undefined subscripted variable returns default."""
+    def test_undefined_subscript_raises_lvundef(self):
+        """Undefined subscripted variable raises LVUNDEF (Spec 021)."""
+        from m2py.core.exceptions import LVUNDEFError
+
         scope = CurrentScope(scope_dict={})
-        assert scope.get_subscripted("A", [1, 2]) == ""
-        assert scope.get("A(1,2)") == ""
+        import pytest
+
+        with pytest.raises(LVUNDEFError):
+            scope.get_subscripted("A", [1, 2])
+        with pytest.raises(LVUNDEFError):
+            scope.get("A(1,2)")
 
     def test_nested_subscripts(self):
         """Multiple levels of subscripts."""
@@ -324,7 +341,12 @@ class TestKill:
 
         scope.kill("X")
         assert not scope.exists("X")
-        assert scope.get("X") == ""
+        # Accessing killed variable raises LVUNDEF
+        from m2py.core.exceptions import LVUNDEFError
+        import pytest
+
+        with pytest.raises(LVUNDEFError):
+            scope.get("X")
 
     def test_kill_subscripted(self):
         """Kill subscripted variable removes that node."""
@@ -495,12 +517,19 @@ class TestScopeKillSubscripted:
 
     def test_kill_subscripted(self):
         """kill('A(1)') removes subscripted node."""
+        from m2py.core.exceptions import LVUNDEFError
+
         scope = CurrentScope(scope_dict={})
         scope.set_subscripted("A", [1], "val1")
         scope.set_subscripted("A", [2], "val2")
         scope.kill("A(1)")
-        assert scope.get_subscripted("A", [1]) == ""  # Gone
-        assert scope.get_subscripted("A", [2]) == "val2"  # Still there
+        # Accessing killed subscript raises LVUNDEF
+        import pytest
+
+        with pytest.raises(LVUNDEFError):
+            scope.get_subscripted("A", [1])
+        # Other subscript still accessible
+        assert scope.get_subscripted("A", [2]) == "val2"
 
 
 class TestScopeIsDefined:
@@ -529,9 +558,13 @@ class TestScopeNoStorage:
     """Tests for CurrentScope with no storage (edge case)."""
 
     def test_get_with_no_storage(self):
-        """Get from scope with no storage returns default."""
+        """Get from scope with no storage raises LVUNDEF (Spec 021)."""
+        from m2py.core.exceptions import LVUNDEFError
+        import pytest
+
         scope = CurrentScope()
-        assert scope.get("X") == ""
+        with pytest.raises(LVUNDEFError):
+            scope.get("X")
 
     def test_exists_with_no_storage(self):
         """Exists with no storage returns False."""

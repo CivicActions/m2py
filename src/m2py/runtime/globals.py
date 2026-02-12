@@ -1125,16 +1125,28 @@ class InMemoryGlobalStorage:
     def ssvn_job(self, subscript: str) -> str:
         """Query ^$JOB(pid) for job/process information.
 
-        Spec 013 FR-029: In-memory backend only knows about current process.
-        Returns process info for current PID, empty for others.
+        Spec 021 Phase 13 (T086): Returns "1" if the process with the
+        given PID exists and is alive, "" otherwise.
+        For the current process, always returns "1".
+        For other processes, uses os.kill(pid, 0) to probe liveness.
         """
         import os
 
         try:
             pid = int(subscript)
+            if pid <= 0:
+                return ""  # PIDs must be positive
             if pid == os.getpid():
-                return "1"  # Current process exists
-        except ValueError:
+                return "1"  # Current process always exists
+            # Probe liveness of other processes
+            try:
+                os.kill(pid, 0)
+                return "1"  # Process exists
+            except ProcessLookupError:
+                return ""  # Process does not exist
+            except PermissionError:
+                return "1"  # Process exists but we lack permission
+        except (ValueError, OverflowError):
             pass
         return ""
 
@@ -1154,9 +1166,31 @@ class InMemoryGlobalStorage:
     def ssvn_routine(self, subscript: str) -> str:
         """Query ^$ROUTINE(routinename) for routine metadata.
 
-        Spec 013 FR-029: In-memory backend has no routine metadata.
-        Returns empty string (routine info not available).
+        Spec 021 Phase 13 (T087): Checks if a routine is importable
+        as a Python module under the m2py namespace, or exists as a
+        .m file in the current directory.
+
+        Returns:
+            "1" if the routine is available, "" otherwise.
         """
+        import importlib.util
+        import os
+
+        if not subscript:
+            return ""
+
+        # Check if the routine is importable as a Python module
+        try:
+            spec = importlib.util.find_spec(f"m2py.routines.{subscript}")
+            if spec is not None:
+                return "1"
+        except (ModuleNotFoundError, ValueError):
+            pass
+
+        # Check if .m file exists in current directory or common paths
+        if os.path.isfile(f"{subscript}.m"):
+            return "1"
+
         return ""
 
     def _deep_copy_tree(self, source: "MArray") -> "MArray":
@@ -1178,3 +1212,92 @@ class InMemoryGlobalStorage:
             result._children[str(key)] = self._deep_copy_tree(child)
 
         return result
+
+    # =========================================================================
+    # Namespace-aware Global Operations (Spec 021 Phase 15)
+    # =========================================================================
+
+    def _ns_name(self, name: str, namespace: str) -> str:
+        """Generate namespace-qualified global name.
+
+        Args:
+            name: Global name without ^
+            namespace: Namespace identifier (empty = default)
+
+        Returns:
+            Namespace-prefixed name for internal storage
+        """
+        if namespace:
+            return f"{namespace}:{name}"
+        return name
+
+    def set_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        value: str,
+        namespace: str = "",
+    ) -> None:
+        """Set a global variable in a specific namespace.
+
+        Spec 021 Phase 15 (T101): For extended global references.
+
+        Args:
+            name: Global name (without ^)
+            subscripts: Subscript tuple
+            value: Value to set
+            namespace: Namespace identifier. Empty = default namespace.
+        """
+        self.set(self._ns_name(name, namespace), subscripts, value)
+
+    def get_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        namespace: str = "",
+    ) -> str | None:
+        """Get a global variable from a specific namespace.
+
+        Spec 021 Phase 15 (T101): For extended global references.
+
+        Args:
+            name: Global name (without ^)
+            subscripts: Subscript tuple
+            namespace: Namespace identifier. Empty = default namespace.
+
+        Returns:
+            Value string, or None if undefined
+        """
+        return self.get(self._ns_name(name, namespace), subscripts)
+
+    def data_ns(
+        self, name: str, subscripts: tuple[str, ...], namespace: str = ""
+    ) -> int:
+        """$DATA for namespace-qualified global."""
+        return self.data(self._ns_name(name, namespace), subscripts)
+
+    def order_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        namespace: str = "",
+    ) -> str:
+        """$ORDER for namespace-qualified global."""
+        return self.order(self._ns_name(name, namespace), subscripts, direction)
+
+    def kill_ns(
+        self, name: str, subscripts: tuple[str, ...], namespace: str = ""
+    ) -> None:
+        """KILL for namespace-qualified global."""
+        self.kill(self._ns_name(name, namespace), subscripts)
+
+    def query_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        namespace: str = "",
+    ) -> str:
+        """$QUERY for namespace-qualified global."""
+        return self.query(self._ns_name(name, namespace), subscripts)

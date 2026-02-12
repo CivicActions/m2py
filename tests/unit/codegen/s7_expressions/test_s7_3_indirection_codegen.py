@@ -687,8 +687,13 @@ class TestIndirectionSubscriptGlobalBranches:
     Pass 2 ranges: indirection.py L641-645, L651-655.
     """
 
-    def test_subscript_indirection_global(self, execute_mumps):
-        """S X(@^V)=1 — global indirection in subscript position."""
+    def test_subscript_indirection_global_raises_lvundef(self, execute_mumps):
+        """S X(@^V)=1 — global indirection in subscript position raises LVUNDEF.
+
+        When ^V="A", @^V resolves to the VALUE at A (not the literal "A").
+        Since A is undefined, YDB (and m2py) correctly raise LVUNDEF.
+        Per Spec 021 Phase 12: LVUNDEF is unconditional.
+        """
         from m2py.codegen import generate_python
         from m2py.runtime import MUMPSRuntime
 
@@ -696,8 +701,10 @@ class TestIndirectionSubscriptGlobalBranches:
             generate_python('TEST\n K ^V S ^V="A" S X(@^V)=1 W X("A") Q\n'),
             capture_output=True,
         )
-        # Global indirection in subscript position may not be fully supported
-        assert result.success
+        # Per YDB semantics: @^V where ^V="A" tries to get value of variable A
+        # Since A is undefined, LVUNDEF is raised (verified with YDB)
+        assert not result.success
+        assert "LVUNDEF" in result.error
 
     def test_order_global_indirection(self, execute_mumps):
         """$O(@^V@("")) — $ORDER with global indirection source."""

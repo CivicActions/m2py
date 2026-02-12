@@ -3,6 +3,7 @@
 Reference: YottaDB implementation-defined $Z... functions
 These are implementation-defined per FR-017.
 Spec 014: Verify LIM-015 errors for unimplemented Z-functions.
+Spec 021 Phase 10: $ZDATE is now implemented.
 """
 
 import pytest
@@ -15,20 +16,20 @@ class TestZfunctionsCodegen:
     """Codegen-level tests for Z-functions (YDB implementation-defined).
 
     All Z-functions are implementation-defined per FR-017.
-    These tests verify that NotImplementedError is raised with LIM-015.
+    Some are implemented (like $ZDATE), others raise NotImplementedError with LIM-015.
     """
 
-    def test_zdate_raises_not_implemented(self):
-        """$ZDATE raises NotImplementedError with LIM-015."""
+    def test_zdate_generates_code(self):
+        """$ZDATE generates m_zdate() call (Spec 021 Phase 10)."""
         code = "TEST\n S X=$ZDATE(12345)\n Q"
-        with pytest.raises(NotImplementedError, match="LIM-015"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "m_zdate" in result
 
-    def test_zmessage_function_raises_not_implemented(self):
-        """$ZMESSAGE raises NotImplementedError with LIM-015."""
+    def test_zmessage_function_generates_code(self):
+        """$ZMESSAGE generates m_zmessage() call."""
         code = "TEST\n S X=$ZMESSAGE(150373210)\n Q"
-        with pytest.raises(NotImplementedError, match="LIM-015"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "m_zmessage" in result
 
     def test_zwidth_raises_not_implemented(self):
         """$ZWIDTH raises NotImplementedError with LIM-015."""
@@ -67,14 +68,14 @@ class TestYdbSpecialVariablesCodegen:
         with pytest.raises(NotImplementedError, match="ZMODE"):
             generate_python(code)
 
-    def test_zstatus_raises_not_implemented(self):
-        """$ZSTATUS raises NotImplementedError (YDB-specific variable)."""
+    def test_zstatus_generates_code(self):
+        """$ZSTATUS generates runtime call (Spec 021 Phase 5)."""
         code = "TEST\n W $ZSTATUS\n Q"
-        with pytest.raises(NotImplementedError, match="ZSTATUS"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.zstatus()" in result
 
-    def test_zsystem_variable_raises_not_implemented(self):
-        """$ZSYSTEM raises NotImplementedError (YDB-specific variable)."""
+    def test_zsystem_variable_generates_exit_code(self):
+        """$ZSYSTEM generates zsystem_exit() call."""
         code = "TEST\n W $ZSYSTEM\n Q"
-        with pytest.raises(NotImplementedError, match="ZSYSTEM"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.zsystem_exit()" in result

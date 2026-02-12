@@ -608,10 +608,13 @@ class TestExecuteMumpsIndirected:
         assert "42" in output
 
     def test_execute_validates_resolve(self, rt):
-        """execute_mumps_indirected validates the indirection resolves."""
-        scope = {"X": MArray(value="Y")}  # Y doesn't exist
-        # Should not raise - empty code just does nothing
-        rt.execute_mumps_indirected("X", scope, levels=1)
+        """execute_mumps_indirected raises LVUNDEF for undefined indirect target."""
+        from m2py.core.exceptions import LVUNDEFError
+
+        scope = {"X": MArray(value="Y")}  # X contains "Y", but Y doesn't exist
+        # Per Spec 021, undefined variables unconditionally raise LVUNDEF
+        with pytest.raises(LVUNDEFError):
+            rt.execute_mumps_indirected("X", scope, levels=1)
 
 
 # =============================================================================
