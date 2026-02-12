@@ -206,38 +206,42 @@ class TestMergeIndirection:
 
 @pytest.mark.codegen
 class TestMergeExtendedGlobal:
-    """Tests for MERGE with extended global references (Phase 13)."""
+    """Tests for MERGE with extended global references (Phase 15 namespace-aware)."""
 
     def test_merge_extended_global_pipe_destination_codegen(self, generate_python):
-        """MERGE ^|"env"|G=X generates global set ignoring environment."""
+        """MERGE ^|"env"|G=X generates merge_tree with namespace prefix."""
         code = generate_python('TEST S A(1)=1 M ^|"env"|G=A Q')
-        # Should call merge_tree on globals (environment ignored)
+        # Should call merge_tree with namespace-prefixed name
         assert "merge_tree" in code
-        assert '"G"' in code
+        assert '"env:G"' in code
 
     def test_merge_extended_global_bracket_source_codegen(self, generate_python):
-        """MERGE X=^["gld"]G generates get_tree ignoring environment."""
+        """MERGE X=^["gld"]G generates get_tree with namespace prefix."""
         code = generate_python('TEST M B=^["gld"]G Q')
-        # Should call get_tree on globals (environment ignored)
+        # Should call get_tree with namespace-prefixed name
         assert "get_tree" in code
-        assert '"G"' in code
+        assert '"gld:G"' in code
 
     def test_merge_extended_global_destination(self, execute_mumps):
-        """MERGE ^|"env"|G=X copies to global (environment ignored)."""
-        result = execute_mumps('TEST S A(1)=1,A(2)=2 M ^|"env"|G=A W ^G(1),^G(2),! Q')
+        """MERGE ^|"env"|G=X copies to namespaced global, readable in same ns."""
+        result = execute_mumps(
+            'TEST S A(1)=1,A(2)=2 M ^|"env"|G=A W ^|"env"|G(1),^|"env"|G(2),! Q'
+        )
         assert result.success
         assert result.output.rstrip() == "12"
 
     def test_merge_extended_global_source(self, execute_mumps):
-        """MERGE X=^["gld"]G copies from global (environment ignored)."""
-        result = execute_mumps('TEST S ^G(1)=1,^G(2)=2 M B=^["gld"]G W B(1),B(2),! Q')
+        """MERGE X=^["gld"]G copies from namespaced global."""
+        result = execute_mumps(
+            'TEST S ^["gld"]G(1)=1,^["gld"]G(2)=2 M B=^["gld"]G W B(1),B(2),! Q'
+        )
         assert result.success
         assert result.output.rstrip() == "12"
 
     def test_merge_extended_global_with_subscripts(self, execute_mumps):
-        """MERGE ^|"env"|G(sub)=X copies to subscripted extended global."""
+        """MERGE ^|"x"|G(sub)=X copies to subscripted namespaced global."""
         result = execute_mumps(
-            'TEST S A(1)=1,A(2)=2 M ^|"x"|G(3)=A W ^G(3,1),^G(3,2),! Q'
+            'TEST S A(1)=1,A(2)=2 M ^|"x"|G(3)=A W ^|"x"|G(3,1),^|"x"|G(3,2),! Q'
         )
         assert result.success
         assert result.output.rstrip() == "12"

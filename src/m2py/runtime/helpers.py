@@ -1897,6 +1897,102 @@ def m_read_char() -> str:
     return char
 
 
+def m_read_maxlen(maxlen: int) -> tuple[str, str]:
+    """Read at most maxlen characters from stdin.
+
+    MUMPS: READ X#n — reads up to n characters, stopping at n or newline.
+
+    Args:
+        maxlen: Maximum number of characters to read (must be > 0)
+
+    Returns:
+        Tuple of (value, key) where:
+        - value: The characters read (up to maxlen)
+        - key: The termination character ($KEY): newline char if Enter pressed,
+                "" if maxlen was reached without a terminator
+
+    Raises:
+        ValueError: If maxlen <= 0 (YDB: %YDB-E-RDFLTOOSHORT)
+    """
+    import sys
+
+    if maxlen <= 0:
+        raise ValueError(
+            "Length specified for fixed length read less than or equal to zero"
+        )
+
+    result = []
+    key = ""
+    for _ in range(maxlen):
+        ch = sys.stdin.read(1)
+        if ch == "" or ch == "\n":
+            # EOF or newline — stop reading
+            if ch == "\n":
+                key = ch
+            break
+        result.append(ch)
+    else:
+        # Reached maxlen without a terminator
+        key = ""
+
+    return ("".join(result), key)
+
+
+def m_read_maxlen_timeout(maxlen: int, timeout_seconds: float) -> tuple[str, str, int]:
+    """Read at most maxlen characters with timeout.
+
+    MUMPS: READ X#n:t — reads up to n characters with t-second timeout.
+
+    Args:
+        maxlen: Maximum number of characters to read (must be > 0)
+        timeout_seconds: Maximum seconds to wait for input
+
+    Returns:
+        Tuple of (value, key, test_flag) where:
+        - value: The characters read
+        - key: Termination character ($KEY)
+        - test_flag: 1 if input received, 0 if timeout
+
+    Raises:
+        ValueError: If maxlen <= 0
+    """
+    import select
+    import sys
+    import time
+
+    if maxlen <= 0:
+        raise ValueError(
+            "Length specified for fixed length read less than or equal to zero"
+        )
+
+    timeout = float(timeout_seconds)
+    deadline = time.monotonic() + timeout
+    result = []
+    key = ""
+
+    for _ in range(maxlen):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            # Timeout exceeded
+            return ("".join(result), "", 0)
+
+        readable, _, _ = select.select([sys.stdin], [], [], remaining)
+        if not readable:
+            # Timeout
+            return ("".join(result), "", 0)
+
+        ch = sys.stdin.read(1)
+        if ch == "" or ch == "\n":
+            if ch == "\n":
+                key = ch
+            break
+        result.append(ch)
+    else:
+        key = ""
+
+    return ("".join(result), key, 1)
+
+
 def unwind_new_stack(state) -> None:
     """Unwind all NEW frames in state._new_stack on subroutine exit.
 
@@ -1984,6 +2080,14 @@ def m_zdate(
     """
     import datetime
     import re
+
+    # T068: Enforce 64-character format string limit per YDB specification
+    if len(fmt) > 64:
+        from m2py.runtime.exceptions import MRuntimeError
+
+        raise MRuntimeError(
+            "ZDATEFMT", f"$ZDATE format string exceeds 64 characters (got {len(fmt)})"
+        )
 
     # Parse $HOROLOG string into days and optional seconds
     horolog_str = str(horolog)
@@ -2078,3 +2182,57 @@ def m_zdate(
     result = re.sub(pattern, replace_code, fmt)
 
     return result
+
+
+# =============================================================================
+# $ZMESSAGE function — error code to message text (Spec 021 Phase 14, T094)
+# =============================================================================
+
+# Common YDB error codes and their message text
+_YDB_ERROR_MESSAGES: dict[int, str] = {
+    150372370: "BADCHAR",
+    150372826: "DIVZERO",
+    150373066: "FORRANGE",
+    150373138: "GVUNDEF",
+    150373554: "INVFCN",
+    150373706: "LABELUNKNOWN",
+    150373770: "SVNOSET",
+    150373850: "LVUNDEF",
+    150373890: "MAXNRSUBSCRIPTS",
+    150373994: "NULSUBSC",
+    150374090: "ORDER2",
+    150374218: "PATNOTFOUND",
+    150374562: "SELECTFALSE",
+    150375058: "UNDEF",
+    150375298: "RDFLTOOSHORT",
+    150375538: "SYNTAXERR",
+    150375618: "VAREXPECTED",
+    150376642: "ILLEGAL",
+    150377506: "EXPR",
+    150378082: "INVSVN",
+    150378642: "MAXSTRLEN",
+    150381058: "NUMOFLOW",
+    150382066: "ZDATEBADTIME",
+}
+
+
+def m_zmessage(code: int | str) -> str:
+    """Return error message text for a YDB error code.
+
+    Spec 021 Phase 14 (T094): Lookup table of common YDB error codes.
+
+    Args:
+        code: YDB error code (integer or numeric string)
+
+    Returns:
+        Human-readable error message string, or the code as string if unknown
+    """
+    try:
+        code_int = int(code)
+    except (ValueError, TypeError):
+        return str(code)
+
+    msg = _YDB_ERROR_MESSAGES.get(code_int)
+    if msg:
+        return f"%YDB-E-{msg}"
+    return str(code_int)

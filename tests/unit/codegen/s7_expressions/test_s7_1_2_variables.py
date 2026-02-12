@@ -53,57 +53,49 @@ class TestExtendedGlobalsCodegen:
 
     Extended globals use pipe (^|"env"|X) or bracket (^["env"]X) syntax
     to reference globals in different environments/databases.
-    These are YDB-specific features that cannot be transpiled to pure Python.
 
-    Spec 015: Document YDB extensions as not supported with proper test coverage.
+    Spec 021 Phase 15: Extended globals now generate namespace-aware code.
     """
 
-    def test_extended_global_pipe_raises_not_implemented(self, generate_python):
-        """Extended global with pipe syntax raises NotImplementedError.
+    def test_extended_global_pipe_set_supported(self, generate_python):
+        """Extended global with pipe syntax generates set_ns() call.
 
         The ^|"env"|X syntax selects a global from a specific environment.
-        This is a YDB extension for multi-database access.
+        Spec 021 Phase 15: Now generates namespace-aware set_ns() calls.
         """
         code = 'TEST\n S ^|"env"|X=1\n Q\n'
-        with pytest.raises(NotImplementedError, match="ExtendedGlobalPipe"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.globals.set_ns('X', (), m_str(1), namespace='env')" in result
 
     def test_extended_global_bracket_set_supported(self, generate_python):
-        """Extended global with bracket syntax is now supported.
+        """Extended global with bracket syntax generates set_ns() call.
 
         The ^["env"]X syntax selects a global from a specific environment.
-        For m2py, the environment is ignored and the global is accessed normally.
+        Spec 021 Phase 15: Now generates namespace-aware set_ns() calls.
         """
         code = 'TEST\n S ^["env"]X=1\n Q\n'
-        # Should not raise - environment is ignored, treated as regular global
         result = generate_python(code)
-        # Uses m_str() to format values in MUMPS canonical form
-        assert "_rt.globals.set('X', (), m_str(1))" in result
+        assert "_rt.globals.set_ns('X', (), m_str(1), namespace='env')" in result
 
-    def test_extended_global_pipe_with_subscripts_raises_not_implemented(
-        self, generate_python
-    ):
-        """Extended global with subscripts raises NotImplementedError."""
+    def test_extended_global_pipe_with_subscripts_supported(self, generate_python):
+        """Extended global pipe with subscripts generates set_ns() call."""
         code = 'TEST\n S ^|"env"|X(1,2)=1\n Q\n'
-        with pytest.raises(NotImplementedError, match="ExtendedGlobalPipe"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.globals.set_ns('X'," in result
+        assert "namespace='env'" in result
 
     def test_extended_global_bracket_with_subscripts_supported(self, generate_python):
-        """Extended global bracket with subscripts is now supported.
-
-        For m2py, the environment is ignored and the global is accessed normally.
-        """
+        """Extended global bracket with subscripts generates set_ns() call."""
         code = 'TEST\n S ^["env"]X(1,2)=1\n Q\n'
         result = generate_python(code)
-        assert "_rt.globals.set('X'," in result
+        assert "_rt.globals.set_ns('X'," in result
+        assert "namespace='env'" in result
 
-    def test_extended_global_in_expression_raises_not_implemented(
-        self, generate_python
-    ):
-        """Extended global in expression context raises NotImplementedError."""
+    def test_extended_global_pipe_in_expression(self, generate_python):
+        """Extended global pipe in expression generates get_ns() call."""
         code = 'TEST\n W ^|"env"|X\n Q\n'
-        with pytest.raises(NotImplementedError, match="ExtendedGlobalPipe"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.globals.get_ns('X', (), namespace='env')" in result
 
 
 # =============================================================================
@@ -300,12 +292,12 @@ L1 W "LINE1" Q
         assert result.success is True
         assert result.output == "15"
 
-    def test_extended_global_in_expression_raises(self, generate_python):
-        """Extended global ^|env| in expression raises NotImplementedError."""
-        # Extended globals are not yet supported
+    def test_extended_global_in_expression_generates_code(self, generate_python):
+        """Extended global ^|env| in expression generates get_ns() call."""
+        # Spec 021 Phase 15: Extended globals now generate namespace-aware code
         code = 'TEST\n W ^|"ENV"|X\n Q\n'
-        with pytest.raises(NotImplementedError, match="Extended global"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.globals.get_ns('X', (), namespace='ENV')" in result
 
 
 # =============================================================================

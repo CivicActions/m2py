@@ -30,7 +30,12 @@ from m2py.asg.expressions import (
 from m2py.codegen.enums import GotoStrategy
 from m2py.codegen.names import translate_name
 from m2py.codegen.var_access import var_base_expr, scope_dict_expr
-from m2py.parser.textx_classes import GlobalVariable, NakedGlobal
+from m2py.parser.textx_classes import (
+    ExtendedGlobalBracket,
+    ExtendedGlobalPipe,
+    GlobalVariable,
+    NakedGlobal,
+)
 
 
 def gen_subscripts_tuple(
@@ -95,7 +100,7 @@ MATH_FUNCTIONS_IMPLEMENTED: frozenset[str] = frozenset(
 # These are implementation-defined per FR-017 and parsed but not implemented.
 # Codegen raises NotImplementedError for these functions.
 # Note: ZDATE was removed from this set in Spec 021 Phase 10 (now implemented)
-Z_FUNCTIONS_UNIMPLEMENTED: frozenset[str] = frozenset({"ZMESSAGE", "ZWIDTH"})
+Z_FUNCTIONS_UNIMPLEMENTED: frozenset[str] = frozenset({"ZWIDTH"})
 
 
 # =============================================================================
@@ -374,16 +379,8 @@ def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
     The generated code reads from the global storage backend and returns
     empty string for undefined globals (MUMPS implicit $GET semantics).
 
-    Raises:
-        NotImplementedError: For extended globals (^|env| or ^[gld]) which have
-        an environment field - these are not yet implemented.
+    Extended globals (^|env| or ^[gld]) use namespace-aware get_ns() calls.
     """
-    # Check for extended global references (not yet supported)
-    if hasattr(var, "environment") and var.environment is not None:
-        raise NotImplementedError(
-            f"Extended global references not implemented: {type(var).__name__}"
-        )
-
     # Get global name (without caret)
     global_name = var.name
 
@@ -397,6 +394,14 @@ def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
     subscripts_tuple = gen_subscripts_tuple(
         var.subscripts or [], ctx, subscript_context=True
     )
+
+    # Spec 021 Phase 15: Handle extended global references with namespace
+    if isinstance(var, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
+        ns = getattr(var.environment, "value", "") if var.environment else ""
+        return (
+            f"(_rt.globals.get_ns({global_name!r}, {subscripts_tuple}, "
+            f"namespace={ns!r}) or '')"
+        )
 
     # Spec 009 (T028): Return empty string for undefined globals
     # _rt.globals.get() returns None for undefined, convert to ""
@@ -468,8 +473,8 @@ def _generate_ssvn(ssvn: MStructuredSystemVariable, ctx: "GeneratorContext") -> 
     elif name in ("ROUTINE", "R"):
         return f"_rt.globals.ssvn_routine(str({subscript_expr}))"
     elif name in ("SYSTEM", "S"):
-        # ^$SYSTEM returns implementation info - return constant
-        return "'m2py'"
+        # ^$SYSTEM returns implementation info - delegate to runtime
+        return "_rt.system()"
     elif name in ("DEVICE", "D", "CHARACTER", "C"):
         # ^$DEVICE and ^$CHARACTER - return empty (not implemented)
         return "''"
@@ -598,6 +603,11 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     # Spec 017 Phase 23: Returns "V,S" where V is MDC-assigned implementor number
     if name in ("SYSTEM", "SY"):
         return "_rt.system()"
+
+    # $ESTACK / $ES - relative error stack depth
+    # Spec 021 Phase 4 (T022): Returns $STACK minus the level where NEW $ESTACK was done
+    if name in ("ESTACK", "ES"):
+        return "str(_rt.estack())"
 
     # $PRINCIPAL / $P - principal I/O device
     # Spec 017 Phase 23: Returns the principal device identifier
@@ -1116,6 +1126,11 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     elif isinstance(var, GlobalVariable):
         # Global variable: m_data_global(_rt.globals, 'NAME', subscripts)
         return f"m_data_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
+    elif isinstance(var, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
+        # Spec 021 Phase 15: Extended global $DATA with namespace prefix
+        ns = getattr(var.environment, "value", "") if var.environment else ""
+        ns_name = f"{ns}:{var_name}" if ns else var_name
+        return f"m_data_global(_rt.globals, {ns_name!r}, {subscripts_tuple})"
     elif isinstance(var, NakedGlobal):
         # Naked global: resolve then call m_data_global
         # Spec 014 (T061): Naked references in $DATA
@@ -1196,6 +1211,14 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"(lambda _subs: (_rt.globals.set_order_naked({var_name!r}, _subs), "
             f"m_get_global(_rt.globals, {var_name!r}, _subs, "
             f"{default_code}, update_naked=False))[1])({subscripts_tuple})"
+        )
+    elif isinstance(var, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
+        # Spec 021 Phase 15: Extended global $GET with namespace prefix
+        ns = getattr(var.environment, "value", "") if var.environment else ""
+        ns_name = f"{ns}:{var_name}" if ns else var_name
+        return (
+            f"m_get_global(_rt.globals, {ns_name!r}, {subscripts_tuple}, "
+            f"{default_code})"
         )
     elif isinstance(var, NakedGlobal):
         # Naked global: resolve, pre-set naked, then call m_get_global
@@ -1383,6 +1406,14 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"m_order_global(_rt.globals, {var_name!r}, _subs, "
             f"{direction_code}, update_naked=False))[1])({subscripts_tuple})"
         )
+    elif isinstance(var, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
+        # Spec 021 Phase 15: Extended global $ORDER with namespace prefix
+        ns = getattr(var.environment, "value", "") if var.environment else ""
+        ns_name = f"{ns}:{var_name}" if ns else var_name
+        return (
+            f"m_order_global(_rt.globals, {ns_name!r}, {subscripts_tuple}, "
+            f"{direction_code})"
+        )
     elif isinstance(var, NakedGlobal):
         # Naked global: resolve, pre-set naked, then call m_order_global
         # Spec 014 (T061): Naked references in $ORDER
@@ -1449,6 +1480,11 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     elif isinstance(var, GlobalVariable):
         # Global variable: m_query_global(_rt.globals, 'NAME', subscripts)
         return f"m_query_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
+    elif isinstance(var, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
+        # Spec 021 Phase 15: Extended global $QUERY with namespace prefix
+        ns = getattr(var.environment, "value", "") if var.environment else ""
+        ns_name = f"{ns}:{var_name}" if ns else var_name
+        return f"m_query_global(_rt.globals, {ns_name!r}, {subscripts_tuple})"
     elif isinstance(var, NakedGlobal):
         # Naked global: resolve then call m_query_global
         # Spec 014 (T061): Naked references in $QUERY
@@ -2520,3 +2556,72 @@ def _gen_stack(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
 INTRINSIC_GENERATORS["STACK"] = _gen_stack
 INTRINSIC_GENERATORS["ST"] = _gen_stack
+
+
+def _gen_zsystem(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZSYSTEM special variable.
+
+    Spec 021 Phase 11 (T076): $ZSYSTEM returns the exit code from the last
+    ZSYSTEM command as a string. No arguments.
+
+    Returns:
+        Python expression that evaluates to exit code string
+    """
+    return "m_str(_rt.zsystem_exit())"
+
+
+INTRINSIC_GENERATORS["ZSYSTEM"] = _gen_zsystem
+INTRINSIC_GENERATORS["ZSY"] = _gen_zsystem
+
+
+def _gen_zsearch(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZSEARCH function.
+
+    Spec 021 Phase 14 (T097): $ZSEARCH(pattern) searches for files matching
+    pattern. Subsequent calls with "" return next match.
+
+    Returns:
+        Python expression that evaluates to matching file path
+    """
+    if expr.arguments:
+        pattern_expr = generate_expr(expr.arguments[0], ctx)
+        return f"_rt.zsearch(m_str({pattern_expr}))"
+    return '_rt.zsearch("")'
+
+
+INTRINSIC_GENERATORS["ZSEARCH"] = _gen_zsearch
+INTRINSIC_GENERATORS["ZSE"] = _gen_zsearch
+
+
+def _gen_zmessage(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZMESSAGE function.
+
+    Spec 021 Phase 14 (T097): $ZMESSAGE(code) returns error message text
+    for a YDB error code.
+
+    Returns:
+        Python expression that evaluates to error message string
+    """
+    if not expr.arguments:
+        return '""'
+    code_expr = generate_expr(expr.arguments[0], ctx)
+    return f"m_zmessage({code_expr})"
+
+
+INTRINSIC_GENERATORS["ZMESSAGE"] = _gen_zmessage
+INTRINSIC_GENERATORS["ZM"] = _gen_zmessage
+
+
+def _gen_zro(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZRO special variable.
+
+    Spec 021 Phase 14 (T097): $ZRO returns routine search path.
+
+    Returns:
+        Python expression that evaluates to search path string
+    """
+    return "_rt.zro()"
+
+
+INTRINSIC_GENERATORS["ZRO"] = _gen_zro
+INTRINSIC_GENERATORS["ZROUTINES"] = _gen_zro

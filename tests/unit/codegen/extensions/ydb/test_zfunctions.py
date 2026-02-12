@@ -25,11 +25,11 @@ class TestZfunctionsCodegen:
         result = generate_python(code)
         assert "m_zdate" in result
 
-    def test_zmessage_function_raises_not_implemented(self):
-        """$ZMESSAGE raises NotImplementedError with LIM-015."""
+    def test_zmessage_function_generates_code(self):
+        """$ZMESSAGE generates m_zmessage() call."""
         code = "TEST\n S X=$ZMESSAGE(150373210)\n Q"
-        with pytest.raises(NotImplementedError, match="LIM-015"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "m_zmessage" in result
 
     def test_zwidth_raises_not_implemented(self):
         """$ZWIDTH raises NotImplementedError with LIM-015."""
@@ -74,8 +74,8 @@ class TestYdbSpecialVariablesCodegen:
         result = generate_python(code)
         assert "_rt.zstatus()" in result
 
-    def test_zsystem_variable_raises_not_implemented(self):
-        """$ZSYSTEM raises NotImplementedError (YDB-specific variable)."""
+    def test_zsystem_variable_generates_exit_code(self):
+        """$ZSYSTEM generates zsystem_exit() call."""
         code = "TEST\n W $ZSYSTEM\n Q"
-        with pytest.raises(NotImplementedError, match="ZSYSTEM"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.zsystem_exit()" in result

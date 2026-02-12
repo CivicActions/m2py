@@ -48,8 +48,8 @@
 
 **Independent Test**: `uv run pytest --tb=short -q` — all 6023+ tests pass
 
-- [ ] T012 [US1] Run full test suite after Phase 2 foundational changes and fix any regressions caused by _stack_level → _stack_frames migration in src/m2py/runtime/__init__.py and src/m2py/codegen/
-- [ ] T013 [US1] Verify YDB validation suite still produces matching output by running `uv run python utils/validate.py` on representative routines
+- [X] T012 [US1] Run full test suite after Phase 2 foundational changes and fix any regressions caused by _stack_level → _stack_frames migration in src/m2py/runtime/__init__.py and src/m2py/codegen/
+- [X] T013 [US1] Verify YDB validation suite still produces matching output by running `uv run python utils/validate.py` on representative routines
 
 **Checkpoint**: All existing tests pass — foundational changes are non-breaking
 
@@ -162,19 +162,19 @@
 
 ### Tests for User Story 6
 
-- [ ] T048 [P] [US6] Write unit tests for snapshot_locals() in tests/unit/runtime/test_tstart_vars.py — named vars, all vars (*), undefined var recorded as sentinel
-- [ ] T049 [P] [US6] Write unit tests for discard_local_snapshot() in tests/unit/runtime/test_tstart_vars.py — TCOMMIT and TROLLBACK both discard (no local restore)
-- [ ] T050 [P] [US6] Write unit tests for nested transaction snapshots in tests/unit/runtime/test_tstart_vars.py — inner TROLLBACK discards inner snapshot only
-- [ ] T051 [P] [US6] Write integration test transpiling TSTART/TCOMMIT/TROLLBACK routine in tests/integration/test_tstart_restart.py
+- [X] T048 [P] [US6] Write unit tests for snapshot_locals() in tests/unit/runtime/test_tstart_vars.py — named vars, all vars (*), undefined var recorded as sentinel
+- [X] T049 [P] [US6] Write unit tests for discard_local_snapshot() in tests/unit/runtime/test_tstart_vars.py — TCOMMIT and TROLLBACK both discard (no local restore)
+- [X] T050 [P] [US6] Write unit tests for nested transaction snapshots in tests/unit/runtime/test_tstart_vars.py — inner TROLLBACK discards inner snapshot only
+- [X] T051 [P] [US6] Write integration test transpiling TSTART/TCOMMIT/TROLLBACK routine in tests/integration/test_tstart_restart.py
 
 ### Implementation for User Story 6
 
-- [ ] T052 [US6] Implement snapshot_locals() in src/m2py/runtime/__init__.py per contracts/runtime-apis.md — deepcopy named MArray vars or all locals
-- [ ] T053 [US6] Implement discard_local_snapshot() in src/m2py/runtime/__init__.py — pop from _transaction_snapshots without restoring
-- [ ] T054 [US6] Implement restore_locals_from_snapshot() in src/m2py/runtime/__init__.py — for future TRESTART support (pop snapshot, restore each var). Not mapped to a current FR but validates the snapshot design and is trivial to add alongside T052/T053.
-- [ ] T055 [US6] Wire TSTART codegen in src/m2py/codegen/statements.py to emit _rt.snapshot_locals() call with var names or all_vars=True, replacing NotImplementedError at L5176-5214
-- [ ] T056 [US6] Wire TROLLBACK codegen in src/m2py/codegen/statements.py to emit _rt.discard_local_snapshot() call
-- [ ] T057 [US6] Wire TCOMMIT codegen in src/m2py/codegen/statements.py to emit _rt.discard_local_snapshot() call
+- [X] T052 [US6] Implement snapshot_locals() in src/m2py/runtime/__init__.py per contracts/runtime-apis.md — deepcopy named MArray vars or all locals
+- [X] T053 [US6] Implement discard_local_snapshot() in src/m2py/runtime/__init__.py — pop from _transaction_snapshots without restoring
+- [X] T054 [US6] Implement restore_locals_from_snapshot() in src/m2py/runtime/__init__.py — for future TRESTART support (pop snapshot, restore each var). Not mapped to a current FR but validates the snapshot design and is trivial to add alongside T052/T053.
+- [X] T055 [US6] Wire TSTART codegen in src/m2py/codegen/statements.py to emit _rt.snapshot_locals() call with var names or all_vars=True, replacing NotImplementedError at L5176-5214
+- [X] T056 [US6] Wire TROLLBACK codegen in src/m2py/codegen/statements.py to emit _rt.discard_local_snapshot() call
+- [X] T057 [US6] Wire TCOMMIT codegen in src/m2py/codegen/statements.py to emit _rt.discard_local_snapshot() call
 
 **Checkpoint**: TSTART with restart vars compiles and runs. Snapshots are created and discarded correctly.
 
@@ -188,18 +188,18 @@
 
 ### Tests for User Story 7
 
-- [ ] T058 [P] [US7] Write unit tests for m_read_maxlen() in tests/unit/runtime/test_read_maxlen.py — basic limit, early newline, READ #0 returns ""
-- [ ] T059 [P] [US7] Write unit tests for m_read_maxlen_timeout() in tests/unit/runtime/test_read_maxlen.py — combined maxlen+timeout
-- [ ] T060 [P] [US7] Write unit tests for $KEY population after READ in tests/unit/runtime/test_read_maxlen.py — newline if Enter pressed, "" if maxlen reached
-- [ ] T114 [P] [US7] Write integration test transpiling READ #maxlen routines and comparing against YDB in tests/integration/test_read_maxlen.py
+- [X] T058 [P] [US7] Write unit tests for m_read_maxlen() in tests/unit/runtime/test_read_maxlen.py — basic limit, early newline, READ #0 returns ""
+- [X] T059 [P] [US7] Write unit tests for m_read_maxlen_timeout() in tests/unit/runtime/test_read_maxlen.py — combined maxlen+timeout
+- [X] T060 [P] [US7] Write unit tests for $KEY population after READ in tests/unit/runtime/test_read_maxlen.py — newline if Enter pressed, "" if maxlen reached
+- [X] T114 [P] [US7] Write integration test transpiling READ #maxlen routines and comparing against YDB in tests/integration/test_read_maxlen.py
 
 ### Implementation for User Story 7
 
-- [ ] T061 [US7] Implement m_read_maxlen() in src/m2py/runtime/helpers.py per contracts/runtime-apis.md — read at most maxlen chars from stdin
-- [ ] T062 [US7] Implement m_read_maxlen_timeout() in src/m2py/runtime/helpers.py per contracts/runtime-apis.md — combined maxlen+timeout with tuple return
-- [ ] T063 [US7] Wire _generate_read_target() in src/m2py/codegen/statements.py to handle target.fixed_length — emit m_read_maxlen() call, replacing ignored fixed_length at L5091-5174
-- [ ] T064 [US7] Set $KEY ISV after READ completion in src/m2py/runtime/__init__.py — terminator char or "" if maxlen reached
-- [ ] T065 [US7] Handle READ #0 edge case in src/m2py/runtime/helpers.py — immediate empty string, no input read
+- [X] T061 [US7] Implement m_read_maxlen() in src/m2py/runtime/helpers.py per contracts/runtime-apis.md — read at most maxlen chars from stdin
+- [X] T062 [US7] Implement m_read_maxlen_timeout() in src/m2py/runtime/helpers.py per contracts/runtime-apis.md — combined maxlen+timeout with tuple return
+- [X] T063 [US7] Wire _generate_read_target() in src/m2py/codegen/statements.py to handle target.fixed_length — emit m_read_maxlen() call, replacing ignored fixed_length at L5091-5174
+- [X] T064 [US7] Set $KEY ISV after READ completion in src/m2py/runtime/__init__.py — terminator char or "" if maxlen reached
+- [X] T065 [US7] Handle READ #0 edge case in src/m2py/runtime/helpers.py — immediate empty string, no input read
 
 **Checkpoint**: READ #maxlen works. `READ X#5` limits correctly and $KEY is set.
 
@@ -213,15 +213,15 @@
 
 ### Tests for User Story 8
 
-- [ ] T066 [P] [US8] Write unit tests for m_zdate() in tests/unit/runtime/test_zdate.py — default format (MM/DD/YY), ISO format (YYYY-MM-DD), DD MON YEAR, time formats (24:60:SS, 12, AM)
-- [ ] T067 [P] [US8] Write unit tests for m_zdate() edge cases in tests/unit/runtime/test_zdate.py — invalid $HOROLOG value, custom month/day names, combined date+time, boundary dates
-- [ ] T115 [P] [US8] Write integration test transpiling $ZDATE routines and comparing against YDB in tests/integration/test_zdate.py
+- [X] T066 [P] [US8] Write unit tests for m_zdate() in tests/unit/runtime/test_zdate.py — default format (MM/DD/YY), ISO format (YYYY-MM-DD), DD MON YEAR, time formats (24:60:SS, 12, AM)
+- [X] T067 [P] [US8] Write unit tests for m_zdate() edge cases in tests/unit/runtime/test_zdate.py — invalid $HOROLOG value, custom month/day names, combined date+time, boundary dates
+- [X] T115 [P] [US8] Write integration test transpiling $ZDATE routines and comparing against YDB in tests/integration/test_zdate.py
 
 ### Implementation for User Story 8
 
-- [ ] T068 [US8] Implement m_zdate() in src/m2py/runtime/helpers.py per contracts/runtime-apis.md — parse $HOROLOG date component (days since epoch), apply date format codes (MM, DD, YY, YYYY, YEAR, MON, DAY), handle custom month/day names. This task handles date-only formatting.
-- [ ] T069 [US8] Wire $ZDATE codegen in src/m2py/codegen/expressions.py — remove $ZDATE from Z_FUNCTIONS_UNIMPLEMENTED at L97, add dispatch to _rt_helpers.m_zdate() call with 1-4 arguments
-- [ ] T070 [US8] Extend m_zdate() in src/m2py/runtime/helpers.py to handle $HOROLOG time component — parse "days,seconds" format, add time format codes (24, 12, 60, SS, AM). This task extends T068's implementation with time support.
+- [X] T068 [US8] Implement m_zdate() in src/m2py/runtime/helpers.py per contracts/runtime-apis.md — parse $HOROLOG date component (days since epoch), apply date format codes (MM, DD, YY, YYYY, YEAR, MON, DAY), handle custom month/day names. This task handles date-only formatting.
+- [X] T069 [US8] Wire $ZDATE codegen in src/m2py/codegen/expressions.py — remove $ZDATE from Z_FUNCTIONS_UNIMPLEMENTED at L97, add dispatch to _rt_helpers.m_zdate() call with 1-4 arguments
+- [X] T070 [US8] Extend m_zdate() in src/m2py/runtime/helpers.py to handle $HOROLOG time component — parse "days,seconds" format, add time format codes (24, 12, 60, SS, AM). This task extends T068's implementation with time support.
 
 **Checkpoint**: $ZDATE works for all common format codes. Output matches YDB.
 
@@ -235,17 +235,17 @@
 
 ### Tests for User Story 9
 
-- [ ] T071 [P] [US9] Write unit tests for zsystem() and zsystem_exit() in tests/unit/runtime/test_zsystem.py — successful command, failed command exit code, empty string no-op
-- [ ] T072 [P] [US9] Write codegen tests for ZSYSTEM in tests/unit/codegen/test_zsystem_codegen.py — verify emitted subprocess.run() call
-- [ ] T116 [P] [US9] Write integration test transpiling ZSYSTEM routines and comparing against YDB in tests/integration/test_zsystem.py
-- [ ] T117 [P] [US9] Write verification test for existing ZLINK implementation against FR-035 acceptance scenarios (US9 scenarios 3-4) in tests/integration/test_zlink.py
+- [X] T071 [P] [US9] Write unit tests for zsystem() and zsystem_exit() in tests/unit/runtime/test_zsystem.py — successful command, failed command exit code, empty string no-op
+- [X] T072 [P] [US9] Write codegen tests for ZSYSTEM in tests/unit/codegen/test_zsystem_codegen.py — verify emitted subprocess.run() call
+- [X] T116 [P] [US9] Write integration test transpiling ZSYSTEM routines and comparing against YDB in tests/integration/test_zsystem.py
+- [X] T117 [P] [US9] Write verification test for existing ZLINK implementation against FR-035 acceptance scenarios (US9 scenarios 3-4) in tests/integration/test_zlink.py
 
 ### Implementation for User Story 9
 
-- [ ] T073 [US9] Implement zsystem() in src/m2py/runtime/__init__.py per contracts/runtime-apis.md — subprocess.run(), store exit code in _zsystem_exit
-- [ ] T074 [US9] Implement zsystem_exit() accessor in src/m2py/runtime/__init__.py — return _zsystem_exit
-- [ ] T075 [US9] Wire ZSYSTEM codegen in src/m2py/codegen/statements.py — replace NotImplementedError at L856-857 with _rt.zsystem() call
-- [ ] T076 [US9] Wire $ZSYSTEM read codegen in src/m2py/codegen/expressions.py — emit _rt.zsystem_exit() call
+- [X] T073 [US9] Implement zsystem() in src/m2py/runtime/__init__.py per contracts/runtime-apis.md — subprocess.run(), store exit code in _zsystem_exit
+- [X] T074 [US9] Implement zsystem_exit() accessor in src/m2py/runtime/__init__.py — return _zsystem_exit
+- [X] T075 [US9] Wire ZSYSTEM codegen in src/m2py/codegen/statements.py — replace NotImplementedError at L856-857 with _rt.zsystem() call
+- [X] T076 [US9] Wire $ZSYSTEM read codegen in src/m2py/codegen/expressions.py — emit _rt.zsystem_exit() call
 
 **Checkpoint**: ZSYSTEM works. `ZSY "echo hello"` executes and $ZSYSTEM returns 0.
 
@@ -282,17 +282,17 @@
 
 ### Tests for User Story 11
 
-- [ ] T083 [P] [US11] Write unit tests for ^$JOB in tests/unit/runtime/test_ssvn.py — current process exists, nonexistent PID returns 0
-- [ ] T084 [P] [US11] Write unit tests for ^$ROUTINE in tests/unit/runtime/test_ssvn.py — existing routine found, $ORDER works
-- [ ] T085 [P] [US11] Write unit tests for ^$SYSTEM in tests/unit/runtime/test_ssvn.py — returns configurable values
-- [ ] T119 [P] [US11] Write integration test transpiling SSVN routines and comparing against YDB in tests/integration/test_ssvn.py
+- [X] T083 [P] [US11] Write unit tests for ^$JOB in tests/unit/runtime/test_ssvn.py — current process exists, nonexistent PID returns 0
+- [X] T084 [P] [US11] Write unit tests for ^$ROUTINE in tests/unit/runtime/test_ssvn.py — existing routine found, $ORDER works
+- [X] T085 [P] [US11] Write unit tests for ^$SYSTEM in tests/unit/runtime/test_ssvn.py — returns configurable values
+- [X] T119 [P] [US11] Write integration test transpiling SSVN routines and comparing against YDB in tests/integration/test_ssvn.py
 
 ### Implementation for User Story 11
 
-- [ ] T086 [US11] Implement ^$JOB SSVN handler in src/m2py/runtime/__init__.py — os.kill(pid,0) to check process liveness, $DATA/$ORDER support
-- [ ] T087 [US11] Implement ^$ROUTINE SSVN handler in src/m2py/runtime/__init__.py — check importable modules, $DATA/$ORDER support
-- [ ] T088 [US11] Implement ^$SYSTEM SSVN handler in src/m2py/runtime/__init__.py — return configurable system info
-- [ ] T089 [US11] Wire SSVN dispatch in src/m2py/codegen/expressions.py L434-484 — route ^$JOB, ^$ROUTINE, ^$SYSTEM to runtime handlers
+- [X] T086 [US11] Implement ^$JOB SSVN handler in src/m2py/runtime/__init__.py — os.kill(pid,0) to check process liveness, $DATA/$ORDER support
+- [X] T087 [US11] Implement ^$ROUTINE SSVN handler in src/m2py/runtime/__init__.py — check importable modules, $DATA/$ORDER support
+- [X] T088 [US11] Implement ^$SYSTEM SSVN handler in src/m2py/runtime/__init__.py — return configurable system info
+- [X] T089 [US11] Wire SSVN dispatch in src/m2py/codegen/expressions.py L434-484 — route ^$JOB, ^$ROUTINE, ^$SYSTEM to runtime handlers
 
 **Checkpoint**: SSVNs return real data. `$D(^$J($J))` returns nonzero.
 
@@ -306,18 +306,18 @@
 
 ### Tests for User Story 12
 
-- [ ] T090 [P] [US12] Write unit tests for zsearch() in tests/unit/runtime/test_svn.py — first call returns match, successive calls iterate, empty on exhaustion
-- [ ] T091 [P] [US12] Write unit tests for zmessage_text() in tests/unit/runtime/test_svn.py — known error codes return message, unknown code handled
-- [ ] T092 [P] [US12] Write unit tests for zro()/zjob() in tests/unit/runtime/test_svn.py — configurable values returned
-- [ ] T120 [P] [US12] Write integration test transpiling YDB SVN routines and comparing against YDB in tests/integration/test_svn.py
+- [X] T090 [P] [US12] Write unit tests for zsearch() in tests/unit/runtime/test_svn.py — first call returns match, successive calls iterate, empty on exhaustion
+- [X] T091 [P] [US12] Write unit tests for zmessage_text() in tests/unit/runtime/test_svn.py — known error codes return message, unknown code handled
+- [X] T092 [P] [US12] Write unit tests for zro()/zjob() in tests/unit/runtime/test_svn.py — configurable values returned
+- [X] T120 [P] [US12] Write integration test transpiling YDB SVN routines and comparing against YDB in tests/integration/test_svn.py
 
 ### Implementation for User Story 12
 
-- [ ] T093 [US12] Implement zsearch() in src/m2py/runtime/__init__.py per contracts/runtime-apis.md — glob.glob() with _zsearch_results/_zsearch_index state
-- [ ] T094 [US12] Implement zmessage_text() in src/m2py/runtime/helpers.py per contracts/runtime-apis.md — lookup table of common YDB error codes
-- [ ] T095 [US12] Implement zro() in src/m2py/runtime/__init__.py — configurable routine search path
-- [ ] T096 [US12] Implement zjob() in src/m2py/runtime/__init__.py — bitmask of process attributes
-- [ ] T097 [US12] Wire $ZSEARCH, $ZRO, $ZJOB, $ZMESSAGE codegen in src/m2py/codegen/expressions.py — remove from unimplemented lists, add dispatch to runtime methods
+- [X] T093 [US12] Implement zsearch() in src/m2py/runtime/__init__.py per contracts/runtime-apis.md — glob.glob() with _zsearch_results/_zsearch_index state
+- [X] T094 [US12] Implement zmessage_text() in src/m2py/runtime/helpers.py per contracts/runtime-apis.md — lookup table of common YDB error codes
+- [X] T095 [US12] Implement zro() in src/m2py/runtime/__init__.py — configurable routine search path
+- [X] T096 [US12] Implement zjob() in src/m2py/runtime/__init__.py — bitmask of process attributes
+- [X] T097 [US12] Wire $ZSEARCH, $ZRO, $ZJOB, $ZMESSAGE codegen in src/m2py/codegen/expressions.py — remove from unimplemented lists, add dispatch to runtime methods
 
 **Checkpoint**: YDB SVNs return real values.
 
@@ -331,18 +331,18 @@
 
 ### Tests for User Story 13
 
-- [ ] T098 [P] [US13] Write unit tests for namespace-qualified get/set in tests/unit/runtime/test_extended_globals.py — pipe form, bracket form, default namespace fallback
-- [ ] T099 [P] [US13] Write unit tests for $DATA/$ORDER/$GET/$QUERY/KILL/MERGE with extended globals in tests/unit/runtime/test_extended_globals.py
-- [ ] T100 [P] [US13] Write integration test transpiling extended global routines in tests/integration/test_extended_globals.py
+- [X] T098 [P] [US13] Write unit tests for namespace-qualified get/set in tests/unit/runtime/test_extended_globals.py — pipe form, bracket form, default namespace fallback
+- [X] T099 [P] [US13] Write unit tests for $DATA/$ORDER/$GET/$QUERY/KILL/MERGE with extended globals in tests/unit/runtime/test_extended_globals.py
+- [X] T100 [P] [US13] Write integration test transpiling extended global routines in tests/integration/test_extended_globals.py
 
 ### Implementation for User Story 13
 
-- [ ] T101 [US13] Implement namespace-qualified global storage in src/m2py/runtime/__init__.py — set_ns()/get_ns() methods per contracts/runtime-apis.md, or namespace-prefixed keys in existing global dict
-- [ ] T102 [US13] Wire pipe form (^|"env"|NAME) codegen in src/m2py/codegen/expressions.py — extract namespace from ExtendedGlobalPipe ASG node, emit _rt.get_ns()/_rt.set_ns() calls
-- [ ] T103 [US13] Wire bracket form (^[UCI,VOL]NAME) codegen in src/m2py/codegen/expressions.py — extract UCI/VOL from ExtendedGlobalBracket ASG node, derive namespace
-- [ ] T104 [US13] Wire extended global SET codegen in src/m2py/codegen/statements.py — handle pipe and bracket forms in SET command dispatch
-- [ ] T105 [US13] Wire $DATA, $ORDER, $GET, $QUERY, KILL, MERGE for extended globals in src/m2py/codegen/statements.py and src/m2py/codegen/expressions.py — all operations namespace-aware
-- [ ] T106 [US13] Handle nonexistent namespace: create on write, return undefined on read in src/m2py/runtime/__init__.py
+- [X] T101 [US13] Implement namespace-qualified global storage in src/m2py/runtime/__init__.py — set_ns()/get_ns() methods per contracts/runtime-apis.md, or namespace-prefixed keys in existing global dict
+- [X] T102 [US13] Wire pipe form (^|"env"|NAME) codegen in src/m2py/codegen/expressions.py — extract namespace from ExtendedGlobalPipe ASG node, emit _rt.get_ns()/_rt.set_ns() calls
+- [X] T103 [US13] Wire bracket form (^[UCI,VOL]NAME) codegen in src/m2py/codegen/expressions.py — extract UCI/VOL from ExtendedGlobalBracket ASG node, derive namespace
+- [X] T104 [US13] Wire extended global SET codegen in src/m2py/codegen/statements.py — handle pipe and bracket forms in SET command dispatch
+- [X] T105 [US13] Wire $DATA, $ORDER, $GET, $QUERY, KILL, MERGE for extended globals in src/m2py/codegen/statements.py and src/m2py/codegen/expressions.py — all operations namespace-aware
+- [X] T106 [US13] Handle nonexistent namespace: create on write, return undefined on read in src/m2py/runtime/__init__.py
 
 **Checkpoint**: Extended global references work for all operations. Both pipe and bracket forms resolve correctly.
 
@@ -352,12 +352,12 @@
 
 **Purpose**: Final validation, documentation, and cleanup
 
-- [ ] T107 [P] Update docs/coverage-matrix.md with Phase 3 feature coverage
-- [ ] T108 [P] Update docs/limitations.md — remove items now implemented (LOCK indirection, $ZDATE, ZSYSTEM, etc.)
-- [ ] T109 Run full test suite: `uv run pytest` — verify zero failures, zero xfails, zero skips
-- [ ] T110 Run YDB validation suite on representative VistA routines using `uv run python utils/validate.py`
-- [ ] T111 Run quickstart.md validation: execute all commands in specs/021-correctness-features/quickstart.md and verify expected outputs
-- [ ] T112 [P] Code cleanup — remove dead code, unused imports, TODO comments from Phase 3 implementation files
+- [X] T107 [P] Update docs/coverage-matrix.md with Phase 3 feature coverage
+- [X] T108 [P] Update docs/limitations.md — remove items now implemented (LOCK indirection, $ZDATE, ZSYSTEM, etc.)
+- [X] T109 Run full test suite: `uv run pytest` — verify zero failures, zero xfails, zero skips
+- [X] T110 Run YDB validation suite on representative VistA routines using `uv run python utils/validate.py`
+- [X] T111 Run quickstart.md validation: execute all commands in specs/021-correctness-features/quickstart.md and verify expected outputs
+- [X] T112 [P] Code cleanup — remove dead code, unused imports, TODO comments from Phase 3 implementation files
 
 ---
 

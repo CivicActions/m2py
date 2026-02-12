@@ -11,6 +11,7 @@ Spec 009: Extended with global variable storage and helper functions:
 
 from __future__ import annotations
 
+import copy
 import re
 import sys
 import threading
@@ -1602,6 +1603,7 @@ class MUMPSRuntime:
         self,
         global_storage: GlobalStorageBackend | None = None,
         codegen_callback: Any = None,
+        max_error_nesting: int = 20,
     ) -> None:
         """Initialize runtime with empty state.
 
@@ -1613,6 +1615,8 @@ class MUMPSRuntime:
                 (code: str, routine_name: str) -> str
                 Used for XECUTE to compile MUMPS code to Python at runtime.
                 If None, auto-discovers m2py.codegen.generate_python when needed.
+            max_error_nesting: Maximum error handler nesting depth before
+                raising RuntimeError (prevents infinite error loops). Default 20.
         """
         self._output: list[str] = []
         # Spec 008: External call context tracking
@@ -1664,7 +1668,7 @@ class MUMPSRuntime:
         # Stack level where $ETRAP was SET (for unwind target)
         self._etrap_set_level: int = 0
         # T023: Maximum error handler nesting depth (prevents infinite loops)
-        self._max_error_nesting: int = 20
+        self._max_error_nesting: int = max_error_nesting
         # Current error handler nesting depth
         self._error_nesting_depth: int = 0
         # ZSYSTEM exit code
@@ -1677,6 +1681,8 @@ class MUMPSRuntime:
         # $STACK snapshot (frozen on error)
         self._stack_snapshot: Optional[list[StackFrame]] = None
         self._stack_snapshot_depth: int = 0
+        # T095: $ZRO — routine search path (configurable)
+        self._zro: str = "."
         # Spec 013 Phase 19: Routine registry for ZLINK
         self._routines: Dict[str, Any] = {}
         # Spec 012: $TEST value for tracking IF/ELSE condition results
@@ -2377,6 +2383,35 @@ class MUMPSRuntime:
                 f"ZGOTO to level {level}" + (f":{target}" if target else "")
             )
 
+    def zsystem(self, command: str = "") -> None:
+        """ZSYSTEM - execute a shell command.
+
+        Spec 021 Phase 11 (T073): Execute command via subprocess, store exit
+        code in _zsystem_exit. Empty string is a no-op that sets exit code to 0.
+
+        Args:
+            command: Shell command string to execute
+        """
+        import subprocess
+
+        cmd = str(command)
+        if not cmd:
+            self._zsystem_exit = 0
+            return
+
+        result = subprocess.run(cmd, shell=True)
+        self._zsystem_exit = result.returncode
+
+    def zsystem_exit(self) -> int:
+        """Return $ZSYSTEM - exit code from last ZSYSTEM command.
+
+        Spec 021 Phase 11 (T074): Accessor for _zsystem_exit field.
+
+        Returns:
+            Exit code from last ZSYSTEM command (0 if never executed)
+        """
+        return self._zsystem_exit
+
     # =========================================================================
     # Spec 011: Special Variable Accessor Methods
     # =========================================================================
@@ -2423,6 +2458,56 @@ class MUMPSRuntime:
             Process ID as string (matches MUMPS convention)
         """
         return self._zjob
+
+    def zsearch(self, pattern: str) -> str:
+        """Implement $ZSEARCH — file system search with iterator state.
+
+        Spec 021 Phase 14 (T093): First call with a non-empty pattern performs
+        glob.glob(pattern), stores results, returns first match.
+        Subsequent calls with empty string return next match.
+        Returns empty string when exhausted.
+
+        Args:
+            pattern: File glob pattern, or "" for next match
+
+        Returns:
+            Full path of matching file, or "" if no more matches
+        """
+        import glob
+
+        pat = str(pattern)
+        if pat:
+            # New search — perform glob and reset iterator
+            self._zsearch_results = sorted(glob.glob(pat))
+            self._zsearch_index = 0
+
+        if self._zsearch_index < len(self._zsearch_results):
+            result = self._zsearch_results[self._zsearch_index]
+            self._zsearch_index += 1
+            return result
+        return ""
+
+    def zro(self) -> str:
+        """Return $ZRO — routine search path.
+
+        Spec 021 Phase 14 (T095): Configurable routine search path.
+        Returns the configured routine search path.
+
+        Returns:
+            Routine search path string
+        """
+        return self._zro
+
+    def set_zro(self, value: str) -> None:
+        """Set $ZRO — routine search path.
+
+        Spec 021 Phase 14 (T095): Allows runtime configuration of
+        the routine search path.
+
+        Args:
+            value: New routine search path string
+        """
+        self._zro = str(value)
 
     def io(self) -> str:
         """Return current I/O device name ($IO).
@@ -2499,6 +2584,19 @@ class MUMPSRuntime:
             1 if inside extrinsic function ($$label), 0 otherwise
         """
         return 1 if self._in_extrinsic else 0
+
+    def estack(self) -> int:
+        """Return $ESTACK — relative error stack depth.
+
+        Spec 021 Phase 4 (T022): $ESTACK returns the difference between
+        the current $STACK level and the level where NEW $ESTACK was issued
+        (stored in _etrap_set_level). This gives a relative stack depth for
+        error handling contexts.
+
+        Returns:
+            Current stack depth minus the NEW $ESTACK anchor level
+        """
+        return len(self._stack_frames) - self._etrap_set_level
 
     def tlevel(self) -> int:
         """Return current transaction nesting level ($TLEVEL).
@@ -2855,14 +2953,15 @@ class MUMPSRuntime:
                 self._zposition = ""
 
             # T019: Freeze stack snapshot on first error (empty→non-empty $ECODE)
+            # T020: Only accumulate $ECODE on the first occurrence (not during unwind)
             was_empty = self._ecode == ""
 
-            # Map Python exception to MUMPS $ECODE (use M-code format)
-            self._append_ecode(mcode)
-            self._zerror = message
-
             if was_empty:
+                # First error: set $ECODE and $ZERROR, freeze snapshot
+                self._append_ecode(mcode)
+                self._zerror = message
                 self._freeze_stack_snapshot()
+            # If $ECODE already set, this is a re-fire during unwind — don't re-accumulate
 
             # T019/T035: Try $ETRAP first, then $ZTRAP fallback
             if self._etrap:
@@ -2885,12 +2984,27 @@ class MUMPSRuntime:
             self._in_error_handler = False
             self._error_nesting_depth -= 1
 
+    # Regex to detect GOTO syntax in $ZTRAP values:
+    # "G label", "G ^routine", "GOTO label", "GOTO ^routine"
+    _ZTRAP_GOTO_RE = __import__("re").compile(
+        r"^G(?:OTO)?\s+", __import__("re").IGNORECASE
+    )
+    # Regex to detect bare label reference (implicit GOTO):
+    # "ERR", "ERR^ROUTINE", "ERR+2^ROUTINE"
+    _ZTRAP_LABEL_RE = __import__("re").compile(
+        r"^[A-Za-z%][A-Za-z0-9]*(?:\+\d+)?(?:\^[A-Za-z%][A-Za-z0-9]*)?$"
+    )
+
     def _dispatch_ztrap(self, _scope: dict) -> None:
         """Dispatch $ZTRAP error handler (Phase 5 T031).
 
         Handles $ZTRAP with GOTO vs XECUTE semantics:
-        - If $ZTRAP starts with 'G ' or 'G(', use GOTO semantics
-        - Otherwise, use XECUTE semantics
+        - If $ZTRAP matches GOTO pattern (G/GOTO prefix or bare label ref),
+          use GOTO semantics — execute as GOTO command
+        - Otherwise, use XECUTE semantics — execute as inline code
+
+        GOTO patterns: "G ERR", "GOTO ERR^ROUTINE", "ERR", "ERR+2^RTN"
+        XECUTE patterns: 'W "error",!', 'S $EC="" Q'
 
         Args:
             _scope: Current variable scope
@@ -2902,12 +3016,16 @@ class MUMPSRuntime:
             return
 
         ztrap = self._ztrap.strip()
-        # Check for GOTO syntax: "G label" or "G ^routine"
-        if ztrap.startswith("G ") or ztrap.startswith("G("):
-            # GOTO semantics - extract target and execute as GOTO command
+
+        # Check for explicit GOTO syntax: "G label" or "GOTO label"
+        if self._ZTRAP_GOTO_RE.match(ztrap):
+            # GOTO semantics — execute the full GOTO command
             self.execute_mumps(ztrap, _scope)
+        elif self._ZTRAP_LABEL_RE.match(ztrap):
+            # Bare label reference — implicit GOTO semantics
+            self.execute_mumps(f"G {ztrap}", _scope)
         else:
-            # XECUTE semantics
+            # XECUTE semantics — execute as inline MUMPS code
             self.execute_mumps(ztrap, _scope)
 
     def _extract_error_code(self, ecode: str) -> str:
@@ -4352,6 +4470,101 @@ class MUMPSRuntime:
             else:
                 # Untimed lock - does NOT modify $TEST
                 self.globals.lock(base_name, subs, lock_type=effective_lockop)
+
+    # =========================================================================
+    # Transaction Restart Variable Snapshots (Spec 021 Phase 8)
+    # =========================================================================
+
+    def snapshot_locals(
+        self,
+        _scope: Dict[str, Any],
+        var_names: Optional[list[str]] = None,
+        all_vars: bool = False,
+    ) -> None:
+        """Snapshot local variables at TSTART time for potential TRESTART.
+
+        Stores deep copies of specified (or all) local variables. Per YDB
+        semantics, snapshots are discarded (not restored) on TCOMMIT and
+        TROLLBACK. Only TRESTART restores from snapshots.
+
+        Args:
+            _scope: Current scope dictionary containing local variables
+            var_names: List of MUMPS variable names to snapshot, or None
+            all_vars: If True, snapshot all locals (TSTART *)
+        """
+        snapshot = TransactionLocalSnapshot(
+            restart_vars=[NameTranslator.to_python(n) for n in var_names]
+            if var_names
+            else None,
+            restart_all=all_vars,
+            saved_test=self._test,
+        )
+
+        if all_vars:
+            # TSTART * — snapshot all local variables
+            for name, value in _scope.items():
+                snapshot.snapshot[name] = copy.deepcopy(value)
+        elif var_names:
+            # TSTART (X,Y) — snapshot named variables only
+            for mumps_name in var_names:
+                py_name = NameTranslator.to_python(mumps_name)
+                if py_name in _scope:
+                    snapshot.snapshot[py_name] = copy.deepcopy(_scope[py_name])
+                # If var is undefined at TSTART time, don't record it
+                # (TRESTART would KILL it)
+
+        self._transaction_snapshots.append(snapshot)
+
+    def discard_local_snapshot(self) -> None:
+        """Discard the most recent transaction local snapshot.
+
+        Called on TCOMMIT and TROLLBACK. Per YDB semantics, local variable
+        snapshots are NOT restored on TROLLBACK (only globals are restored).
+        Snapshots exist solely for TRESTART support.
+        """
+        if self._transaction_snapshots:
+            self._transaction_snapshots.pop()
+
+    def discard_all_local_snapshots(self) -> None:
+        """Discard all transaction local snapshots.
+
+        Called on TROLLBACK which resets $TLEVEL to 0, clearing all
+        nested transaction snapshots at once.
+        """
+        self._transaction_snapshots.clear()
+
+    def restore_locals_from_snapshot(self, _scope: Dict[str, Any]) -> None:
+        """Restore local variables from the most recent transaction snapshot.
+
+        Called on TRESTART. Pops the snapshot and restores each variable
+        to its saved state. Variables not in the snapshot are left unchanged.
+        Variables that were undefined at TSTART time are KILLed.
+
+        Args:
+            _scope: Current scope dictionary to restore into
+        """
+        if not self._transaction_snapshots:
+            return
+
+        snapshot = self._transaction_snapshots[-1]  # Don't pop — TRESTART re-uses
+
+        if snapshot.restart_all:
+            # Restore all — clear scope and repopulate from snapshot
+            _scope.clear()
+            for name, value in snapshot.snapshot.items():
+                _scope[name] = copy.deepcopy(value)
+        elif snapshot.restart_vars:
+            # Restore named variables only
+            for py_name in snapshot.restart_vars:
+                if py_name in snapshot.snapshot:
+                    _scope[py_name] = copy.deepcopy(snapshot.snapshot[py_name])
+                elif py_name in _scope:
+                    # Variable was undefined at TSTART — KILL it
+                    del _scope[py_name]
+
+        # Restore $TEST
+        if snapshot.saved_test is not None:
+            self._test = snapshot.saved_test
 
     def get_indirected_marray(
         self,
@@ -6460,8 +6673,8 @@ class MUMPSRuntime:
 
             # The generated code defines a function, we need to call it
             if "XECUTE" in namespace and callable(namespace["XECUTE"]):
-                # T007: Push XECUTE stack frame
-                self.push_stack_frame("XECUTE")
+                # T007: Push XECUTE stack frame with MUMPS source as mcode
+                self.push_stack_frame("XECUTE", mcode=mumps_code)
                 try:
                     result = namespace["XECUTE"](self, _scope=_scope)
                 finally:
