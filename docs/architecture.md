@@ -1,533 +1,156 @@
-# M2PY Architecture
+# System Architecture
 
-This document describes the high-level architecture of the M2PY MUMPS-to-Python transpiler.
-
-## Overview
-
-M2PY uses a multi-phase architecture to parse MUMPS source code and produce an Abstract Semantic Graph (ASG) that can be used for Python code generation.
+## Pipeline Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                                       Data Flow                                          │
-├─────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                          │
-│  MUMPS Source    textX Parser    Semantic      Analysis       Annotated      Python     │
-│  (.m file)   ──▶ + Custom    ──▶ Analyzer  ──▶ Passes     ──▶ ASG       ──▶ Code        │
-│                   Classes         (CST→ASG)                                              │
-│                                                                                          │
-│                      │               │              │              │           │         │
-│                      ▼               ▼              ▼              ▼           ▼         │
-│                   ┌──────┐      ┌──────┐      ┌──────────┐    ┌─────────┐  ┌──────┐     │
-│                   │ CST  │      │ ASG  │      │ Resolved │    │ Ready   │  │ .py  │     │
-│                   │      │      │      │      │ ASG      │    │ for     │  │ file │     │
-│                   │      │      │      │      │          │    │ codegen │  │      │     │
-│                   └──────┘      └──────┘      └──────────┘    └─────────┘  └──────┘     │
-│                                                                                          │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+MUMPS Source (.m)
+       │
+       ▼
+┌─────────────────────────────────────────────────────┐
+│  GRAMMAR (grammar/)                                 │
+│  Four textX grammar files define MUMPS syntax       │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  PARSER (parser/)                                   │
+│  Two-layer parsing: routine structure, then lines   │
+│  SemanticAnalyzer transforms textX CST → ASG nodes  │
+└──────────────────────┬──────────────────────────────┘
+                       │ MRoutine (ASG)
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  ANALYSIS (analysis/)                                │
+│  Multi-pass enrichment: references → GOTOs → FOR     │
+│  → quit context → variables → signatures             │
+└──────────────────────┬──────────────────────────────┘
+                       │ Enriched MRoutine
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  CODEGEN (codegen/)                                  │
+│  Strategy selection → Python source generation       │
+│  SIMPLE_FUNCTIONS or TRAMPOLINE pattern              │
+└──────────────────────┬──────────────────────────────┘
+                       │ Python source
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  RUNTIME (runtime/) + CORE (core/)                   │
+│  Execution support: MArray, MUMPSRuntime, globals,   │
+│  devices, helpers, shared value semantics            │
+└─────────────────────────────────────────────────────┘
 ```
 
-## Two-Layer Architecture
-
-M2PY uses a clean two-layer architecture:
-
-### Layer 1: Parsing (textX + Custom Classes)
-
-The textX parser reads MUMPS source and produces a **Concrete Syntax Tree (CST)** where grammar rules directly instantiate ASG-compatible custom classes.
-
-```python
-# Grammar rule (expressions.tx)
-NumericLiteral: value=/[0-9]+(\.[0-9]+)?/;
-
-# Custom class (textx_classes.py)
-class NumericLiteral(MLiteral):
-    def __init__(self, parent, value):
-        super().__init__(value=value, literal_type=LiteralType.DECIMAL)
-```
-
-**Key insight**: textX custom classes inherit from ASG dataclasses, so the parsed tree already contains ASG-typed nodes wrapped in grammar constructs.
-
-### Layer 2: Semantic Analysis (CST → ASG)
-
-The semantic analyzer transforms the CST into a clean ASG by:
-
-1. **Unwrapping textX wrappers** - Grammar nodes like `Expr`, `UnaryExpr` are unwrapped to their semantic equivalents
-2. **Setting parent relationships** - `_asg_parent` references are correctly established
-3. **Tracking variables** - Symbol tables are built during traversal
-4. **Resolving patterns** - Pattern expressions are compiled to regex
-
-## Directory Structure
-
-```
-src/m2py/
-├── __init__.py              # Public API exports
-├── grammar/                 # textX grammar files
-│   ├── mumps.tx             # Routine and label structure
-│   ├── line.tx              # Line content parsing
-│   ├── commands.tx          # Command-specific grammar
-│   └── expressions.tx       # Expression grammar
-├── asg/                     # ASG element definitions
-│   ├── elements.py          # Base classes (ASGElement, MRoutine, MLabel, MScope, MCall)
-│   ├── statements.py        # Statement types (MSetStatement, MForStatement, etc.)
-│   ├── expressions.py       # Expression types (MLiteral, MVariable, MBinaryOp, etc.)
-│   ├── enums.py             # Classification enums (ForLoopType, GotoType, etc.)
-│   └── type_helpers.py      # TypeGuard functions for pyright
-├── parser/                  # Parser implementation
-│   ├── parser.py            # MUMPSParser class
-│   ├── line_parser.py       # Line content parsing via textX
-│   ├── textx_classes.py     # Custom classes for textX instantiation
-│   └── exceptions.py        # MUMPSSyntaxError
-├── analysis/                # ASG analysis passes
-│   ├── semantic_analyzer.py # CST → ASG transformation
-│   ├── dead_code_analysis.py # Unreachable code detection
-│   ├── resolver.py          # Reference resolution
-│   ├── goto_analysis.py     # GOTO classification
-│   ├── for_analysis.py      # FOR loop analysis
-│   ├── variables.py         # Variable scope analysis
-│   └── pattern_compiler.py  # Pattern to regex compilation
-├── core/                    # Shared variable system components
-│   ├── __init__.py          # Public exports
-│   ├── names.py             # NameTranslator: MUMPS↔Python identifier translation
-│   ├── subscripts.py        # SubscriptCanonicalizer: subscript normalization
-│   ├── scope.py             # CurrentScope: unified variable access, VarRef dataclass
-│   ├── indirection.py       # IndirectionResolver: @-expression resolution
-│   └── exceptions.py        # VarExpectedError, LVUNDEFError
-├── codegen/                 # Python code generation
-│   ├── __init__.py          # Public API: generate_python()
-│   ├── helpers.py           # Runtime helpers: m_num(), m_truth(), m_compare()
-│   ├── names.py             # Re-exports from core/names.py (backward compatibility)
-│   ├── emitter.py           # CodeEmitter for indented output
-│   ├── routine.py           # RoutineGenerator for module structure
-│   ├── statements.py        # Statement code generation
-│   └── expressions.py       # Expression code generation
-└── runtime/                 # Execution runtime
-    └── __init__.py          # MUMPSRuntime, ExecutionResult
-```
-
-## Core Module
-
-The `core/` module provides shared variable system components used by both codegen and runtime.
-This ensures consistent behavior between compile-time variable references and runtime indirection.
-
-### Components
-
-| Component | Purpose |
-|-----------|---------|
-| `NameTranslator` | Bidirectional MUMPS ↔ Python identifier translation |
-| `SubscriptCanonicalizer` | Subscript value normalization per MUMPS rules |
-| `CurrentScope` | Unified variable access abstraction |
-| `IndirectionResolver` | Runtime @-expression resolution with context awareness |
-| `VarRef` | Variable reference dataclass (name, subscripts, is_global) |
-
-### Design Principle
-
-The single implementation shared by codegen and runtime prevents variable lookup discrepancies.
-For example, both paths use `SubscriptCanonicalizer` to ensure that `A(1)` and `A("1")` 
-reference the same node, while `A("01")` remains distinct.
-
-### Indirection Contexts
-
-The `IndirectionResolver` handles three distinct contexts:
+## Key Architectural Principle
 
-| Context | Example | Resolution |
-|---------|---------|------------|
-| NAME | `S @X=5` | Returns variable name for assignment |
-| VALUE | `W @X` | Returns variable value for output |
-| ARGUMENT | `I @A` | Evaluates expression (e.g., "1=0" → FALSE) |
+**ASG-first design**: Analysis passes enrich the ASG with semantic information (GOTO classifications, loop types, variable flow, scope strategies). Code generation only *reads* these pre-computed fields — it never recomputes semantic information. If codegen discovers a missing analysis result, the fix belongs in the analysis layer, not codegen.
 
-See: [codegen/variable_system.md](codegen/variable_system.md) for detailed usage.
+## Package Responsibilities
 
-## Processing Pipeline
+### `grammar/` — textX Grammar Files
 
-The parser processes MUMPS source in distinct phases:
+Four textX grammar files define MUMPS syntax:
 
-### Phase 1: Parsing
+| File | Scope |
+|------|-------|
+| `mumps.tx` | Routine structure: labels, lines, formal parameter lists |
+| `line.tx` | Line content: whitespace, command sequences, comments |
+| `commands.tx` | All MUMPS commands (~60) with case-insensitive matching |
+| `expressions.tx` | Expressions: operators, functions, variables, literals, indirection |
 
-```python
-parser = MUMPSParser()
-routine = parser.parse_file("routine.m")
-```
+MUMPS has **no operator precedence** — all binary operators evaluate strictly left-to-right. The expression grammar reflects this by chaining `UnaryExpr → BinaryOpTail*` without precedence levels.
 
-- textX parses source using the grammar in `mumps.tx`
-- Custom classes in `textx_classes.py` are instantiated for matching rules
-- Each line's content is parsed separately using `commands.tx`
-- Result: Raw ASG with labels, statements, and expressions
+### `parser/` — Two-Layer Parsing
 
-### Phase 2: Reference Resolution
+Parsing uses a two-layer architecture for error tolerance:
 
-```python
-parser.resolve_references(routine)
-```
+1. **Layer 1** (`mumps.tx` via textX): Parses routine structure — labels, formal parameters, and raw line content strings. Individual lines that fail to parse don't prevent the rest of the routine from being processed.
 
-- Links `MCall.target` to resolved `MLabel` objects
-- Populates back-references: `MLabel.callers`, `MLabel.goto_sources`
-- Marks external calls (`label^routine`) as unresolved
-- Marks indirect calls (`@expr`) as `INDIRECT_CALL`
+2. **Layer 2** (`line.tx`/`commands.tx`/`expressions.tx`): For each line's raw content, parses commands and expressions into textX CST nodes.
 
-See: [`src/m2py/analysis/resolver.py`](../src/m2py/analysis/resolver.py)
+After textX parsing, `SemanticAnalyzer.analyze_command()` transforms each textX CST command into a fully-typed ASG statement node (`MStatement` subclass). This is where textX wrapper nodes are unwrapped, expression trees are built, `MCall` references are created for DO/GOTO targets, and pattern matches are compiled to regex.
 
-### Phase 3: GOTO Classification
+Key classes:
+- `MUMPSParser` — orchestrates parsing and delegates to analysis functions
+- `SemanticAnalyzer` — CST-to-ASG transformation
+- `compile_mumps_line()` (`compiler.py`) — self-contained parse pipeline for XECUTE, so codegen doesn't import parser/analysis internals directly
 
-```python
-parser.classify_gotos(routine)
-```
+### `asg/` — Abstract Semantic Graph
 
-- Classifies each `MGotoStatement` by `GotoType`
-- Detects loop exits (single and multi-loop)
-- Identifies forward/backward jumps
-- Populates `exits_loops` for loop-exiting GOTOs
+Pure data model — Python dataclasses representing MUMPS program structure. No behavior beyond tree traversal helpers. See [asg-reference.md](asg-reference.md) for details.
 
-See: [`src/m2py/analysis/goto_analysis.py`](../src/m2py/analysis/goto_analysis.py)
+The ASG root is `MRoutine`, containing `MLabel` nodes, each with a `MScope` body of `MStatement` nodes. Expressions are `MExpr` subtypes. Cross-references (`MCall`) link GOTO/DO targets to their `MLabel` definitions.
 
-### Phase 4: FOR Loop Analysis
+### `analysis/` — Multi-Pass Analysis
 
-```python
-parser.analyze_for_loops(routine)
-```
+Six analysis passes run in sequence after parsing. Order matters — later passes depend on results from earlier ones:
 
-- Classifies loop type (`ForLoopType`: BOUNDED, OPEN_ENDED, etc.)
-- Detects infinite loops (`is_infinite`)
-- Identifies internal QUITs (`has_internal_quit`)
-- Detects loop variable modification (`loop_var_modified_in_body`)
+| Pass | Function | Enriches |
+|------|----------|----------|
+| 1. Reference resolution | `resolve_references()` | `MCall.target`, `MCall.is_resolved`, `MLabel.callers/goto_sources` |
+| 2. GOTO classification | `classify_gotos()` | `MGotoStatement.goto_type/codegen_pattern`, `MRoutine.needs_trampoline` |
+| 3. FOR analysis | `analyze_for_loops()` | `MForStatement.loop_type`, loop variable modification detection |
+| 4. QUIT context | `analyze_quit_context()` | `MQuitStatement.exits_for/exits_do_block` |
+| 5. Variable analysis | `analyze_variables()` | `MLabel.input_variables/output_variables`, scope strategy |
+| 6. Signature computation | `compute_signatures()` | `MLabel.signature` (FunctionSignature), `MRoutine.routine_state_vars` |
 
-See: [`src/m2py/analysis/for_analysis.py`](../src/m2py/analysis/for_analysis.py)
+Additional analysis:
+- `PatternCompiler` converts MUMPS pattern match syntax to Python regex during semantic analysis (pass 0, integrated into parsing)
+- Fallthrough detection identifies labels that flow into the next label without explicit exit
 
-### Phase 5: Variable Analysis
+### `codegen/` — Python Code Generation
 
-```python
-parser.analyze_variables(routine)
-```
+Translates the enriched ASG into executable Python. See [codegen.md](codegen.md) for full details.
 
-- Computes per-label variable sets: `variables_read`, `variables_written`, `variables_newed`
-- Computes input/output variables: `input_variables`, `output_variables`
-- Determines `scope_strategy` for code generation
-- Builds `FunctionSignature` for each label
+Two strategies are automatically selected based on ASG analysis flags:
 
-See: [`src/m2py/analysis/variables.py`](../src/m2py/analysis/variables.py)
+- **SIMPLE_FUNCTIONS**: Labels become plain Python functions. Variables live in a `_scope` dict. Used when there are no cross-label GOTOs or computed offsets.
+- **TRAMPOLINE**: Labels return `(next_label, state)` tuples dispatched by a `while` loop. A `RoutineState` dataclass carries variables across label boundaries. Prevents stack overflow for cyclic GOTO patterns.
 
-### Phase 6: Code Generation
+Key files: `routine.py` (module structure), `statements.py` (~6800 lines, all statement types), `expressions.py` (~2600 lines, all expression types), `var_access.py` (3-way variable access dispatch), `indirection.py` (@ expressions and XECUTE), `shared_state.py` (RoutineState generation).
 
-```python
-from m2py.codegen import generate_python
+### `runtime/` — Execution Support
 
-python_code = generate_python(source, routine_name="example", validate=True)
-```
+The runtime library imported by generated Python code. See [runtime.md](runtime.md) for full details.
 
-- Translates ASG to executable Python code
-- Generates module structure with imports and runtime initialization
-- Translates labels to Python functions with `global _test` declarations
-- Uses `NameTranslator` to convert MUMPS names to valid Python identifiers
-- Validates generated code with `ast.parse()` when `validate=True`
+- `MArray` — MUMPS hierarchical sparse arrays (each node has both a value AND children)
+- `MUMPSRuntime` — central runtime instance: I/O, global variables, indirection resolution, XECUTE compilation, error handling, stack frames, intrinsic special variables
+- `GlobalStorageBackend` — pluggable global storage (`InMemoryGlobalStorage` default, `SQLiteGlobalStorage` for cross-process JOB/LOCK)
+- Device layer — `PrincipalDevice` (stdin/stdout), `FileDevice`, `TCPDevice`
+- JOB subprocess support via `job_runner.py`
 
-See: [`src/m2py/codegen/`](../src/m2py/codegen/)
+### `core/` — Shared Foundation
 
-**Generated code structure:**
-```python
-from m2py.codegen.helpers import m_num, m_truth, m_compare
-from m2py.runtime import MUMPSRuntime
+Canonical implementations of MUMPS semantics shared identically by both compile-time codegen and runtime. This layer was created (spec 018–019) to break backward imports from runtime→codegen.
 
-_source_lines = ["LABEL ; Entry", " W 1", " Q"]
-_routine_name = "LABEL"
-_label_lines = {"LABEL": 0}
+| Module | Purpose |
+|--------|---------|
+| `values.py` | `m_str()`, `m_num()`, `m_truth()`, `m_compare()`, `mumps_canonical_str()` |
+| `names.py` | `NameTranslator` — bidirectional MUMPS↔Python name mapping |
+| `subscripts.py` | `SubscriptCanonicalizer` — canonical subscript forms per MUMPS spec |
+| `scope.py` | `CurrentScope` — unified variable access abstraction |
+| `indirection.py` | `IndirectionResolver` — runtime `@`-expression resolution |
+| `tokenizer.py` | `split_at_toplevel()` — delimiter splitting respecting nesting and quotes |
+| `parsing.py` | `parse_subscripted_name()` — parse `ARR(1,2)` to `('ARR', ['1', '2'])` |
+| `exceptions.py` | `LVUNDEFError` (M6), `VarExpectedError` |
 
-def LABEL(_rt, _scope=None, **_kwargs):
-    _scope = _scope if _scope is not None else {}
-    _rt._current_routine = _routine_name
-    _rt._current_source_lines = _source_lines
-    _rt._current_label_lines = _label_lines
-    _scope['X'] = 42  # Variables stored in _scope
-    _rt.write(_scope.get('X', ''))  # Variable reads from _scope
-    ...
+### `cli/` — Command-Line Interface
 
-if __name__ == "__main__":
-    _rt = MUMPSRuntime()
-    _scope = {}
-    LABEL(_rt, _scope)
-```
-
-### Cross-Routine Infrastructure
-
-External routine calls require coordinated code generation across multiple modules:
-
-**Import Generation:**
-```python
-# When transpiling: D ^ext2
-import ext2
-ext2.ext2(_rt, _scope)
-```
-
-Import statements are generated inline when external routine references are encountered:
-- `D ^ROUTINE` → generates `import ROUTINE`
-- `$$FUNC^ROUTINE` → generates `import ROUTINE`
-- `G ^ROUTINE` → generates `import ROUTINE` and `from m2py.runtime import GotoExternal`
-- `$TEXT(+N^ROUTINE)` → generates `module=__import__('routine')` inline
-
-**Module Caching:**
-
-Python's standard `sys.modules` dictionary automatically caches imported modules. No custom caching mechanism is needed:
-- First import loads the module
-- Subsequent imports use the cached version
-- Module initialization runs only once
-- All references share the same module instance
-
-**_scope Parameter:**
-
-All routine functions accept `_rt` and `_scope` parameters for runtime and cross-routine variable visibility:
-
-```python
-def MAIN(_rt, _scope=None, **_kwargs):
-    _scope = _scope if _scope is not None else {}
-    
-    _scope.setdefault('X', MArray()).value = 42
-    import helper
-    helper.SHOW(_rt, _scope=_scope)
-
-# helper.py
-def SHOW(_rt, _scope=None, **_kwargs):
-    _scope = _scope if _scope is not None else {}
-    _rt.write(str(_scope.get('X', MArray()).value))
-```
-
-Key design points:
-- `_rt` passed as first parameter to all functions
-- `_scope` shared across all external calls
-- Variables stored via `_scope.setdefault('varname', MArray()).value`
-- Variable reads use `_scope.get('varname', MArray()).value`
-- Entry points have `_scope=None` default for standalone execution
-- Internal and external calls pass `_rt` and `_scope` explicitly
-
-**$TEST Isolation:**
-
-External extrinsic functions save and restore `$TEST` to maintain caller state:
-
-```python
-def _call_extrinsic(func, *args, _rt=None, _scope=None):
-    """Call extrinsic function with $TEST isolation."""
-    saved_test = _rt._test
-    try:
-        return func(_rt, _scope, *args)
-    finally:
-        _rt._test = saved_test
-```
-
-This ensures extrinsic functions can use IF/pattern matching without affecting the caller's `$TEST` value.
-
-**GotoExternal Exception:**
-
-External GOTO uses exception-based control flow to unwind the stack:
-
-```python
-# G ERROR^handler
-import handler
-from m2py.runtime import GotoExternal
-raise GotoExternal(handler.ERROR, _rt, _scope)
-```
-
-The exception is caught at the entry point and the target function is called directly, simulating MUMPS's permanent control transfer semantics.
+Minimal placeholder. The primary CLI entry points are the utility scripts in `utils/`.
 
 ## Design Decisions
 
 ### Why textX?
 
-textX was chosen over alternatives for several reasons:
+The previous approach using YottaDB opcodes failed due to difficulty with sequential processing of compiler IR, constant folding, and complex control flow reconstruction. textX provides a declarative grammar-to-model transformation that directly produces structured ASG nodes, making the parser maintainable and the CST-to-ASG transformation straightforward.
 
-| Alternative | Why Not |
-|-------------|---------|
-| PLY/lex+yacc | Lower-level, requires separate lexer/parser, more boilerplate |
-| ANTLR | Java-centric, overkill for this scope |
-| pyparsing | Less declarative, harder to maintain grammar |
+### Why Trampoline over State Machine?
 
-textX provides:
-- Declarative grammar syntax
-- Automatic AST construction
-- Source position tracking (via `_tx_position`, which we convert to line/column)
-- Custom class integration for direct ASG instantiation
-- Forward reference resolution
+Both patterns were prototyped for cross-label GOTO handling (spec 006). The trampoline pattern was selected because:
+- Better testability — each label is an independent function
+- Better refactorability — labels can be extracted, inlined, or composed
+- Clearer control flow — the dispatch loop is a simple `while` with a dictionary lookup
+- The state machine approach had fewer lines but was harder to test in isolation
 
-### Why Multi-Phase Analysis?
+### Why a Shared `core/` Layer?
 
-MUMPS has complex semantics that cannot be fully analyzed in a single pass:
-
-1. **Forward references**: Labels can be called before they're defined
-2. **GOTO classification**: Requires knowing all label positions first
-3. **Variable analysis**: Requires knowing call targets for by-reference tracking
-4. **Transitive analysis**: Requires complete local analysis first
-
-The multi-phase approach follows **Constitution Principle III**: All references are resolved before code generation.
-
-### Analysis-First Principle
-
-Code generation follows a strict **analysis-first** principle: semantic properties are computed during
-analysis passes and stored as ASG fields, then codegen simply reads those fields. This design provides:
-
-1. **Clean layer separation**: Analysis computes semantics, codegen generates code
-2. **Reusable analysis**: The same ASG annotations can be used by linting, visualization, or other tools
-3. **Faster codegen**: No repeated ASG traversal during code generation
-4. **Easier testing**: Analysis and codegen can be tested independently
-
-**Validation**: The `validate_analysis_complete()` function verifies that required analysis passes have
-run before code generation begins. If analysis fields are missing, it raises `AnalysisNotCompleteError`
-with a message indicating which analysis pass needs to run.
-
-**Example flow**:
-```python
-# Analysis pass sets field
-stmt.loop_type = ForLoopType.BOUNDED  # analyze_for_loops()
-
-# Codegen reads field (never computes)
-if stmt.loop_type == ForLoopType.BOUNDED:
-    emit_for_range(stmt)
-```
-
-**Key ASG fields populated by analysis**:
-- `MForStatement.loop_type`, `.loop_var_modified_in_body`, `.has_internal_quit`, `.has_internal_goto`, `.is_infinite` → `analyze_for_loops()`
-- `MGotoStatement.goto_type`, `.exits_loops`, `.is_restructurable`, `.is_cross_label` → `classify_gotos()`
-- `MQuitStatement.exits_for`, `.exits_do_block` → `analyze_quit_context()`
-- `MLabel.signature` → `compute_signatures()`
-- `MRoutine.needs_trampoline`, `.routine_state_vars`, `.array_vars` → `classify_gotos()`, `compute_all_signatures()`
-
-**Direct attribute access**: ASG dataclass fields have default values (typically `False` or `None`).
-Codegen accesses these fields directly without `getattr()` fallbacks. If a field isn't populated,
-it retains its default, which is semantically correct (e.g., `has_internal_quit=False` by default).
-
-### Cross-Label Control Flow (Trampoline Pattern)
-
-When a routine contains cross-label GOTOs (`needs_trampoline=True`), codegen uses a trampoline pattern
-instead of direct function calls. This prevents Python stack overflow for cyclic GOTOs.
-
-**Key Components:**
-
-1. **RoutineState dataclass**: Carries variables across label boundaries
-   ```python
-   @dataclass
-   class RoutineState:
-       X: Any = None        # Simple variables
-       A: MArray = field(default_factory=MArray)  # Subscripted arrays
-   ```
-
-2. **Trampoline dispatcher**: Iterative `while` loop replaces recursive calls
-   ```python
-   _labels = {"TEST": TEST, "NEXT": NEXT}
-   label = "TEST"
-   state = RoutineState()
-   while label:
-       label, state = _labels[label](state)
-   ```
-
-3. **Label functions**: Return `(next_label, state)` tuple for cross-label jumps
-   ```python
-   def TEST(state: RoutineState) -> tuple[str | None, RoutineState]:
-       state.X = 1
-       return ("NEXT", state)  # Cross-label GOTO
-   ```
-
-**Strategy Selection**: `_select_goto_strategy()` in `codegen/__init__.py` chooses:
-- `SIMPLE_FUNCTIONS`: For routines with only intra-label GOTOs (no RoutineState needed)
-- `TRAMPOLINE`: For routines with any cross-label GOTOs (RoutineState + dispatcher)
-
-**MArray class**: Provides MUMPS array semantics where each node can have both a value
-and children. Located in `runtime/__init__.py`.
-
-See: [goto_handling.md](codegen/goto_handling.md) for detailed patterns.
-
-### Why Separate Grammar Files?
-
-The grammar is split into multiple files for maintainability:
-
-- `mumps.tx`: Overall routine structure (labels, lines)
-- `line.tx`: Line-level parsing (indentation, continuations)
-- `commands.tx`: Individual command syntax
-- `expressions.tx`: Expression parsing (operators, functions)
-
-This allows focused testing and easier evolution of individual parts.
-
-### Why Two-Phase Parsing?
-
-The parser uses a deliberate two-phase approach:
-
-1. **Phase 1 (Structure Parsing)**: `MUMPSParser` uses `mumps.tx` with `classes=[]`
-   to parse the overall routine structure—labels, line boundaries, and continuations.
-   No custom classes are registered at this phase because we only need the raw
-   structure, not command semantics.
-
-2. **Phase 2 (Line Parsing)**: `line_parser.py` uses `line.tx`/`commands.tx`
-   with the full set of custom classes to parse individual line content into
-   typed ASG nodes (commands, expressions, etc.).
-
-This separation provides several benefits:
-- **Isolation**: Structure parsing errors are separated from command parsing errors
-- **Flexibility**: Line content can be re-parsed or analyzed independently
-- **Testing**: Each phase can be tested in isolation
-- **Performance**: Structure parsing is lightweight; full parsing happens only where needed
-
-> **Note**: If you see `classes=[]` in `MUMPSParser.__init__`, this is intentional—
-> it's part of the two-phase architecture, not incomplete implementation.
-
-### Grammar to ASG Field Naming
-
-The textX grammar uses short attribute names for compactness, while ASG classes use
-descriptive names for clarity. The `SemanticAnalyzer` handles this mapping during
-CST→ASG transformation:
-
-| Grammar File | Grammar Attribute | ASG Class | ASG Field | Notes |
-|--------------|-------------------|-----------|-----------|-------|
-| `commands.tx` | `ForCommand.params` | `MForStatement` | `parameters` | FOR loop parameters |
-| `commands.tx` | `WriteCommand.args` | `MWriteStatement` | `arguments` | WRITE arguments |
-| `commands.tx` | `ReadCommand.args` | `MReadStatement` | `arguments` | READ arguments |
-| `expressions.tx` | `IntrinsicFunction.args` | `MIntrinsicFunction` | `arguments` | Function arguments |
-| `expressions.tx` | `ExtrinsicFunction.args` | `MExtrinsicFunction` | `arguments` | Function arguments |
-| `commands.tx` | `SetArgument` | - | `MAssignment` | Renamed for clarity |
-| `commands.tx` | `DoTarget` | - | `MCall` | Unified call reference |
-| `commands.tx` | `GotoTarget` | - | `MCall` | Unified call reference |
-
-This intentional separation keeps grammar files concise while making ASG code self-documenting.
-
-## Key Data Structures
-
-### MRoutine
-
-Top-level container for a MUMPS routine. Contains:
-- `labels`: List of `MLabel` entry points
-- `source_lines`: Original source for `$TEXT` support
-- `has_unstructured_goto`: Flag for complex control flow
-
-### MLabel
-
-Entry point within a routine. Contains:
-- `formal_list`: Parameter names
-- `body`: `MScope` with statements
-- `callers`: Back-references from DO statements
-- `goto_sources`: Back-references from GOTO statements
-- Variable analysis results (`input_variables`, `output_variables`, etc.)
-
-### MScope
-
-Container for statements. Provides:
-- `statements`: Ordered list of statements
-- `walk_statements()`: Recursive iterator over all statements
-
-### MStatement Subclasses
-
-20+ statement types covering all MUMPS commands:
-- Control flow: `MIfStatement`, `MForStatement`, `MGotoStatement`
-- Data: `MSetStatement`, `MWriteStatement`, `MReadStatement`
-- Subroutines: `MDoStatement`, `MQuitStatement`
-- Variables: `MNewStatement`, `MKillStatement`
-
-See: [asg/statements.md](asg/statements.md)
-
-### MExpr Subclasses
-
-15+ expression types:
-- `MLiteral`, `MVariable`, `MGlobal`
-- `MBinaryOp`, `MUnaryOp`
-- `MIntrinsicFunction`, `MExtrinsicFunction`
-- `MIndirection`, `MPatternMatch`
-
-See: [asg/expressions.md](asg/expressions.md)
-
-## References
-
-- **Specification**: [`specs/001-textx-semantic-graph/spec.md`](../specs/001-textx-semantic-graph/spec.md)
-- **Research Notes**: [`specs/001-textx-semantic-graph/research.md`](../specs/001-textx-semantic-graph/research.md)
-- **Data Model**: [`specs/001-textx-semantic-graph/data-model.md`](../specs/001-textx-semantic-graph/data-model.md)
-- **textX Reference**: [https://textx.github.io/textX/](https://textx.github.io/textX/)
+Early in development, the runtime module imported codegen utilities for name translation and subscript handling, creating a backward dependency (runtime→codegen). Spec 018–019 extracted these shared concerns into `core/`, establishing a clean dependency direction: both codegen and runtime depend on core, but never on each other.
