@@ -90,9 +90,16 @@ def test_set_multi_target(parser):
 
 ### Common pytest Commands
 
+Smart defaults in `tests/conftest.py` auto-inject `-n auto` (parallel) and
+`-m 'not slow'` (skip slow). These are overridden when you pass `-n` or `-m`
+explicitly — no `-o "addopts="` needed.
+
 ```bash
-# Run all tests
+# Run all tests (parallel + skip slow)
 uv run pytest
+
+# Sequential execution (for debugging / readable output)
+uv run pytest -n0
 
 # Run by category
 uv run pytest -m parser              # All parser-level tests
@@ -122,11 +129,12 @@ uv run pytest -m slow -v -s          # Only slow tests
 
 ### Full Test Suite
 
-Tests run in parallel by default using `pytest-xdist`:
+Tests run in parallel by default via smart defaults in `tests/conftest.py`:
 
 ```bash
-uv run pytest              # Parallel execution on all CPU cores
-uv run pytest -n 1         # Sequential execution (for debugging)
+uv run pytest              # Parallel on all CPU cores, skip slow
+uv run pytest -n0          # Sequential execution (for debugging)
+uv run pytest -n0 -m ''    # Sequential, all tests including slow
 ```
 
 ### Specific Test Files
@@ -144,7 +152,7 @@ uv run pytest -v tests/integration/test_ydb_suites.py
 
 ### Including Slow Tests
 
-The summary report test is marked as `@pytest.mark.slow` and skipped by default:
+Slow-marked tests are skipped by default. Passing `-m` overrides the default filter:
 
 ```bash
 uv run pytest                           # Skip slow tests (default)
@@ -465,16 +473,22 @@ parser = MUMPSParser(debug=True)  # Enable debug output
 
 ### pytest Configuration
 
-See `pyproject.toml` for pytest settings:
+Basic settings live in `pyproject.toml`:
 
 ```toml
 [tool.pytest.ini_options]
-addopts = "-n auto -m 'not slow'"  # Parallel, skip slow tests
 pythonpath = ["src"]
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-]
 ```
+
+Smart defaults are applied programmatically in `tests/conftest.py` via
+`pytest_configure()`. This replaces the old `addopts` approach and avoids
+the need for `-o "addopts="` overrides:
+
+| Default | Override | Effect |
+|---------|----------|--------|
+| `-n auto` | `-n0` | Run sequentially |
+| `-m 'not slow'` | `-m slow` | Run only slow tests |
+| (both) | `-n0 -m ''` | Sequential, all tests |
 
 ### Coverage Thresholds
 

@@ -32,6 +32,7 @@ def execute_mumps():
     """Fixture for parsing, generating, and executing MUMPS code.
 
     Returns a function that takes MUMPS source and returns execution result.
+    Respects the ``--backend`` CLI option for storage backend selection.
 
     Usage:
         def test_behavior(execute_mumps):
@@ -41,10 +42,10 @@ def execute_mumps():
     from m2py.codegen import generate_python
     from m2py.runtime import MUMPSRuntime
 
-    def _execute(source: str, *, capture_output: bool = True):
+    def _execute(source: str, *, capture_output: bool = True, global_storage=None):
         """Execute MUMPS source and return result."""
         python_code = generate_python(source)
-        runtime = MUMPSRuntime()
+        runtime = MUMPSRuntime(global_storage=global_storage)
         return runtime.execute(python_code, capture_output=capture_output)
 
     return _execute

@@ -14,7 +14,6 @@ from __future__ import annotations
 import copy
 import re
 import sys
-import threading
 import types
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -611,12 +610,6 @@ from m2py.runtime.helpers import (  # noqa: E402
     _mumps_collation_key,
     m_pattern_match,
     m_sorts_after,
-)
-
-# Spec 011 Phase 20: Import READ command helpers
-from m2py.runtime.helpers import (  # noqa: E402
-    m_read_char,
-    m_read_timeout,
 )
 
 
@@ -1386,6 +1379,7 @@ def run_with_goto_support(
     entry_func: Callable[..., Any],
     _rt: "MUMPSRuntime",
     _scope: Optional[Dict[str, Any]] = None,
+    _args: Optional[list[Any]] = None,
 ) -> Any:
     """Execute a routine entry point with external GOTO support.
 
@@ -1403,10 +1397,15 @@ def run_with_goto_support(
     Phase 21: Save/restore _in_extrinsic for $QUIT tracking. External DO calls
     are subroutine invocations, so $QUIT should be 0 inside them.
 
+    Spec 022 Phase 9 Gap 2 (T106): Added _args parameter to pass actual
+    arguments to JOB'd entry functions with formal parameter lists.
+
     Args:
         entry_func: The entry function to execute (routine's first label)
         _rt: MUMPSRuntime instance to pass to all routines
         _scope: Optional shared scope for cross-routine variable visibility
+        _args: Optional list of positional arguments to pass to entry_func
+               (used by JOB command to pass actuallist values)
 
     Returns:
         The return value of the final routine that QUITs normally
@@ -1425,9 +1424,10 @@ def run_with_goto_support(
 
     current_func = entry_func
     current_rt = _rt
+    extra_args: list[Any] = _args if _args else []
     while True:
         try:
-            _result = current_func(current_rt, _scope=_scope)
+            _result = current_func(current_rt, *extra_args, _scope=_scope)
             _rt._in_extrinsic = _saved_extrinsic
             return _result
         except GotoExternal as goto:
@@ -1511,6 +1511,10 @@ def run_with_goto_support(
                     entry_name = translate_name(module._routine_name.lower())
                 current_func = getattr(module, entry_name)
 
+            # Clear extra_args — JOB arguments only apply to the initial
+            # entry point, not to subsequent GOTO targets
+            extra_args = []
+
 
 @dataclass
 class ExecutionResult:
@@ -1565,6 +1569,11 @@ def get_global_storage(backend: str | None = None) -> GlobalStorageBackend:
 
     if backend == "inmemory":
         return InMemoryGlobalStorage()
+    elif backend == "sqlite":
+        from m2py.runtime.sqlite_storage import SQLiteGlobalStorage
+
+        db_path = os.environ.get("M2PY_SQLITE_DB_PATH", None)
+        return SQLiteGlobalStorage(db_path)
     elif backend == "yottadb":
         raise ImportError(
             "YottaDB backend requires the 'yottadb' package. "
@@ -1578,7 +1587,7 @@ def get_global_storage(backend: str | None = None) -> GlobalStorageBackend:
     else:
         raise ValueError(
             f"Unknown global storage backend: {backend!r}. "
-            "Valid options: 'inmemory', 'yottadb', 'iris'"
+            "Valid options: 'inmemory', 'sqlite', 'yottadb', 'iris'"
         )
 
 
@@ -1586,7 +1595,7 @@ class MUMPSRuntime:
     """Minimal runtime for executing generated MUMPS code.
 
     Provides output capture for WRITE statements and execution support
-    for generated Python code. Thread-unsafe - use one instance per thread.
+    for generated Python code. One instance per process.
 
     Spec 008: Extended for external call support with:
     - _current_routine: Current routine name for $TEXT(+0)
@@ -1618,7 +1627,6 @@ class MUMPSRuntime:
             max_error_nesting: Maximum error handler nesting depth before
                 raising RuntimeError (prevents infinite error loops). Default 20.
         """
-        self._output: list[str] = []
         # Spec 008: External call context tracking
         self._current_routine: Optional[str] = None
         self._current_source_lines: Optional[List[str]] = None
@@ -1628,25 +1636,34 @@ class MUMPSRuntime:
         self._globals: GlobalStorageBackend = (
             global_storage if global_storage is not None else get_global_storage()
         )
+        # Spec 022: Phase 4 — Device abstraction layer
+        # _output used by PrincipalDevice via back-reference
+        self._output: list[str] = []
+        # PrincipalDevice wraps stdout/stdin, accesses self._output via back-reference
+        from m2py.runtime.devices import PrincipalDevice
+
+        self._principal_device: PrincipalDevice = PrincipalDevice(runtime=self)
+        # Device table: maps device name → MUMPSDevice instance
+        self._device_table: dict[str, Any] = {"0": self._principal_device}
+        # Current active device for I/O dispatch
+        self._current_device: Any = self._principal_device
         # Spec 011: Column/line position tracking for $X, $Y
-        self._x: int = 0  # Current column position (0-based)
-        self._y: int = 0  # Current line position
+        # $X/$Y are tracked per-device on the device object.
+        # Accessors x() and y() delegate to _current_device.
         # Spec 021: Stack frame tracking for $STACK introspection
         # Replaces the simple _stack_level counter with metadata-rich frames
         self._stack_frames: list[StackFrame] = []
-        # Spec 011: I/O device tracking for $IO
-        self._io: str = "0"  # Default I/O device
-        # Spec 013: Device table for OPEN/CLOSE/USE
-        # Maps device name -> file object (or None for special devices)
-        self._devices: Dict[str, Any] = {"0": None}  # "0" is principal device
+        # Spec 011: $IO — tracked via _current_device.name
         # Spec 011: Extrinsic function context for $QUIT
         self._in_extrinsic: bool = False
         # Spec 013 Phase 11: $ZJOB - last JOB'd process ID
         self._zjob: str = "0"
+        # Spec 022: Track all JOB'd child processes for cleanup
+        self._job_processes: list = []
         # Spec 017 Phase 23: $PRINCIPAL - principal I/O device
         self._principal: str = "0"  # Initial value of $IO
-        # Spec 017 Phase 23: $KEY - last READ terminator
-        self._key: str = ""
+        # Spec 017 Phase 23: $KEY — tracked per-device on device.key
+        # Accessor key() delegates to _current_device.key
         # Spec 017 Phase 23: $SYSTEM - system identification (V,S format)
         self._system: str = "47,M2PY"
         # Spec 013 Phase 12: Error processing special variables
@@ -1688,8 +1705,8 @@ class MUMPSRuntime:
         # Spec 012: $TEST value for tracking IF/ELSE condition results
         # This is synced from/to generated code via execute_mumps
         self._test: bool = False
-        # JOB command support: virtual process ID for child threads
-        # None = use os.getpid() (main process). Set to a unique ID for child threads.
+        # JOB command support: virtual process ID for child processes
+        # None = use os.getpid() (main process). Set to a unique ID for child processes.
         self._job_id: int | None = None
         # Codegen callback for XECUTE: (code, routine_name) -> python_source
         # If None, auto-discovered from m2py.codegen when first needed.
@@ -1711,10 +1728,6 @@ class MUMPSRuntime:
                 "XECUTE requires codegen support. "
                 "Pass codegen_callback to MUMPSRuntime(), or ensure m2py.codegen is available."
             ) from None
-
-    # Class-level counter for assigning unique virtual PIDs to JOB'd threads
-    _job_counter = 0
-    _job_counter_lock = threading.Lock()
 
     @property
     def globals(self) -> GlobalStorageBackend:
@@ -1858,13 +1871,15 @@ class MUMPSRuntime:
     def write(self, value: Any) -> None:
         """Capture WRITE output and update $X/$Y position tracking.
 
+        Delegates to the current device's write method. The device handles
+        $X tracking internally. Output goes to the device's buffer.
+
         Args:
             value: Value to write (converted to string)
 
         Note:
             Does not add newlines automatically (MUMPS WRITE doesn't either).
             None values are treated as empty string (MUMPS undefined semantics).
-            Spec 011: Updates _x (column) and _y (line) for $X/$Y tracking.
             Spec 011 Phase 9: Uses m_format_output for canonical number formatting.
 
         YDB verified: When writing strings, $X is incremented only for printable
@@ -1876,15 +1891,7 @@ class MUMPSRuntime:
         else:
             s = m_format_output(value)
 
-        # Spec 011: Update $X position tracking only for printable chars
-        # YDB behavior: Only printable characters (ord >= 32) increment $X
-        # Control characters (0-31) are output but don't affect $X
-        # $Y is ONLY changed by format controls (write_newline, write_formfeed)
-        for char in s:
-            if ord(char) >= 32:
-                self._x += 1
-
-        self._output.append(s)
+        self._current_device.write(s)
 
     def write_newline(self) -> None:
         """Write newline with proper $X/$Y handling (W ! format control).
@@ -1897,9 +1904,7 @@ class MUMPSRuntime:
         This is different from writing a newline in a string, which does NOT
         affect $X or $Y position tracking.
         """
-        self._output.append("\n")
-        self._x = 0
-        self._y += 1
+        self._current_device.write_newline()
 
     def write_raw(self, s: str) -> None:
         """Write raw string to output without updating $X/$Y.
@@ -1911,7 +1916,7 @@ class MUMPSRuntime:
         Args:
             s: String to write directly to output
         """
-        self._output.append(s)
+        self._current_device.write_raw(s)
 
     def write_formfeed(self, debug: bool = False) -> None:
         """Write form feed with proper $X/$Y handling.
@@ -1924,20 +1929,7 @@ class MUMPSRuntime:
         Note: YDB does NOT output a trailing newline after form feed.
         The form feed character is output alone.
         """
-        if debug:
-            print(f"FORMFEED: $X={self._x}, $Y={self._y}")
-
-        # Conditional newline before form feed if $X > 0
-        if self._x > 0:
-            self._output.append("\n")
-            self._y += 1
-            if debug:
-                print(f"  Added conditional newline, $Y now {self._y}")
-
-        # Form feed character only (no trailing newline per YDB behavior)
-        self._output.append("\x0c")
-        self._x = 0
-        self._y = 0  # YDB resets $Y to 0 after form feed
+        self._current_device.write_formfeed(debug=debug)
 
     def write_tab(self, column: int) -> None:
         """Tab to specified column position (MUMPS ?n format control).
@@ -1950,9 +1942,7 @@ class MUMPSRuntime:
 
         Spec 011 (T008): Implements column positioning for WRITE ?n.
         """
-        if self._x < column:
-            spaces = column - self._x
-            self.write(" " * spaces)
+        self._current_device.write_tab(column)
 
     def get_output(self) -> str:
         """Return accumulated WRITE output.
@@ -1965,8 +1955,101 @@ class MUMPSRuntime:
     def clear(self) -> None:
         """Clear accumulated output and reset position tracking."""
         self._output.clear()
-        self._x = 0
-        self._y = 0
+        self._principal_device.x_pos = 0
+        self._principal_device.y_pos = 0
+
+    # =========================================================================
+    # Spec 022 Phase 9: Device-Routed READ Methods
+    # =========================================================================
+
+    def read_line(self) -> str:
+        """Read a full line from the current device (MUMPS READ X).
+
+        Delegates to self._current_device.read(). Updates $KEY on the
+        current device. Returns the data read (without terminator).
+
+        Spec 022 Gap 1 (T097): Routes READ through device layer so that
+        USE "file" followed by READ X reads from the file, not stdin.
+
+        Returns:
+            String data read from the current device.
+        """
+        data, key = self._current_device.read()
+        return data
+
+    def read_line_timeout(self, timeout: float) -> tuple[str, int]:
+        """Read from current device with timeout (MUMPS READ X:t).
+
+        Delegates to self._current_device.read(timeout=timeout).
+        Sets $TEST to 1 on success, 0 on timeout. Updates $KEY.
+
+        Args:
+            timeout: Timeout in seconds.
+
+        Returns:
+            Tuple of (data, test_flag) where test_flag is 1 if data
+            was read, 0 if timeout expired.
+        """
+        data, key = self._current_device.read(timeout=timeout)
+        if key:
+            # Read succeeded (got a terminator)
+            return (data, 1)
+        elif data:
+            # Got data but no terminator (e.g., EOF)
+            return (data, 1)
+        else:
+            # Timeout — no data, no key
+            return ("", 0)
+
+    def read_char(self) -> str:
+        """Read single character from current device (MUMPS READ *X).
+
+        Returns the ASCII value of the character as a string, matching
+        MUMPS semantics where R *X sets X to the ASCII code.
+
+        Returns:
+            ASCII code of read character as string, or "-1" on EOF.
+        """
+        char = self._current_device.read_char()
+        if char:
+            return str(ord(char))
+        return "-1"
+
+    def read_maxlen(self, maxlen: int) -> tuple[str, str]:
+        """Read up to maxlen characters from current device (MUMPS READ X#n).
+
+        Updates $KEY on the current device.
+
+        Args:
+            maxlen: Maximum number of characters to read.
+
+        Returns:
+            Tuple of (data, key) where key is the terminator character
+            or empty string if maxlen was reached.
+        """
+        data, key = self._current_device.read(maxlen=maxlen)
+        return (data, key)
+
+    def read_maxlen_timeout(self, maxlen: int, timeout: float) -> tuple[str, str, int]:
+        """Read up to maxlen chars with timeout (MUMPS READ X#n:t).
+
+        Updates $KEY and $TEST on current device.
+
+        Args:
+            maxlen: Maximum number of characters to read.
+            timeout: Timeout in seconds.
+
+        Returns:
+            Tuple of (data, key, test_flag) where test_flag is 1 if
+            read completed, 0 if timeout expired.
+        """
+        data, key = self._current_device.read(maxlen=maxlen, timeout=timeout)
+        if key:
+            return (data, key, 1)
+        elif data:
+            return (data, "", 1)
+        else:
+            return ("", "", 0)
 
     # =========================================================================
     # Spec 013 Phase 19: Z-Command Support Methods
@@ -2332,11 +2415,62 @@ class MUMPSRuntime:
                 # Devices
                 self.write(f"$IO={self._io}\n")
                 self.write("$PRINCIPAL=0\n")  # Principal device is always "0"
+            if code == "J" or code == "*":
+                # Job/process information
+                import os
+
+                self.write(f"$JOB={self.job()}\n")
+                self.write(f"$ZJOB={self._zjob}\n")
+                self.write(f"PID={os.getpid()}\n")
+                backend = type(self._globals).__name__
+                self.write(f"Global storage={backend}\n")
+            if code == "L" or code == "*":
+                # Lock information
+                self._zshow_locks()
             if code == "I" or code == "*":
                 # Intrinsic special variables
                 self.write(f"$HOROLOG={self.horolog()}\n")
                 self.write(f"$JOB={self.job()}\n")
                 self.write(f"$TLEVEL={self.tlevel()}\n")
+
+    def _zshow_locks(self) -> None:
+        """Display lock information for ZSHOW "L".
+
+        Spec 022 Phase 7 (T082): Queries SQLite lock table for current
+        process's locks. Format matches YDB:
+            MLG:n,MLT:0
+            LOCK ^name LEVEL=count
+            LOCK ^name(sub) LEVEL=count
+        """
+        import json
+
+        rows = self._globals.get_locks()
+
+        total_locks = len(rows)
+        self.write(f"MLG:{total_locks},MLT:0\n")
+
+        for name, json_subs, count in rows:
+            subs = json.loads(json_subs)
+            if subs:
+                sub_str = (
+                    "("
+                    + ",".join(
+                        f'"{s}"' if not self._is_mumps_number(s) else s for s in subs
+                    )
+                    + ")"
+                )
+                self.write(f"LOCK ^{name}{sub_str} LEVEL={count}\n")
+            else:
+                self.write(f"LOCK ^{name} LEVEL={count}\n")
+
+    @staticmethod
+    def _is_mumps_number(s: str) -> bool:
+        """Check if string is a MUMPS canonical number."""
+        try:
+            float(s)
+            return True
+        except ValueError:
+            return False
 
     def zlink(self, routine_name: str) -> None:
         """ZLINK - dynamically link/load a routine.
@@ -2436,7 +2570,7 @@ class MUMPSRuntime:
     def job(self) -> int:
         """Return process ID ($JOB).
 
-        Returns the virtual job ID for child threads spawned by JOB,
+        Returns the virtual job ID for child processes spawned by JOB,
         or the actual OS process ID for the main process.
 
         Returns:
@@ -2509,13 +2643,25 @@ class MUMPSRuntime:
         """
         self._zro = str(value)
 
+    @property
+    def _io(self) -> str:
+        """Current I/O device name, derived from _current_device.name."""
+        return self._current_device.name
+
+    @_io.setter
+    def _io(self, value: str) -> None:
+        """Setter kept for backward compat — ignored (device switch handles it)."""
+        pass
+
     def io(self) -> str:
         """Return current I/O device name ($IO).
+
+        Spec 022: Returns the name of the current device.
 
         Returns:
             Current I/O device identifier (default "0")
         """
-        return self._io
+        return self._current_device.name
 
     def principal(self) -> str:
         """Return principal I/O device name ($PRINCIPAL).
@@ -2532,6 +2678,7 @@ class MUMPSRuntime:
     def key(self) -> str:
         """Return last READ terminator ($KEY).
 
+        Spec 022: Returns $KEY from the current device.
         Spec 017 Phase 23: $KEY contains the control sequence that
         terminated the last READ command. Empty string if no READ
         has been executed or if READ timed out.
@@ -2539,7 +2686,7 @@ class MUMPSRuntime:
         Returns:
             Last READ terminator character(s), or empty string
         """
-        return self._key
+        return self._current_device.key
 
     def system(self) -> str:
         """Return system identification ($SYSTEM).
@@ -2556,18 +2703,33 @@ class MUMPSRuntime:
     def x(self) -> int:
         """Return current column position ($X).
 
+        Spec 022: Returns $X from the current device.
+
         Returns:
             Current column position (0-based)
         """
-        return self._x
+        return self._current_device.x_pos
 
     def y(self) -> int:
         """Return current line position ($Y).
 
+        Spec 022: Returns $Y from the current device.
+
         Returns:
             Current line position
         """
-        return self._y
+        return self._current_device.y_pos
+
+    def zeof(self) -> int:
+        """Return end-of-file indicator ($ZEOF).
+
+        Spec 022: Returns $ZEOF from the current device.
+        0 = not at EOF, 1 = at EOF.
+
+        Returns:
+            1 if current device is at EOF, 0 otherwise
+        """
+        return 1 if self._current_device.zeof else 0
 
     def stack_level(self) -> int:
         """Return current stack level ($STACK).
@@ -3279,68 +3441,178 @@ class MUMPSRuntime:
         """Open a device for I/O (MUMPS OPEN command).
 
         Spec 013 Phase 10 (T091): Opens a device/file for I/O operations.
+        Spec 022: Updated to use FileDevice/TCPDevice abstraction, device table,
+        per-device parameter parsing, DEVOPENFAIL, and timeout/$TEST.
+
+        MUMPS OPEN semantics (YDB-validated):
+        - File-not-found / permission errors → raise DEVOPENFAIL regardless of timeout.
+        - timeout is for devices that exist but are unavailable (e.g., locked by another
+          process). For files, OPEN is immediate — timeout always succeeds.
+        - If timeout is present: success → $TEST=1 (return True).
+        - If timeout absent: success → return True (does not affect $TEST).
+        - Re-opening an already-open device is a no-op (succeeds silently).
+
+        Device type detection:
+            - CONNECT param present → TCP device (name = "host:port")
+            - Otherwise → File device
+
+        Device parameter keywords (case-insensitive):
+            NEWVERSION / NEW / WN → mode "w"  (create/truncate)
+            READONLY / R          → mode "r"  (read-only)
+            APPEND / A            → mode "a"  (append)
+            WRITE / RW            → mode "r+" (read-write, file must exist)
+            STREAM                → disables record-size limits
+            RECORDSIZE=n          → sets record size limit
+            CONNECT               → TCP client connection
 
         Args:
-            device: Device name (file path or special device name)
-            parameters: Device parameters (NEWVERSION, READONLY, etc.)
+            device: Device name (file path or "host:port")
+            parameters: Device parameters (NEWVERSION, READONLY, CONNECT, etc.)
             timeout: Optional timeout in seconds
 
         Returns:
             True if device opened successfully, False if timeout
         """
+        import socket as socket_mod
+
+        from m2py.runtime.devices import FileDevice, TCPDevice
+        from m2py.runtime.exceptions import DeviceOpenFailError
+
         params = parameters or []
 
-        # Determine file mode from parameters
+        # If device is already open in device_table, re-OPEN is a no-op
+        if device in self._device_table:
+            return True
+
+        # Parse device parameters (case-insensitive)
+        upper_params = [p.upper() for p in params]
+
+        # ---- TCP device detection ----
+        if "CONNECT" in upper_params:
+            # Parse host:port from device name
+            try:
+                if ":" in device:
+                    host, port_str = device.rsplit(":", 1)
+                    port = int(port_str)
+                else:
+                    raise DeviceOpenFailError(
+                        device, "CONNECT requires host:port format"
+                    )
+            except ValueError:
+                raise DeviceOpenFailError(device, "invalid port number")
+
+            connect_timeout = timeout if timeout is not None else 10.0
+            try:
+                sock = socket_mod.create_connection(
+                    (host, port), timeout=connect_timeout
+                )
+                sock.settimeout(None)  # Reset to blocking after connect
+            except (socket_mod.timeout, TimeoutError):
+                if timeout is not None:
+                    return False  # $TEST=0
+                raise DeviceOpenFailError(device, "connection timed out")
+            except OSError as e:
+                if timeout is not None:
+                    return False  # $TEST=0
+                raise DeviceOpenFailError(device, str(e))
+
+            tcp_device = TCPDevice(device, sock)
+            self._device_table[device] = tcp_device
+            return True
+
+        # ---- File device ----
         mode = "r"  # Default read
-        if "NEWVERSION" in params or "NEW" in params:
+        if (
+            "NEWVERSION" in upper_params
+            or "NEW" in upper_params
+            or "WN" in upper_params
+        ):
             mode = "w"
-        elif "APPEND" in params:
+        elif "APPEND" in upper_params or "A" in upper_params:
             mode = "a"
-        elif "WRITE" in params:
+        elif "WRITE" in upper_params or "RW" in upper_params:
             mode = "r+"
+        elif "READONLY" in upper_params or "R" in upper_params:
+            mode = "r"
+
+        # Parse STREAM and RECORDSIZE
+        stream = "STREAM" in upper_params
+        record_size: int | None = None
+        for p in upper_params:
+            if p.startswith("RECORDSIZE="):
+                try:
+                    record_size = int(p.split("=", 1)[1])
+                except (ValueError, IndexError):
+                    pass
 
         try:
-            # Open the file (device)
-            self._devices[device] = open(device, mode)  # noqa: SIM115
-            return True
-        except (FileNotFoundError, PermissionError, OSError):
-            # For timeout operations, return False instead of raising
-            if timeout is not None:
-                return False
-            raise
+            file_obj = open(device, mode)  # noqa: SIM115
+        except FileNotFoundError:
+            # DEVOPENFAIL regardless of timeout (YDB-validated behavior)
+            raise DeviceOpenFailError(device, "file not found")
+        except PermissionError:
+            raise DeviceOpenFailError(device, "permission denied")
+        except OSError as e:
+            raise DeviceOpenFailError(device, str(e))
+
+        # Create FileDevice and register
+        file_device = FileDevice(device, file_obj, mode)
+        file_device._stream = stream
+        file_device._record_size = record_size
+        self._device_table[device] = file_device
+
+        return True
 
     def close_device(self, device: str, parameters: Optional[List[str]] = None) -> None:
         """Close a device (MUMPS CLOSE command).
 
         Spec 013 Phase 10 (T092): Closes a device/file.
+        Spec 022: Updated to use device abstraction layer.
+
+        Closing $PRINCIPAL is a no-op. Closing the current device reverts
+        to $PRINCIPAL. $IO is set to "0" after close.
 
         Args:
             device: Device name to close
             parameters: Optional close parameters (usually ignored)
         """
-        if device in self._devices and self._devices[device] is not None:
+        # $PRINCIPAL cannot be closed
+        if device == "0" or device == self._principal:
+            return
+
+        # Close via device_table (preferred path — FileDevice.close() closes file handle)
+        if device in self._device_table:
+            dev = self._device_table[device]
             try:
-                self._devices[device].close()
+                dev.close()
             except (OSError, IOError):
-                pass  # Ignore errors closing
-            del self._devices[device]
+                pass
+            del self._device_table[device]
 
         # If closing current device, switch back to principal device
-        if self._io == device:
-            self._io = "0"
+        if self._current_device.name == device:
+            self._current_device = self._principal_device
 
     def use_device(self, device: str, parameters: Optional[List[str]] = None) -> None:
         """Select current I/O device (MUMPS USE command).
 
         Spec 013 Phase 10 (T089): Switches the current I/O device.
+        Spec 022: Updated to use device abstraction layer.
+        USE 0 and USE $P switch back to $PRINCIPAL.
 
         Args:
             device: Device name to make current
             parameters: Optional device parameters
         """
-        # Device "0" is always available (principal device)
-        if device == "0" or device in self._devices:
-            self._io = device
+        # USE 0 or USE $PRINCIPAL → switch to principal device
+        if device == "0" or device == self._principal:
+            self._current_device = self._principal_device
+            return
+
+        # Check device_table first (new abstraction)
+        if device in self._device_table:
+            self._current_device = self._device_table[device]
+            return
 
     # =========================================================================
     # Spec 013 Phase 11: JOB Command Runtime Support
@@ -3356,9 +3628,11 @@ class MUMPSRuntime:
     ) -> bool:
         """Start a new process executing a routine (MUMPS JOB command).
 
-        Spawns a background thread with its own MUMPSRuntime instance
-        that shares the same global storage backend. The child thread
-        gets a unique virtual $J and independent local state.
+        Spec 022 Phase 9: Always uses subprocess.Popen for real process
+        isolation. Requires SQLiteGlobalStorage for cross-process global
+        sharing. If InMemoryGlobalStorage is in use, creates a temporary
+        SQLite database for the subprocess (globals won't be shared back
+        to the parent in this case).
 
         Timeout behavior per MUMPS spec 8.2.10:
         - No timeout: Returns True, does not affect $TEST
@@ -3368,97 +3642,219 @@ class MUMPSRuntime:
             label: Entry point label name
             routine: Routine name (None = current routine)
             args: Arguments to pass to the entry point
-            params: Process parameters (currently ignored)
+            params: Process parameters (e.g., output file redirection)
             timeout: Optional timeout in seconds
 
         Returns:
             bool: True if job started successfully, False on timeout/failure
         """
         import os
-        import sys
+        import tempfile as _tf
 
-        # Find the module
-        module = None
         routine_name = routine or self._current_routine
 
-        if routine_name:
-            module = sys.modules.get(routine_name)
-        if module is None and routine:
-            # Try with _pct_ prefix for % routines
-            module = sys.modules.get(f"_pct_{routine}")
+        # Check if we have SQLiteGlobalStorage (cross-process capable)
+        db_path = getattr(self._globals, "_db_path", None)
 
-        if module is None:
-            # Module not found - JOB fails silently in MUMPS
-            self._zjob = "0"
-            if timeout is not None:
-                return False
-            return True
+        if db_path is None:
+            # InMemoryGlobalStorage — create a temporary SQLite DB for the
+            # subprocess. The child process won't share in-memory globals,
+            # but this is the expected behavior: JOB requires cross-process
+            # storage. Callers needing JOB should use SQLiteGlobalStorage.
+            # Use workspace tmp/ if available, otherwise system temp
+            _ws_tmp = os.path.join(
+                os.path.dirname(
+                    os.path.dirname(
+                        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    )
+                ),
+                "tmp",
+            )
+            _tmp_dir = _ws_tmp if os.path.isdir(_ws_tmp) else None
+            fd, db_path = _tf.mkstemp(suffix=".db", dir=_tmp_dir)
+            os.close(fd)
 
-        # Find the entry function
-        entry_label = label or routine_name or ""
-        entry_func = getattr(module, entry_label, None)
-
-        if entry_func is None or not callable(entry_func):
-            self._zjob = "0"
-            if timeout is not None:
-                return False
-            return True
-
-        # Assign virtual PID for child
-        with MUMPSRuntime._job_counter_lock:
-            MUMPSRuntime._job_counter += 1
-            child_pid = os.getpid() + MUMPSRuntime._job_counter
-
-        # Create child runtime sharing globals but with own state
-        child_rt = MUMPSRuntime(
-            global_storage=self._globals, codegen_callback=self._codegen_callback
-        )
-        child_rt._job_id = child_pid
-
-        # JOBbed processes have no terminal - their principal device
-        # is different from the parent's. Per MUMPS spec, $PRINCIPAL
-        # is constant for the life of a process and equals initial $IO.
-        child_device = f"/dev/null/{child_pid}"
-        child_rt._principal = child_device
-        child_rt._io = child_device
-
-        # Set $ZJOB in parent to child's virtual PID
-        self._zjob = str(child_pid)
-
-        # Start child thread
-        thread = threading.Thread(
-            target=MUMPSRuntime._job_thread_wrapper,
-            args=(child_rt, entry_func),
-            daemon=True,
+        return self._start_job_subprocess(
+            label, routine_name, args, params, timeout, db_path
         )
 
-        thread.start()
+    def _start_job_subprocess(
+        self,
+        label: Optional[str],
+        routine_name: Optional[str],
+        args: List[Any],
+        params: Optional[List[str]],
+        timeout: Optional[float],
+        db_path: str,
+    ) -> bool:
+        """Start JOB as a real subprocess using job_runner.py.
 
-        if timeout is not None:
-            return True  # $TEST=1 (success)
-        return True
-
-    @staticmethod
-    def _job_thread_wrapper(
-        child_rt: "MUMPSRuntime",
-        entry_func: Callable[..., Any],
-    ) -> None:
-        """Thread wrapper for JOB'd routines.
-
-        Catches SystemExit (HALT) so it only terminates the child thread,
-        not the entire process. Releases all locks on exit.
+        Spec 022 Phase 4 (T060): Real process with independent locals
+        and shared globals via SQLite.
         """
-        from m2py.runtime import run_with_goto_support
+        import json
+        import os
+        import subprocess
+        import sys
+
+        if not routine_name:
+            self._zjob = "0"
+            return timeout is None or False
+
+        entry_label = label or routine_name
+
+        # Build subprocess command
+        cmd = [
+            sys.executable,
+            "-m",
+            "m2py.runtime.job_runner",
+            "--routine",
+            routine_name,
+            "--label",
+            entry_label,
+            "--db-path",
+            db_path,
+        ]
+
+        if args:
+            cmd.extend(["--args", json.dumps([str(a) for a in args])])
+
+        # Process parameters: check for INPUT/OUTPUT/ERROR file redirection
+        # YDB syntax: JOB LABEL:(INPUT="file":OUTPUT="file":ERROR="file")
+        # Params arrive as strings like "OUTPUT=filename" or just "filename"
+        # (legacy: bare string = OUTPUT)
+        output_file = None
+        input_file = None
+        error_file = None
+        if params:
+            for p in params:
+                if isinstance(p, str):
+                    p_upper = p.upper()
+                    if p_upper.startswith("OUTPUT="):
+                        output_file = p[7:]
+                    elif p_upper.startswith("INPUT="):
+                        input_file = p[6:]
+                    elif p_upper.startswith("ERROR="):
+                        error_file = p[6:]
+                    elif not output_file:
+                        # Legacy: bare string = output file
+                        output_file = p
+
+        if output_file:
+            cmd.extend(["--output", output_file])
+        if input_file:
+            cmd.extend(["--input", input_file])
+        if error_file:
+            cmd.extend(["--error", error_file])
 
         try:
-            run_with_goto_support(entry_func, child_rt, {})
-        except SystemExit:
-            pass  # HALT in child just terminates this thread
-        except Exception:
-            pass  # JOB'd routine errors shouldn't crash anything
-        finally:
-            # Release all locks held by this thread (MUMPS process cleanup)
-            child_rt._globals.unlock_all()
+            # Pass parent's sys.path as PYTHONPATH so child can find routines
+            env = os.environ.copy()
+            env["PYTHONPATH"] = os.pathsep.join(sys.path)
+
+            # Open I/O redirection files for Popen
+            # Spec 022 Phase 9 Gap 3 (T110): INPUT/OUTPUT/ERROR redirection
+            stdin_arg = subprocess.DEVNULL
+            stdout_arg = subprocess.DEVNULL
+            stderr_arg = subprocess.DEVNULL
+            opened_files: list = []
+
+            if input_file:
+                try:
+                    f_in = open(input_file, "r")
+                    stdin_arg = f_in
+                    opened_files.append(f_in)
+                except OSError:
+                    pass  # Fall back to DEVNULL
+
+            if output_file:
+                try:
+                    f_out = open(output_file, "w")
+                    stdout_arg = f_out
+                    opened_files.append(f_out)
+                except OSError:
+                    pass
+
+            if error_file:
+                try:
+                    f_err = open(error_file, "w")
+                    stderr_arg = f_err
+                    opened_files.append(f_err)
+                except OSError:
+                    pass
+
+            proc = subprocess.Popen(
+                cmd,
+                stdin=stdin_arg,
+                stdout=stdout_arg,
+                stderr=stderr_arg,
+                env=env,
+            )
+
+            # Close file handles in parent process — child has inherited them
+            for f in opened_files:
+                f.close()
+
+            # Set $ZJOB to child's real PID
+            self._zjob = str(proc.pid)
+            # Track child process for cleanup
+            self._job_processes.append(proc)
+
+            if timeout is not None:
+                # Poll for process start within timeout
+                import time
+
+                deadline = time.monotonic() + timeout
+                while time.monotonic() < deadline:
+                    rc = proc.poll()
+                    if rc is not None:
+                        # Process finished — check if it started successfully
+                        # Exit code 1 = import/label error in job_runner
+                        if rc != 0:
+                            self._zjob = "0"
+                            return False  # $TEST=0 — failed to start
+                        break
+                    time.sleep(0.01)
+                return True  # $TEST=1 — process started successfully
+
+            return True
+
+        except OSError:
+            self._zjob = "0"
+            if timeout is not None:
+                return False
+            return True
+
+    def kill_job_processes(self, timeout: float = 2.0) -> None:
+        """Kill all tracked JOB'd child processes.
+
+        Spec 022: Cleanup for test teardown. Terminates any running
+        child processes spawned by JOB commands, then reaps them.
+
+        Args:
+            timeout: Seconds to wait for graceful termination before SIGKILL.
+        """
+        for proc in self._job_processes:
+            if proc.poll() is None:
+                try:
+                    proc.terminate()
+                except OSError:
+                    pass
+        # Brief wait for graceful termination
+        import time
+
+        deadline = time.monotonic() + timeout
+        for proc in self._job_processes:
+            remaining = max(0, deadline - time.monotonic())
+            try:
+                proc.wait(timeout=remaining)
+            except Exception:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=1)
+                except OSError:
+                    pass
+        self._job_processes.clear()
 
     def get_data(self, name: str, _scope: Dict[str, Any]) -> int:
         """Get $DATA value for variable by name (indirection support).
@@ -6996,9 +7392,6 @@ __all__ = [
     # Note: Contains ([) and Follows (]) are inlined; only sorts-after needs runtime
     "m_sorts_after",
     "m_pattern_match",
-    # Spec 011 Phase 20: READ command helpers
-    "m_read_timeout",
-    "m_read_char",
     # Spec 012: Indirection & XECUTE
     "IndirectionError",
     "CallTarget",

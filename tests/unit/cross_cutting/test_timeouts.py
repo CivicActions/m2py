@@ -48,11 +48,11 @@ class TestTimeoutsCodegen:
         """READ with timeout assigns to $TEST (§8.2.17, FR-047).
 
         READ X:timeout generates code that assigns _test based on
-        success/timeout from m_read_timeout().
+        success/timeout from _rt.read_line_timeout().
         """
         code = generate_python("TEST R X:5 Q")
-        # Generated code should call m_read_timeout and set _test
-        assert "m_read_timeout" in code
+        # Generated code should call _rt.read_line_timeout and set _test
+        assert "_rt.read_line_timeout" in code
         assert "_test" in code
 
     def test_read_without_timeout_no_test(self, generate_python):
@@ -61,11 +61,11 @@ class TestTimeoutsCodegen:
         Per MUMPS spec: untimed READ does not set $TEST.
         """
         code = generate_python("TEST R X Q")
-        # Without timeout, should use input() not m_read_timeout
-        assert "input()" in code
+        # Without timeout, should use _rt.read_line() not _rt.read_line_timeout
+        assert "_rt.read_line()" in code
         # Should not have _test assignment from READ
-        input_lines = [line for line in code.split("\n") if "input()" in line]
-        for line in input_lines:
+        read_lines = [line for line in code.split("\n") if "_rt.read_line()" in line]
+        for line in read_lines:
             assert "_test" not in line
 
     def test_lock_timeout_sets_test_true(self, execute_mumps):

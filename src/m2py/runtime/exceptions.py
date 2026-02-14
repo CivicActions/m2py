@@ -45,3 +45,54 @@ class MRuntimeError(Exception):
         if self.message:
             return f"MRuntimeError({self.code!r}, {self.message!r})"
         return f"MRuntimeError({self.code!r})"
+
+
+class DeviceError(MRuntimeError):
+    """Base class for device-related runtime errors.
+
+    Raised when I/O device operations fail. Subclasses provide
+    specific error codes for different failure modes.
+
+    Spec 022: Phase 4 — Large Architecture (F-02)
+    """
+
+    def __init__(self, code: str, message: str = "") -> None:
+        super().__init__(code, message)
+
+
+class DeviceNotOpenError(DeviceError):
+    """Raised when USE or READ/WRITE targets a device that is not open.
+
+    MUMPS error code: DEVNOTOPEN
+    Corresponds to YottaDB %SYSTEM-E-DEVNOTOPEN error.
+
+    Example:
+        USE "nonexistent.txt"  ; raises DeviceNotOpenError
+    """
+
+    def __init__(self, device_name: str) -> None:
+        super().__init__("DEVNOTOPEN", f"Device not open: {device_name}")
+        self.device_name = device_name
+
+
+class DeviceOpenFailError(DeviceError):
+    """Raised when OPEN fails to open a device.
+
+    MUMPS error code: DEVOPENFAIL
+    Corresponds to YottaDB %SYSTEM-E-DEVOPENFAIL error.
+
+    This is raised for errors like file-not-found or permission denied.
+    Note: This error is raised regardless of whether a timeout was
+    specified on the OPEN command (FR-022).
+
+    Example:
+        OPEN "/nonexistent/path.txt"  ; raises DeviceOpenFailError
+    """
+
+    def __init__(self, device_name: str, reason: str = "") -> None:
+        message = f"Cannot open device: {device_name}"
+        if reason:
+            message += f" ({reason})"
+        super().__init__("DEVOPENFAIL", message)
+        self.device_name = device_name
+        self.reason = reason

@@ -18,6 +18,7 @@ from m2py.asg.enums import (
 )
 from m2py.asg.expressions import (
     MActualParameter,
+    MBinaryOp,
     MExpr,
     MFormatControl,
     MIndirection,
@@ -5192,9 +5193,18 @@ def _generate_read(stmt: MReadStatement, ctx: "GeneratorContext") -> None:
 def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
     """Generate Python input for a single READ target.
 
-    Handles basic reads, timeout reads, char reads, and indirection targets.
-    For SIMPLE_FUNCTIONS strategy, stores into _scope dictionary.
-    For indirection targets, uses _rt.set_var() for runtime name resolution.
+    Routes READ through the device layer via MUMPSRuntime methods:
+    - read_line() for basic READ X
+    - read_line_timeout(t) for READ X:t
+    - read_char() for READ *X
+    - read_maxlen(n) for READ X#n
+    - read_maxlen_timeout(n, t) for READ X#n:t
+
+    This ensures that after USE "file", READ X reads from the file device,
+    not from stdin directly.
+
+    Spec 022 Phase 9 Gap 1 (T102): Updated to emit _rt.read_* calls instead
+    of bare input() / standalone helper functions.
 
     Args:
         target: MReadTarget with variable and optional timeout
@@ -5218,37 +5228,39 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
             maxlen_expr = generate_expr(target.fixed_length, ctx)
             timeout_expr = generate_expr(target.timeout, ctx)
             ctx.emitter.line(
-                f"_read_val, _read_key, _test = m_read_maxlen_timeout("
+                f"_read_val, _read_key, _test = _rt.read_maxlen_timeout("
                 f"int({maxlen_expr}), {timeout_expr})"
             )
             ctx.emitter.line("_rt._test = _test")
-            ctx.emitter.line("_rt._key = _read_key")
+            ctx.emitter.line("_rt._current_device.key = _read_key")
             set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
             ctx.emitter.line(set_stmt)
         elif target.fixed_length is not None:
             # R @A#n — maxlen with indirection
             maxlen_expr = generate_expr(target.fixed_length, ctx)
             ctx.emitter.line(
-                f"_read_val, _read_key = m_read_maxlen(int({maxlen_expr}))"
+                f"_read_val, _read_key = _rt.read_maxlen(int({maxlen_expr}))"
             )
-            ctx.emitter.line("_rt._key = _read_key")
+            ctx.emitter.line("_rt._current_device.key = _read_key")
             set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
             ctx.emitter.line(set_stmt)
         elif target.timeout is not None:
             # Timeout read with indirection: R @A:n
             timeout_expr = generate_expr(target.timeout, ctx)
-            ctx.emitter.line(f"_read_val, _test = m_read_timeout({timeout_expr})")
+            ctx.emitter.line(
+                f"_read_val, _test = _rt.read_line_timeout({timeout_expr})"
+            )
             ctx.emitter.line("_rt._test = _test")
             set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
             ctx.emitter.line(set_stmt)
         elif target.is_char_read:
             # Single character read with indirection: R *@A
-            ctx.emitter.line("_read_val = m_read_char()")
+            ctx.emitter.line("_read_val = _rt.read_char()")
             set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
             ctx.emitter.line(set_stmt)
         else:
             # Basic read with indirection: R @A
-            ctx.emitter.line("_read_val = input()")
+            ctx.emitter.line("_read_val = _rt.read_line()")
             set_stmt = generate_name_indirection_write(ind_var, "_read_val", ctx)
             ctx.emitter.line(set_stmt)
         return
@@ -5274,53 +5286,55 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         timeout_expr = generate_expr(target.timeout, ctx)
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             ctx.emitter.line(
-                f"_read_val, _read_key, _test = m_read_maxlen_timeout("
+                f"_read_val, _read_key, _test = _rt.read_maxlen_timeout("
                 f"int({maxlen_expr}), {timeout_expr})"
             )
             ctx.emitter.line("_rt._test = _test")
-            ctx.emitter.line("_rt._key = _read_key")
+            ctx.emitter.line("_rt._current_device.key = _read_key")
             ctx.emitter.line(f"{storage_target} = _read_val")
         else:
             ctx.emitter.line(
-                f"{storage_target}, _read_key, _test = m_read_maxlen_timeout("
+                f"{storage_target}, _read_key, _test = _rt.read_maxlen_timeout("
                 f"int({maxlen_expr}), {timeout_expr})"
             )
             ctx.emitter.line("_rt._test = _test")
-            ctx.emitter.line("_rt._key = _read_key")
+            ctx.emitter.line("_rt._current_device.key = _read_key")
     elif target.fixed_length is not None:
         # R X#n — maxlen read
         maxlen_expr = generate_expr(target.fixed_length, ctx)
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             ctx.emitter.line(
-                f"_read_val, _read_key = m_read_maxlen(int({maxlen_expr}))"
+                f"_read_val, _read_key = _rt.read_maxlen(int({maxlen_expr}))"
             )
-            ctx.emitter.line("_rt._key = _read_key")
+            ctx.emitter.line("_rt._current_device.key = _read_key")
             ctx.emitter.line(f"{storage_target} = _read_val")
         else:
             ctx.emitter.line(
-                f"{storage_target}, _read_key = m_read_maxlen(int({maxlen_expr}))"
+                f"{storage_target}, _read_key = _rt.read_maxlen(int({maxlen_expr}))"
             )
-            ctx.emitter.line("_rt._key = _read_key")
+            ctx.emitter.line("_rt._current_device.key = _read_key")
     elif target.timeout is not None:
         # Timeout read: R X:n
         timeout_expr = generate_expr(target.timeout, ctx)
-        # Use runtime helper for timeout read - returns (value, test_flag)
+        # Use runtime method for timeout read - returns (value, test_flag)
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             # Need to unpack properly for scope storage
-            ctx.emitter.line(f"_read_val, _test = m_read_timeout({timeout_expr})")
+            ctx.emitter.line(
+                f"_read_val, _test = _rt.read_line_timeout({timeout_expr})"
+            )
             ctx.emitter.line("_rt._test = _test")
             ctx.emitter.line(f"{storage_target} = _read_val")
         else:
             ctx.emitter.line(
-                f"{storage_target}, _test = m_read_timeout({timeout_expr})"
+                f"{storage_target}, _test = _rt.read_line_timeout({timeout_expr})"
             )
             ctx.emitter.line("_rt._test = _test")
     elif target.is_char_read:
         # Single character read: R *X
-        ctx.emitter.line(f"{storage_target} = m_read_char()")
+        ctx.emitter.line(f"{storage_target} = _rt.read_char()")
     else:
         # Basic read: R X
-        ctx.emitter.line(f"{storage_target} = input()")
+        ctx.emitter.line(f"{storage_target} = _rt.read_line()")
 
 
 # =============================================================================
@@ -6220,6 +6234,43 @@ def _generate_xecute_args_with_postconds(
                 ctx.emitter.line("_test = _rt._test")
 
 
+def _generate_job_process_params(
+    job_target: "MJobTarget", ctx: "GeneratorContext"
+) -> str:
+    """Generate JOB process parameters as a list of KEY=VALUE strings.
+
+    MUMPS JOB process parameters use keyword=value syntax:
+        JOB ^RTN:(output="file":error="errfile")
+
+    These are NOT comparisons — they are I/O redirection directives.
+    The grammar parses them as Expr nodes, so `output="file"` becomes
+    MBinaryOp(operator="=", left=MVariable(name="output"), right=MLiteral("file")).
+
+    The runtime expects strings like "OUTPUT=file", "INPUT=file", "ERROR=file".
+    """
+    if not job_target.processparameters:
+        return "None"
+
+    parts: list[str] = []
+    for param in job_target.processparameters:
+        if (
+            isinstance(param, MBinaryOp)
+            and param.operator == "="
+            and isinstance(param.left, MVariable)
+            and not param.left.subscripts
+        ):
+            # keyword=value process parameter: generate "KEYWORD=" + str(value)
+            keyword = param.left.name.upper()
+            assert param.right is not None  # binary op with '=' always has rhs
+            value_expr = generate_expr(param.right, ctx)
+            parts.append(f'"{keyword}=" + str({value_expr})')
+        else:
+            # Fallback: treat as generic expression
+            parts.append(generate_expr(param, ctx))
+
+    return f"[{', '.join(parts)}]"
+
+
 def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for JOB command.
 
@@ -6273,11 +6324,7 @@ def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
         args_str = f"[{', '.join(args_parts)}]" if args_parts else "[]"
 
         # Generate process parameters if any
-        params_parts = []
-        for param in job_target.processparameters:
-            param_expr = generate_expr(param, ctx)
-            params_parts.append(param_expr)
-        params_str = f"[{', '.join(params_parts)}]" if params_parts else "None"
+        params_str = _generate_job_process_params(job_target, ctx)
 
         # Generate timeout expression
         has_timeout = job_target.timeout is not None
@@ -6375,11 +6422,7 @@ def _generate_indirect_job(job_target: "MJobTarget", ctx: "GeneratorContext") ->
     args_str = f"[{', '.join(args_parts)}]" if args_parts else "[]"
 
     # Generate process parameters if any
-    params_parts = []
-    for param in job_target.processparameters:
-        param_expr = generate_expr(param, ctx)
-        params_parts.append(param_expr)
-    params_str = f"[{', '.join(params_parts)}]" if params_parts else "None"
+    params_str = _generate_job_process_params(job_target, ctx)
 
     # Generate timeout expression
     has_timeout = job_target.timeout is not None

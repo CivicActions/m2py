@@ -314,7 +314,7 @@ class RoutineGenerator:
         # Spec 021 Phase 10: Import m_zdate for $ZDATE function
         # Note: Contains ([) and follows (]) are inlined as Python expressions
         ctx.emitter.line(
-            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_increment, m_increment_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, m_translate, NewScopeManager, m_read_timeout, m_read_char, m_read_maxlen, m_read_maxlen_timeout, m_var_value, _format_subscript, unwind_new_stack, m_zdate, m_zmessage"
+            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_increment, m_increment_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, m_translate, NewScopeManager, m_var_value, _format_subscript, unwind_new_stack, m_zdate, m_zmessage"
         )
         # Spec 010: Import $RANDOM helper (Phase 8)
         ctx.emitter.line("from m2py.codegen.expressions import _m_random_checked")
