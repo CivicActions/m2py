@@ -84,15 +84,17 @@ class TestCheckUnsupportedGotos:
         with pytest.raises(UnsupportedFeatureError, match="UNRESOLVED GOTO"):
             _check_unsupported_gotos(routine)
 
-    def test_unresolved_goto_error_mentions_spec_012(self):
-        """T045a: Error message references Spec 012."""
+    def test_unresolved_goto_error_message(self):
+        """Error message for UNRESOLVED GOTO."""
         routine = self._create_routine_with_goto(GotoType.UNRESOLVED)
 
-        with pytest.raises(UnsupportedFeatureError, match="Spec 012"):
+        with pytest.raises(
+            UnsupportedFeatureError, match="UNRESOLVED GOTO not supported"
+        ):
             _check_unsupported_gotos(routine)
 
     def test_external_goto_raises_error(self):
-        """T045b: EXTERNAL GOTO now supported (Spec 008 Phase 6).
+        """EXTERNAL GOTO is supported and does not raise.
 
         Pattern: goto_type=EXTERNAL → no error, generates GotoExternal raise
         """
@@ -102,7 +104,7 @@ class TestCheckUnsupportedGotos:
         _check_unsupported_gotos(routine)
 
     def test_external_goto_no_longer_blocked(self):
-        """Spec 008 Phase 6: EXTERNAL GOTO is now supported."""
+        """EXTERNAL GOTO is supported and does not raise."""
         routine = self._create_routine_with_goto(GotoType.EXTERNAL)
 
         # Should NOT raise

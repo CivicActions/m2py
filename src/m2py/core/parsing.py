@@ -1,13 +1,10 @@
 """String-level parsing utilities for MUMPS name/subscript expressions.
 
-This module provides the single source of truth for parsing subscripted
-MUMPS variable names (e.g. ``ARR(1,"A,B",3)``) and canonicalizing
-raw subscript strings to their Python storage types.
+This module provides canonical parsing of subscripted MUMPS variable
+names (e.g. ``ARR(1,"A,B",3)``) and canonicalization of raw subscript
+strings to their Python storage types.
 
-Replaces three independent ``_parse_subscripted_name`` implementations
-in runtime/__init__.py, core/scope.py, and core/indirection.py.
-
-Constitution III: Strict layer separation — core/ has no codegen imports.
+This module has no codegen dependencies.
 """
 
 from __future__ import annotations

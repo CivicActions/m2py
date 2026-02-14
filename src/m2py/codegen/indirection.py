@@ -1,6 +1,6 @@
 """Code generation for indirection expressions and XECUTE command.
 
-Spec 012: This module provides code generation support for:
+This module provides code generation support for:
 - Name indirection (@VAR): Dynamic variable access
 - Subscript indirection (@VAR@(subs)): Dynamic variable with subscripts
 - Multi-level indirection (@@VAR, @@@VAR): Chained indirection
@@ -13,9 +13,6 @@ Code generation strategy:
 - Name indirection: Call unified runtime methods (set_indirected, get_indirected,
   kill_indirected, resolve_for_target) which use IndirectionResolver internally
 - Pattern matching: Handled inline in expressions.py via m_pattern_match()
-
-Spec 018-unified-variable-system: All indirection handling now uses the unified
-variable system. Legacy functions have been removed or migrated.
 """
 
 from __future__ import annotations
@@ -157,7 +154,6 @@ def _count_indirection_levels_with_subscripts(
 def _generate_inner_name_expr(inner_expr: "MExpr", ctx: "GeneratorContext") -> str:
     """Generate Python expression that evaluates to the indirection target variable name.
 
-    Feature: 018-unified-variable-system
     This helper is used by commands that need to resolve an indirection to a variable
     name at runtime (e.g., NEW @A).
 
@@ -344,31 +340,26 @@ def generate_argument_indirection(
 ) -> str:
     """Generate Python code for argument-level indirection using unified components.
 
-    Feature: 018-unified-variable-system (T049, T050, T128-T130)
-    This is the FIX for Challenge 6 bug.
-
-    Argument indirection evaluates the resolved value AS AN EXPRESSION,
-    NOT as a variable name to look up. For example:
+    Argument indirection evaluates the resolved value as an expression,
+    not as a variable name to look up. For example:
     - I @A where A="1=0" → evaluates "1=0" → 0 (FALSE)
     - I @A where A="X>5" and X=10 → evaluates "X>5" → 1 (TRUE)
 
-    The OLD behavior passed the string "1=0" to m_truth(), which
-    converted to 1 (TRUE) because it starts with "1".
-
-    The CORRECT behavior uses _rt.evaluate_argument_indirection() which:
+    Uses _rt.evaluate_argument_indirection() which:
     1. Resolves the indirection through all levels
     2. Parses the final string as a MUMPS expression
     3. Evaluates the expression with access to current scope
     4. Returns the evaluated result (not the string)
 
-    T052: Empty string handling depends on context:
+    Empty string handling depends on context:
     - IF condition (if_condition=True): Empty string → 1 (TRUE)
     - Other contexts (if_condition=False): Empty string → VarExpectedError
 
     Args:
         expr: MIndirection ASG node with indirection_type=ARGUMENT
         ctx: Generator context
-        if_condition: If True, pass treat_empty_as_truthy=True for T052 behavior
+        if_condition: If True, pass treat_empty_as_truthy=True for
+            empty-string-as-truthy behavior
 
     Returns:
         Python expression string that calls _rt.evaluate_argument_indirection()
@@ -439,8 +430,8 @@ def generate_argument_indirection(
 
     # Build per-level subscripts argument if needed
     if all_subscripts and any(all_subscripts):
-        # Include ALL indirection subscripts from @X@(subs) syntax
-        # Note: inner_expr.subscripts (variable subscripts like X(1,2)) are
+        # Include ALL indirection subscripts from @X@(subs) syntax.
+        # inner_expr.subscripts (variable subscripts like X(1,2)) are
         # already included in source_expr; all_subscripts contains only
         # indirection subscripts (after the @).
         per_level_subs = []
@@ -457,7 +448,7 @@ def generate_argument_indirection(
         subs_arg = ""
 
     # Generate call to unified evaluate_argument_indirection
-    # T052: For IF conditions, pass treat_empty_as_truthy=True so empty strings → TRUE
+    # For IF conditions, pass treat_empty_as_truthy=True so empty strings → TRUE
     empty_flag = ", treat_empty_as_truthy=True" if if_condition else ""
     return f"_rt.evaluate_argument_indirection({source_expr}, {scope_expr}, levels={levels}{subs_arg}{empty_flag})"
 
@@ -1124,7 +1115,6 @@ def generate_lock_indirection(
 ) -> str:
     """Generate Python code for an indirected LOCK target.
 
-    Spec 021-correctness-features Phase 6 (T038):
     Follows the same pattern as other indirection generators.
 
     Args:

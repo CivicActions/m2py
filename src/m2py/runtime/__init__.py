@@ -1,12 +1,9 @@
 """Minimal runtime for executing generated MUMPS code.
 
 Provides output capture and execution support for generated Python code.
-Includes MArray class for MUMPS array semantics.
-
-Spec 009: Extended with global variable storage and helper functions:
-- GlobalStorageBackend: Protocol for global variable storage
-- m_set_piece, m_set_extract: LHS function helpers
-- m_data, m_data_global: $DATA function helpers
+Includes MArray class for MUMPS array semantics, global variable storage,
+LHS function helpers (m_set_piece, m_set_extract), and $DATA function
+helpers (m_data, m_data_global).
 """
 
 from __future__ import annotations
@@ -27,7 +24,7 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
-# Spec 012: Variable Name Validation Helper (T012)
+# Variable Name Validation Helper
 # =============================================================================
 
 # Import the unified name validation from core
@@ -42,7 +39,6 @@ _LABEL_PATTERN = re.compile(r"^[A-Za-z%0-9][A-Za-z0-9]*$")
 def _is_valid_varname(name: str) -> bool:
     """Check if name is a valid MUMPS variable name.
 
-    Feature: 018-unified-variable-system
     Now delegates to core.names.is_valid_varname() for unified validation.
 
     Args:
@@ -100,7 +96,7 @@ def _is_valid_label(name: str) -> bool:
 
 
 # =============================================================================
-# Spec 021: Phase 3 — Data Structures for Error Handling & Transaction Support
+# Data Structures for Error Handling & Transaction Support
 # =============================================================================
 
 
@@ -136,15 +132,10 @@ class TransactionLocalSnapshot:
     saved_test: Optional[bool] = None  # $TEST value at TSTART
 
 
-# T074a: Now uses NameTranslator.to_python() from core.names module.
-# The deprecated _translate_label_to_func() function has been removed.
-# All name translation now goes through the single source of truth.
-
-
 def _parse_subscripted_name(name: str) -> Tuple[str, Optional[Tuple[Any, ...]]]:
     """Parse a variable name that may include subscripts.
 
-    Spec 012 (T007-T008): Extracts base name and subscripts from
+    Extracts base name and subscripts from
     name indirection targets like "ARR(1,2)" or "^GLO(sub)".
 
     Args:
@@ -216,7 +207,6 @@ def _parse_subscript_list(subscript_str: str, original_name: str) -> List[Any]:
 def _split_argument_list(arg_str: str) -> List[str]:
     """Split comma-separated argument list respecting parentheses.
 
-    Feature: 017 T088 - Argument Indirection Command Lists
     Used for KILL @X, NEW @X where X may contain comma-separated
     variable names that include subscripts.
 
@@ -511,14 +501,14 @@ def _evaluate_subscripts(
 
 
 # =============================================================================
-# Spec 012: Indirection & XECUTE Exceptions and Types
+# Indirection & XECUTE Exceptions and Types
 # =============================================================================
 
 
 class IndirectionError(Exception):
     """Raised for invalid indirection operations at runtime.
 
-    Spec 012 (T001): Exception for name indirection, XECUTE, and
+    Exception for name indirection, XECUTE, and
     indirect DO/GOTO operations that fail at runtime.
 
     Attributes:
@@ -554,7 +544,7 @@ class IndirectionError(Exception):
 class CallTarget(NamedTuple):
     """Parsed indirect DO/GOTO target.
 
-    Spec 012 (T002): Represents the components of a DO/GOTO target string.
+    Represents the components of a DO/GOTO target string.
 
     Examples:
         - "LABEL" → CallTarget(label="LABEL", routine=None, offset=None)
@@ -571,10 +561,10 @@ class CallTarget(NamedTuple):
     postcondition: Optional[str] = None  # Unevaluated postcondition string
 
 
-# Spec 009: Import global storage backend protocol
+# Global storage backend protocol
 from m2py.runtime.globals import GlobalStorageBackend, InMemoryGlobalStorage  # noqa: E402
 
-# Spec 009: Import helper functions
+# Helper functions
 from m2py.runtime.helpers import (  # noqa: E402
     m_data,
     m_data_global,
@@ -583,14 +573,10 @@ from m2py.runtime.helpers import (  # noqa: E402
     m_set_piece,
 )
 
-# Spec 010: Import runtime exception class
+# Runtime exception class
 from m2py.runtime.exceptions import MRuntimeError  # noqa: E402
 
-# Spec 010: Import $ORDER and $QUERY helper functions (Phase 2)
-# Spec 010: Import $SELECT helper function (Phase 3)
-# Spec 010: Import $PIECE and $EXTRACT helper functions (Phase 5)
-# Spec 010: Import $GET helper functions (Phase 6)
-# Spec 010: Import $FIND helper function (Phase 7)
+# Intrinsic function helpers ($ORDER, $QUERY, $SELECT, $PIECE, $EXTRACT, $GET, $FIND)
 from m2py.runtime.helpers import (  # noqa: E402
     _raise_select_false,
     m_extract,
@@ -604,8 +590,8 @@ from m2py.runtime.helpers import (  # noqa: E402
     m_query_global,
 )
 
-# Spec 011: Import sorts-after (uses MUMPS collation) and pattern match helpers
-# Note: Contains ([) and Follows (]) are inlined as Python expressions in codegen
+# String comparison and pattern match helpers
+# Contains ([) and Follows (]) are inlined as Python expressions in codegen
 from m2py.runtime.helpers import (  # noqa: E402
     _mumps_collation_key,
     m_pattern_match,
@@ -616,7 +602,7 @@ from m2py.runtime.helpers import (  # noqa: E402
 class MArray:
     """MUMPS array with hierarchical subscript support.
 
-    Spec 006 (T051-T052): Implements MUMPS sparse array semantics where
+    Implements MUMPS sparse array semantics where
     each node can have BOTH a value AND children. This is different from
     Python dicts where a key maps to a single value.
 
@@ -849,7 +835,7 @@ class MArray:
     def data(self, *subscripts: Any) -> int:
         """Return $DATA code for this node or subscripted path.
 
-        Spec 009 (T003): Alias for defined() using MUMPS $DATA naming.
+        Alias for defined() using MUMPS $DATA naming.
 
         MUMPS $DATA returns:
             0 - Not defined (no value, no children)
@@ -901,7 +887,7 @@ class MArray:
     def kill_node(self, subscripts: tuple[Any, ...]) -> None:
         """Delete node value but preserve descendants (ZKILL command).
 
-        Spec 013 Phase 19 (T135): ZKILL removes value but keeps children.
+        ZKILL removes value but keeps children.
 
         Unlike kill() which removes the entire subtree, kill_node()
         only removes the value at the specified node, leaving all
@@ -938,7 +924,7 @@ class MArray:
     def merge_from(self, source: "MArray") -> None:
         """Merge source tree into this node (MERGE command).
 
-        Spec 011 Phase 16: Implements MERGE semantics:
+        Implements MERGE semantics:
         - Copies source's value to this node (if source has value)
         - Recursively copies all descendants from source
         - Does NOT delete any existing nodes in this tree
@@ -967,7 +953,7 @@ class MArray:
 
 
 # =============================================================================
-# Spec 008: External Call Exception Classes
+# External Call Exception Classes
 # =============================================================================
 
 
@@ -982,7 +968,7 @@ class GotoExternal(Exception):
         module: Target module (already imported via standard Python import)
         label: Target label name (None = entry label, same name as routine)
         offset: Optional line offset for G LABEL+N^ROUTINE pattern
-        _rt: MUMPSRuntime instance to pass to target routine (Phase 13)
+        _rt: MUMPSRuntime instance to pass to target routine
     """
 
     def __init__(
@@ -1383,22 +1369,18 @@ def run_with_goto_support(
 ) -> Any:
     """Execute a routine entry point with external GOTO support.
 
-    Spec 008 Phase 6 (T039): This function wraps routine execution to catch
-    GotoExternal exceptions and transfer control to external routines.
+    This function wraps routine execution to catch GotoExternal exceptions
+    and transfer control to external routines.
 
     When a GOTO to an external routine is executed (G ^ROUTINE, G LABEL^ROUTINE),
     it raises GotoExternal. This function catches it and transfers control to
     the target routine, which may itself GOTO to another routine, creating a
     chain of transfers that only ends when a routine QUITs normally.
 
-    Phase 13 (T082): The runtime instance is passed explicitly to all routines
-    to ensure shared state across external calls.
-
-    Phase 21: Save/restore _in_extrinsic for $QUIT tracking. External DO calls
-    are subroutine invocations, so $QUIT should be 0 inside them.
-
-    Spec 022 Phase 9 Gap 2 (T106): Added _args parameter to pass actual
-    arguments to JOB'd entry functions with formal parameter lists.
+    The runtime instance is passed explicitly to all routines to ensure shared
+    state across external calls. Save/restore of _in_extrinsic ensures correct
+    $QUIT tracking — external DO calls are subroutine invocations, so $QUIT
+    should be 0 inside them.
 
     Args:
         entry_func: The entry function to execute (routine's first label)
@@ -1417,7 +1399,7 @@ def run_with_goto_support(
     if _scope is None:
         _scope = {}
 
-    # Phase 21: Save/restore _in_extrinsic for $QUIT tracking
+    # Save/restore _in_extrinsic for $QUIT tracking
     # DO calls are subroutine invocations, so $QUIT=0 inside them
     _saved_extrinsic = _rt._in_extrinsic
     _rt._in_extrinsic = False
@@ -1536,14 +1518,14 @@ class ExecutionResult:
 
 
 # =============================================================================
-# Spec 009: Global Storage Backend Factory (T009)
+# Global Storage Backend Factory
 # =============================================================================
 
 
 def get_global_storage(backend: str | None = None) -> GlobalStorageBackend:
     """Get global storage backend instance.
 
-    Spec 009 (T009): Factory function for global storage backends.
+    Factory function for global storage backends.
 
     Backend selection priority:
     1. Explicit `backend` parameter if provided
@@ -1597,15 +1579,9 @@ class MUMPSRuntime:
     Provides output capture for WRITE statements and execution support
     for generated Python code. One instance per process.
 
-    Spec 008: Extended for external call support with:
-    - _current_routine: Current routine name for $TEXT(+0)
-    - _current_source_lines: Source lines for $TEXT(+N)
-    - _current_label_lines: Label->line mapping for $TEXT(LABEL+N)
-    - get_text(): Implement $TEXT function
-
-    Spec 009: Extended for global storage configuration with:
-    - global_storage parameter for programmatic backend selection
-    - M2PY_GLOBAL_BACKEND env var support via get_global_storage()
+    Supports external call context tracking (_current_routine, _current_source_lines,
+    _current_label_lines, get_text()), and global storage configuration via
+    global_storage parameter or M2PY_GLOBAL_BACKEND environment variable.
     """
 
     def __init__(
@@ -1627,16 +1603,16 @@ class MUMPSRuntime:
             max_error_nesting: Maximum error handler nesting depth before
                 raising RuntimeError (prevents infinite error loops). Default 20.
         """
-        # Spec 008: External call context tracking
+        # External call context tracking
         self._current_routine: Optional[str] = None
         self._current_source_lines: Optional[List[str]] = None
         self._current_label_lines: Optional[Dict[str, int]] = None
-        # Spec 009: Global variable storage (T008)
+        # Global variable storage
         # Use provided backend or fall back to factory function
         self._globals: GlobalStorageBackend = (
             global_storage if global_storage is not None else get_global_storage()
         )
-        # Spec 022: Phase 4 — Device abstraction layer
+        # Device abstraction layer
         # _output used by PrincipalDevice via back-reference
         self._output: list[str] = []
         # PrincipalDevice wraps stdout/stdin, accesses self._output via back-reference
@@ -1647,33 +1623,33 @@ class MUMPSRuntime:
         self._device_table: dict[str, Any] = {"0": self._principal_device}
         # Current active device for I/O dispatch
         self._current_device: Any = self._principal_device
-        # Spec 011: Column/line position tracking for $X, $Y
+        # Column/line position tracking for $X, $Y
         # $X/$Y are tracked per-device on the device object.
         # Accessors x() and y() delegate to _current_device.
-        # Spec 021: Stack frame tracking for $STACK introspection
+        # Stack frame tracking for $STACK introspection
         # Replaces the simple _stack_level counter with metadata-rich frames
         self._stack_frames: list[StackFrame] = []
-        # Spec 011: $IO — tracked via _current_device.name
-        # Spec 011: Extrinsic function context for $QUIT
+        # $IO — tracked via _current_device.name
+        # Extrinsic function context for $QUIT
         self._in_extrinsic: bool = False
-        # Spec 013 Phase 11: $ZJOB - last JOB'd process ID
+        # $ZJOB - last JOB'd process ID
         self._zjob: str = "0"
-        # Spec 022: Track all JOB'd child processes for cleanup
+        # Track all JOB'd child processes for cleanup
         self._job_processes: list = []
-        # Spec 017 Phase 23: $PRINCIPAL - principal I/O device
+        # $PRINCIPAL - principal I/O device
         self._principal: str = "0"  # Initial value of $IO
-        # Spec 017 Phase 23: $KEY — tracked per-device on device.key
+        # $KEY — tracked per-device on device.key
         # Accessor key() delegates to _current_device.key
-        # Spec 017 Phase 23: $SYSTEM - system identification (V,S format)
+        # $SYSTEM - system identification (V,S format)
         self._system: str = "47,M2PY"
-        # Spec 013 Phase 12: Error processing special variables
+        # Error processing special variables
         # $ECODE - comma-delimited list of active error codes (empty = no errors)
         self._ecode: str = ""
         # $ETRAP - code string to execute when error occurs
         self._etrap: str = ""
         # $ZERROR - application-supplied error message text
         self._zerror: str = ""
-        # Spec 021 Phase 3: Enhanced error handling ISVs
+        # Enhanced error handling ISVs
         # $ZTRAP - YDB error trap (label ref or XECUTE code)
         self._ztrap: str = ""
         # $ZSTATUS - full error message from last error
@@ -1684,7 +1660,7 @@ class MUMPSRuntime:
         self._in_error_handler: bool = False
         # Stack level where $ETRAP was SET (for unwind target)
         self._etrap_set_level: int = 0
-        # T023: Maximum error handler nesting depth (prevents infinite loops)
+        # Maximum error handler nesting depth (prevents infinite loops)
         self._max_error_nesting: int = max_error_nesting
         # Current error handler nesting depth
         self._error_nesting_depth: int = 0
@@ -1698,11 +1674,11 @@ class MUMPSRuntime:
         # $STACK snapshot (frozen on error)
         self._stack_snapshot: Optional[list[StackFrame]] = None
         self._stack_snapshot_depth: int = 0
-        # T095: $ZRO — routine search path (configurable)
+        # $ZRO — routine search path (configurable)
         self._zro: str = "."
-        # Spec 013 Phase 19: Routine registry for ZLINK
+        # Routine registry for ZLINK
         self._routines: Dict[str, Any] = {}
-        # Spec 012: $TEST value for tracking IF/ELSE condition results
+        # $TEST value for tracking IF/ELSE condition results
         # This is synced from/to generated code via execute_mumps
         self._test: bool = False
         # JOB command support: virtual process ID for child processes
@@ -1733,7 +1709,7 @@ class MUMPSRuntime:
     def globals(self) -> GlobalStorageBackend:
         """Get global variable storage backend.
 
-        Spec 009 (T008): Provides access to global variable storage for
+        Provides access to global variable storage for
         generated code. The backend is selected via M2PY_GLOBAL_BACKEND
         environment variable (default: 'inmemory').
         """
@@ -1795,7 +1771,7 @@ class MUMPSRuntime:
             - Label not found
             - External routine not found (is_external=True, module=None)
         """
-        # T100: Handle case where external routine was requested but not found
+        # Handle case where external routine was requested but not found
         if is_external and module is None:
             return ""
 
@@ -1829,7 +1805,7 @@ class MUMPSRuntime:
 
         # Bounds check and return
         if 0 <= line_idx < len(lines):
-            # T075f: YDB converts tabs to single space in $TEXT output
+            # YDB converts tabs to single space in $TEXT output
             return lines[line_idx].replace("\t", " ")
         return ""
 
@@ -1880,7 +1856,7 @@ class MUMPSRuntime:
         Note:
             Does not add newlines automatically (MUMPS WRITE doesn't either).
             None values are treated as empty string (MUMPS undefined semantics).
-            Spec 011 Phase 9: Uses m_format_output for canonical number formatting.
+            Uses m_format_output for canonical number formatting.
 
         YDB verified: When writing strings, $X is incremented only for printable
         characters (ord >= 32). Control characters (ord 0-31) do NOT affect $X.
@@ -1940,7 +1916,7 @@ class MUMPSRuntime:
         Args:
             column: Target column (0-based, same as $X)
 
-        Spec 011 (T008): Implements column positioning for WRITE ?n.
+        Implements column positioning for WRITE ?n.
         """
         self._current_device.write_tab(column)
 
@@ -1959,7 +1935,7 @@ class MUMPSRuntime:
         self._principal_device.y_pos = 0
 
     # =========================================================================
-    # Spec 022 Phase 9: Device-Routed READ Methods
+    # Device-Routed READ Methods
     # =========================================================================
 
     def read_line(self) -> str:
@@ -1968,8 +1944,8 @@ class MUMPSRuntime:
         Delegates to self._current_device.read(). Updates $KEY on the
         current device. Returns the data read (without terminator).
 
-        Spec 022 Gap 1 (T097): Routes READ through device layer so that
-        USE "file" followed by READ X reads from the file, not stdin.
+        Routes READ through device layer so that USE "file" followed by
+        READ X reads from the file, not stdin.
 
         Returns:
             String data read from the current device.
@@ -2052,7 +2028,7 @@ class MUMPSRuntime:
             return ("", "", 0)
 
     # =========================================================================
-    # Spec 013 Phase 19: Z-Command Support Methods
+    # Z-Command Support Methods
     # =========================================================================
 
     @staticmethod
@@ -2153,7 +2129,7 @@ class MUMPSRuntime:
     def zwrite(self, scope: dict[str, Any]) -> None:
         """ZWRITE - display all local variables.
 
-        Spec 013 Phase 19 (T132): Argumentless ZWRITE shows all locals.
+        Argumentless ZWRITE shows all locals.
 
         Args:
             scope: Variable scope dictionary
@@ -2384,7 +2360,7 @@ class MUMPSRuntime:
     def zshow(self, codes: str, scope: dict[str, Any], destination: Any = None) -> None:
         """ZSHOW - display system information.
 
-        Spec 013 Phase 19 (T140): ZSHOW displays process info.
+        Displays process information based on the codes parameter.
 
         Codes:
         - S: Stack trace
@@ -2436,7 +2412,7 @@ class MUMPSRuntime:
     def _zshow_locks(self) -> None:
         """Display lock information for ZSHOW "L".
 
-        Spec 022 Phase 7 (T082): Queries SQLite lock table for current
+        Queries SQLite lock table for current
         process's locks. Format matches YDB:
             MLG:n,MLT:0
             LOCK ^name LEVEL=count
@@ -2475,7 +2451,7 @@ class MUMPSRuntime:
     def zlink(self, routine_name: str) -> None:
         """ZLINK - dynamically link/load a routine.
 
-        Spec 013 Phase 19 (T137): ZLINK imports a routine module.
+        Imports a routine module and registers it in the routine registry.
 
         In the transpiler context, this imports a Python module and
         registers it in the routine registry.
@@ -2507,7 +2483,7 @@ class MUMPSRuntime:
     class ZGotoException(Exception):
         """Exception for ZGOTO stack unwinding.
 
-        Spec 013 Phase 19 (T143): ZGOTO unwinds to specified stack level.
+        ZGOTO unwinds to specified stack level.
         """
 
         def __init__(self, level: int, target: str | None = None):
@@ -2520,7 +2496,7 @@ class MUMPSRuntime:
     def zsystem(self, command: str = "") -> None:
         """ZSYSTEM - execute a shell command.
 
-        Spec 021 Phase 11 (T073): Execute command via subprocess, store exit
+        Executes command via subprocess and stores exit
         code in _zsystem_exit. Empty string is a no-op that sets exit code to 0.
 
         Args:
@@ -2539,7 +2515,7 @@ class MUMPSRuntime:
     def zsystem_exit(self) -> int:
         """Return $ZSYSTEM - exit code from last ZSYSTEM command.
 
-        Spec 021 Phase 11 (T074): Accessor for _zsystem_exit field.
+        Accessor for _zsystem_exit field.
 
         Returns:
             Exit code from last ZSYSTEM command (0 if never executed)
@@ -2547,7 +2523,7 @@ class MUMPSRuntime:
         return self._zsystem_exit
 
     # =========================================================================
-    # Spec 011: Special Variable Accessor Methods
+    # Special Variable Accessor Methods
     # =========================================================================
 
     def horolog(self) -> str:
@@ -2585,7 +2561,7 @@ class MUMPSRuntime:
     def zjob(self) -> str:
         """Return last JOB'd process ID ($ZJOB).
 
-        Spec 013 Phase 11: Returns the process ID of the last process
+        Returns the process ID of the last process
         started by the JOB command. Returns "0" if no JOB has been executed.
 
         Returns:
@@ -2596,10 +2572,9 @@ class MUMPSRuntime:
     def zsearch(self, pattern: str) -> str:
         """Implement $ZSEARCH — file system search with iterator state.
 
-        Spec 021 Phase 14 (T093): First call with a non-empty pattern performs
-        glob.glob(pattern), stores results, returns first match.
-        Subsequent calls with empty string return next match.
-        Returns empty string when exhausted.
+        First call with a non-empty pattern performs glob.glob(pattern),
+        stores results, and returns the first match. Subsequent calls with
+        empty string return the next match. Returns empty string when exhausted.
 
         Args:
             pattern: File glob pattern, or "" for next match
@@ -2624,7 +2599,6 @@ class MUMPSRuntime:
     def zro(self) -> str:
         """Return $ZRO — routine search path.
 
-        Spec 021 Phase 14 (T095): Configurable routine search path.
         Returns the configured routine search path.
 
         Returns:
@@ -2635,8 +2609,7 @@ class MUMPSRuntime:
     def set_zro(self, value: str) -> None:
         """Set $ZRO — routine search path.
 
-        Spec 021 Phase 14 (T095): Allows runtime configuration of
-        the routine search path.
+        Allows runtime configuration of the routine search path.
 
         Args:
             value: New routine search path string
@@ -2656,7 +2629,7 @@ class MUMPSRuntime:
     def io(self) -> str:
         """Return current I/O device name ($IO).
 
-        Spec 022: Returns the name of the current device.
+        Returns the name of the current device.
 
         Returns:
             Current I/O device identifier (default "0")
@@ -2666,7 +2639,7 @@ class MUMPSRuntime:
     def principal(self) -> str:
         """Return principal I/O device name ($PRINCIPAL).
 
-        Spec 017 Phase 23: $PRINCIPAL identifies the principal I/O device.
+        $PRINCIPAL identifies the principal I/O device.
         It is constant throughout the active life of a process.
         The initial value equals the initial value of $IO.
 
@@ -2678,8 +2651,7 @@ class MUMPSRuntime:
     def key(self) -> str:
         """Return last READ terminator ($KEY).
 
-        Spec 022: Returns $KEY from the current device.
-        Spec 017 Phase 23: $KEY contains the control sequence that
+        Returns $KEY from the current device — the control sequence that
         terminated the last READ command. Empty string if no READ
         has been executed or if READ timed out.
 
@@ -2691,9 +2663,9 @@ class MUMPSRuntime:
     def system(self) -> str:
         """Return system identification ($SYSTEM).
 
-        Spec 017 Phase 23: $SYSTEM returns "V,S" where V is the
-        MDC-assigned implementor number and S is implementor-defined.
-        Value format must match pattern 1.N1\",\"1.E.
+        $SYSTEM returns "V,S" where V is the MDC-assigned implementor
+        number and S is implementor-defined. Value format must match
+        pattern 1.N1\",\"1.E.
 
         Returns:
             System identification string (e.g., "47,M2PY")
@@ -2703,7 +2675,7 @@ class MUMPSRuntime:
     def x(self) -> int:
         """Return current column position ($X).
 
-        Spec 022: Returns $X from the current device.
+        Returns $X from the current device.
 
         Returns:
             Current column position (0-based)
@@ -2713,7 +2685,7 @@ class MUMPSRuntime:
     def y(self) -> int:
         """Return current line position ($Y).
 
-        Spec 022: Returns $Y from the current device.
+        Returns $Y from the current device.
 
         Returns:
             Current line position
@@ -2723,7 +2695,7 @@ class MUMPSRuntime:
     def zeof(self) -> int:
         """Return end-of-file indicator ($ZEOF).
 
-        Spec 022: Returns $ZEOF from the current device.
+        Returns $ZEOF from the current device.
         0 = not at EOF, 1 = at EOF.
 
         Returns:
@@ -2750,9 +2722,9 @@ class MUMPSRuntime:
     def estack(self) -> int:
         """Return $ESTACK — relative error stack depth.
 
-        Spec 021 Phase 4 (T022): $ESTACK returns the difference between
-        the current $STACK level and the level where NEW $ESTACK was issued
-        (stored in _etrap_set_level). This gives a relative stack depth for
+        $ESTACK returns the difference between the current $STACK level
+        and the level where NEW $ESTACK was issued (stored in
+        _etrap_set_level). This gives a relative stack depth for
         error handling contexts.
 
         Returns:
@@ -2763,7 +2735,7 @@ class MUMPSRuntime:
     def tlevel(self) -> int:
         """Return current transaction nesting level ($TLEVEL).
 
-        Spec 013 FR-015: Delegates to global storage backend.
+        Delegates to global storage backend.
 
         Returns:
             Current transaction depth (0 = no active transaction)
@@ -2773,7 +2745,7 @@ class MUMPSRuntime:
     def ecode(self) -> str:
         """Return current error code list ($ECODE).
 
-        Spec 013 Phase 12 (FR-026): Returns comma-delimited list of active
+        Returns comma-delimited list of active
         error codes. Empty string means no active errors.
 
         Format: ",code1,code2," - always starts and ends with comma when non-empty.
@@ -2790,8 +2762,8 @@ class MUMPSRuntime:
     def set_ecode(self, value: str) -> None:
         """Set error code list ($ECODE).
 
-        Spec 013 Phase 12 (FR-026) + Spec 021 (T047): Setting $ECODE is how
-        applications clear errors (SET $ECODE="") or trigger error handlers.
+        Setting $ECODE is how applications clear errors (SET $ECODE="")
+        or trigger error handlers.
 
         When $ECODE is cleared (set to ""), the stack snapshot is also reset
         so the next error will capture a fresh snapshot.
@@ -2800,7 +2772,7 @@ class MUMPSRuntime:
             value: Error code list (empty string to clear)
         """
         self._ecode = value
-        # T047: Clear stack snapshot when $ECODE is cleared
+        # Clear stack snapshot when $ECODE is cleared
         # Reset to None so _freeze_stack_snapshot() can re-freeze on next error
         if value == "":
             self._stack_snapshot = None
@@ -2809,7 +2781,7 @@ class MUMPSRuntime:
     def _append_ecode(self, code: str) -> None:
         """Append an error code to $ECODE accumulator.
 
-        T008: MUMPS $ECODE accumulates error codes with surrounding commas.
+        MUMPS $ECODE accumulates error codes with surrounding commas.
         Each code is appended in ",CODE," format. If $ECODE is already non-empty,
         the leading comma of the new code merges with the trailing comma of the
         existing value.
@@ -2832,8 +2804,8 @@ class MUMPSRuntime:
     def etrap(self) -> str:
         """Return current error trap code ($ETRAP).
 
-        Spec 013 Phase 12 (FR-026): Returns M code string to execute
-        when an error occurs and $ECODE becomes non-empty.
+        Returns M code string to execute when an error occurs
+        and $ECODE becomes non-empty.
 
         Returns:
             Error trap code string, or empty string if not set
@@ -2843,32 +2815,31 @@ class MUMPSRuntime:
     def set_etrap(self, value: str) -> None:
         """Set error trap code ($ETRAP).
 
-        Spec 013 Phase 12 (FR-026) + Spec 021 (T020): Sets the M code to
-        execute on error. Also tracks the stack level where $ETRAP was set
-        for QUIT-from-trap unwinding.
+        Sets the M code to execute on error. Also tracks the stack level
+        where $ETRAP was set for QUIT-from-trap unwinding.
 
         Common patterns:
         - SET $ETRAP="D ^%ZTER Q"  ; Log error and quit
         - SET $ETRAP="G ERROR^ROUTINE"  ; Goto error handler
 
-        T032 (Phase 5): SET $ETRAP implicitly NEWs $ZTRAP at this level.
+        SET $ETRAP implicitly NEWs $ZTRAP at this level.
         This provides mutual exclusion - only one trap can be active per level.
 
         Args:
             value: M code string to execute on error
         """
         self._etrap = value
-        # T020: Track level where $ETRAP was SET for unwinding
+        # Track level where $ETRAP was SET for unwinding
         self._etrap_set_level = len(self._stack_frames)
-        # T032: Mutual exclusion — setting $ETRAP clears $ZTRAP
+        # Mutual exclusion — setting $ETRAP clears $ZTRAP
         if value:
             self._ztrap = ""
 
     def zerror(self) -> str:
         """Return application error message ($ZERROR).
 
-        Spec 013 Phase 12 (FR-045): Returns application-supplied error
-        message text. Typically set by $ZYERROR routine using $ZSTATUS.
+        Returns application-supplied error message text.
+        Typically set by $ZYERROR routine using $ZSTATUS.
 
         Returns:
             Error message string, or empty string
@@ -2878,8 +2849,8 @@ class MUMPSRuntime:
     def set_zerror(self, value: str) -> None:
         """Set application error message ($ZERROR).
 
-        Spec 013 Phase 12 (FR-045): Sets error message text for application
-        error handling. Usually set in error handler routines.
+        Sets error message text for application error handling.
+        Usually set in error handler routines.
 
         Args:
             value: Error message text
@@ -2889,8 +2860,8 @@ class MUMPSRuntime:
     def ztrap(self) -> str:
         """Return error trap code ($ZTRAP).
 
-        Spec 021 (T029): Returns M code to execute on error when $ETRAP
-        is empty. $ZTRAP provides GOTO-based error handling semantics.
+        Returns M code to execute on error when $ETRAP is empty.
+        $ZTRAP provides GOTO-based error handling semantics.
 
         Returns:
             Error trap code string, or empty string if not set
@@ -2900,26 +2871,26 @@ class MUMPSRuntime:
     def set_ztrap(self, value: str) -> None:
         """Set error trap code ($ZTRAP).
 
-        Spec 021 (T029): Sets M code to execute on error. Unlike $ETRAP,
+        Sets M code to execute on error. Unlike $ETRAP,
         $ZTRAP supports GOTO semantics for error transfer:
         - "G label" or "G ^routine" - GOTO to label/routine
         - Other code - executed via XECUTE
 
-        T032: SET $ZTRAP implicitly clears $ETRAP at this level.
+        SET $ZTRAP implicitly clears $ETRAP at this level.
         $ETRAP and $ZTRAP are mutually exclusive — setting one clears the other.
 
         Args:
             value: M code string to execute on error
         """
         self._ztrap = value
-        # T032: Mutual exclusion — setting $ZTRAP clears $ETRAP
+        # Mutual exclusion — setting $ZTRAP clears $ETRAP
         if value:
             self._etrap = ""
 
     def zstatus(self) -> str:
         """Return error status text ($ZSTATUS).
 
-        Spec 021 (T030): Returns last error information in YDB format:
+        Returns last error information in YDB format:
         "errorcode,label+offset^routine,%YDB-E-ERRNAME, message"
 
         Returns:
@@ -2930,7 +2901,7 @@ class MUMPSRuntime:
     def set_zstatus(self, value: str) -> None:
         """Set error status text ($ZSTATUS).
 
-        Spec 021 (T030): Sets error status string. Normally set by
+        Sets error status string. Normally set by
         the runtime on error, but can be set by application code.
 
         Args:
@@ -2941,7 +2912,7 @@ class MUMPSRuntime:
     def zposition(self) -> str:
         """Return current code position ($ZPOSITION).
 
-        Spec 021 (T030): Returns current position in format:
+        Returns current position in format:
         "label+offset^routine"
 
         Note: After error transfer, this shows where the error handler
@@ -2955,7 +2926,7 @@ class MUMPSRuntime:
     def set_zposition(self, value: str) -> None:
         """Set current code position ($ZPOSITION).
 
-        Spec 021 (T030): Sets position string. Normally set by
+        Sets position string. Normally set by
         the runtime during execution.
 
         Args:
@@ -2966,7 +2937,7 @@ class MUMPSRuntime:
     def _exception_to_ecode(self, exc: Exception) -> str:
         """Map Python exception to MUMPS $ECODE format.
 
-        Spec 014 (T055): Converts Python exceptions to MUMPS error codes
+        Converts Python exceptions to MUMPS error codes
         in the comma-delimited $ECODE format: ",Mnn," or ",Zxxx,"
 
         Error Code Mapping:
@@ -3031,8 +3002,7 @@ class MUMPSRuntime:
     ) -> bool:
         """Handle an exception using $ETRAP or $ZTRAP.
 
-        Spec 014 (T055) + Spec 021 (T019-T021): Implements enhanced MUMPS
-        error handling semantics:
+        Implements enhanced MUMPS error handling semantics:
         1. Check for nested error (error during error processing)
         2. If nested: TROLLBACK:$TLEVEL QUIT:$QUIT "" QUIT (unwind)
         3. Populate $ZSTATUS/$ZPOSITION with error info
@@ -3061,7 +3031,7 @@ class MUMPSRuntime:
             - Freezes stack snapshot on first error
             - Executes $ETRAP or $ZTRAP code
         """
-        # T021/T023: Nested error detection with depth counting
+        # Nested error detection with depth counting
         self._error_nesting_depth += 1
         if self._error_nesting_depth > self._max_error_nesting:
             # Too many nested errors - prevent infinite loop
@@ -3090,7 +3060,7 @@ class MUMPSRuntime:
                 # No handler set - propagate exception without setting $ECODE
                 return False
 
-            # T019: Populate $ZSTATUS and $ZPOSITION
+            # Populate $ZSTATUS and $ZPOSITION
             ecode = self._exception_to_ecode(exc)
             # Extract just the error code (e.g., "M6" from ",M6,")
             mcode = ecode.strip(",").split(",")[0] if ecode else ""
@@ -3114,8 +3084,8 @@ class MUMPSRuntime:
             else:
                 self._zposition = ""
 
-            # T019: Freeze stack snapshot on first error (empty→non-empty $ECODE)
-            # T020: Only accumulate $ECODE on the first occurrence (not during unwind)
+            # Freeze stack snapshot on first error (empty→non-empty $ECODE)
+            # Only accumulate $ECODE on the first occurrence (not during unwind)
             was_empty = self._ecode == ""
 
             if was_empty:
@@ -3125,7 +3095,7 @@ class MUMPSRuntime:
                 self._freeze_stack_snapshot()
             # If $ECODE already set, this is a re-fire during unwind — don't re-accumulate
 
-            # T019/T035: Try $ETRAP first, then $ZTRAP fallback
+            # Try $ETRAP first, then $ZTRAP fallback
             if self._etrap:
                 try:
                     self.execute_mumps(self._etrap, _scope)
@@ -3133,7 +3103,7 @@ class MUMPSRuntime:
                     # Error in $ETRAP itself - propagate original error
                     return False
             elif self._ztrap:
-                # T035: $ZTRAP fallback
+                # $ZTRAP fallback
                 try:
                     self._dispatch_ztrap(_scope)
                 except Exception:
@@ -3158,7 +3128,7 @@ class MUMPSRuntime:
     )
 
     def _dispatch_ztrap(self, _scope: dict) -> None:
-        """Dispatch $ZTRAP error handler (Phase 5 T031).
+        """Dispatch $ZTRAP error handler.
 
         Handles $ZTRAP with GOTO vs XECUTE semantics:
         - If $ZTRAP matches GOTO pattern (G/GOTO prefix or bare label ref),
@@ -3304,7 +3274,7 @@ class MUMPSRuntime:
     ) -> str:
         """Implement $STACK(level[,info]) intrinsic function.
 
-        Spec 021 (T045): Returns information about the call stack.
+        Returns information about the call stack.
         During error handling ($ECODE non-empty), automatically returns
         data from the frozen snapshot. Otherwise returns live stack.
 
@@ -3366,7 +3336,7 @@ class MUMPSRuntime:
     def _freeze_stack_snapshot(self) -> None:
         """Freeze a deep copy of the call stack for $STACK intrinsic function.
 
-        T009: When $ECODE transitions from empty to non-empty (first error),
+        When $ECODE transitions from empty to non-empty (first error),
         freeze the current call stack so $STACK(n) queries return the state
         at the time of the error, not the current (possibly unwound) state.
 
@@ -3395,7 +3365,7 @@ class MUMPSRuntime:
     ) -> str:
         """Format error information as $ZSTATUS string.
 
-        T010: $ZSTATUS format matches YDB convention:
+        $ZSTATUS format matches YDB convention:
         "errorcode,label+offset^routine,%YDB-E-ERRNAME, message"
 
         Examples:
@@ -3429,7 +3399,7 @@ class MUMPSRuntime:
             return f"{error_code},{location}, {message}"
 
     # =========================================================================
-    # Spec 013: Device I/O Methods (Phase 10 - OPEN/CLOSE/USE)
+    # Device I/O Methods (OPEN/CLOSE/USE)
     # =========================================================================
 
     def open_device(
@@ -3440,9 +3410,9 @@ class MUMPSRuntime:
     ) -> bool:
         """Open a device for I/O (MUMPS OPEN command).
 
-        Spec 013 Phase 10 (T091): Opens a device/file for I/O operations.
-        Spec 022: Updated to use FileDevice/TCPDevice abstraction, device table,
-        per-device parameter parsing, DEVOPENFAIL, and timeout/$TEST.
+        Opens a device/file for I/O operations using the FileDevice/TCPDevice
+        abstraction, device table, per-device parameter parsing, DEVOPENFAIL,
+        and timeout/$TEST.
 
         MUMPS OPEN semantics (YDB-validated):
         - File-not-found / permission errors → raise DEVOPENFAIL regardless of timeout.
@@ -3566,8 +3536,7 @@ class MUMPSRuntime:
     def close_device(self, device: str, parameters: Optional[List[str]] = None) -> None:
         """Close a device (MUMPS CLOSE command).
 
-        Spec 013 Phase 10 (T092): Closes a device/file.
-        Spec 022: Updated to use device abstraction layer.
+        Closes a device/file using the device abstraction layer.
 
         Closing $PRINCIPAL is a no-op. Closing the current device reverts
         to $PRINCIPAL. $IO is set to "0" after close.
@@ -3596,8 +3565,7 @@ class MUMPSRuntime:
     def use_device(self, device: str, parameters: Optional[List[str]] = None) -> None:
         """Select current I/O device (MUMPS USE command).
 
-        Spec 013 Phase 10 (T089): Switches the current I/O device.
-        Spec 022: Updated to use device abstraction layer.
+        Switches the current I/O device.
         USE 0 and USE $P switch back to $PRINCIPAL.
 
         Args:
@@ -3615,7 +3583,7 @@ class MUMPSRuntime:
             return
 
     # =========================================================================
-    # Spec 013 Phase 11: JOB Command Runtime Support
+    # JOB Command Runtime Support
     # =========================================================================
 
     def start_job(
@@ -3628,11 +3596,10 @@ class MUMPSRuntime:
     ) -> bool:
         """Start a new process executing a routine (MUMPS JOB command).
 
-        Spec 022 Phase 9: Always uses subprocess.Popen for real process
-        isolation. Requires SQLiteGlobalStorage for cross-process global
-        sharing. If InMemoryGlobalStorage is in use, creates a temporary
-        SQLite database for the subprocess (globals won't be shared back
-        to the parent in this case).
+        Always uses subprocess.Popen for real process isolation. Requires
+        SQLiteGlobalStorage for cross-process global sharing. If
+        InMemoryGlobalStorage is in use, creates a temporary SQLite database
+        for the subprocess (globals won't be shared back to the parent).
 
         Timeout behavior per MUMPS spec 8.2.10:
         - No timeout: Returns True, does not affect $TEST
@@ -3689,7 +3656,7 @@ class MUMPSRuntime:
     ) -> bool:
         """Start JOB as a real subprocess using job_runner.py.
 
-        Spec 022 Phase 4 (T060): Real process with independent locals
+        Creates a real process with independent locals
         and shared globals via SQLite.
         """
         import json
@@ -3753,7 +3720,7 @@ class MUMPSRuntime:
             env["PYTHONPATH"] = os.pathsep.join(sys.path)
 
             # Open I/O redirection files for Popen
-            # Spec 022 Phase 9 Gap 3 (T110): INPUT/OUTPUT/ERROR redirection
+            # INPUT/OUTPUT/ERROR redirection for JOB'd processes
             stdin_arg = subprocess.DEVNULL
             stdout_arg = subprocess.DEVNULL
             stderr_arg = subprocess.DEVNULL
@@ -3828,7 +3795,7 @@ class MUMPSRuntime:
     def kill_job_processes(self, timeout: float = 2.0) -> None:
         """Kill all tracked JOB'd child processes.
 
-        Spec 022: Cleanup for test teardown. Terminates any running
+        Cleanup for test teardown. Terminates any running
         child processes spawned by JOB commands, then reaps them.
 
         Args:
@@ -3859,7 +3826,7 @@ class MUMPSRuntime:
     def get_data(self, name: str, _scope: Dict[str, Any]) -> int:
         """Get $DATA value for variable by name (indirection support).
 
-        Spec 017 Phase 6 (T027): Implements $DATA for indirected variables.
+        Implements $DATA for indirected variables.
 
         Returns:
         - 0: Undefined, no descendants
@@ -4140,8 +4107,6 @@ class MUMPSRuntime:
     ) -> str:
         """Get $NAME value for variable by name (indirection support).
 
-        Feature: 018-unified-variable-system
-
         For $NAME(@A) where A="X(1,2)", returns "X(1,2)".
         For $NAME(@A@(3)) where A="X(1,2)", returns "X(1,2,3)".
         For $NAME(@A,2) where A="X(1,2,3)", returns "X(1,2)".
@@ -4190,8 +4155,6 @@ class MUMPSRuntime:
     ) -> str:
         """Append subscripts to a variable name string.
 
-        Feature: 017 Phase 19 - Indirection subscript handling
-
         Used for $NAME(@func()@(subs)) where func() returns a name string
         and we need to append additional subscripts.
 
@@ -4218,8 +4181,6 @@ class MUMPSRuntime:
     ) -> str:
         """Append subscripts to a variable name string.
 
-        Feature: 017 Phase 19 - Indirection subscript handling
-
         Public wrapper for _append_subscripts_to_name that takes a single
         subscript list (not a list of lists).
 
@@ -4234,8 +4195,6 @@ class MUMPSRuntime:
 
     def get_query(self, name: str, subscripts: tuple, _scope: Dict[str, Any]) -> str:
         """Get $QUERY value for variable by name (indirection support).
-
-        Feature: 018-unified-variable-system
 
         Args:
             name: Variable name (e.g., "A", "^G")
@@ -4291,7 +4250,7 @@ class MUMPSRuntime:
     def get_var(self, name: str, _scope: Dict[str, Any]) -> Any:
         """Get variable value by name (name indirection).
 
-        Spec 012 (T007): Implements reading a variable by dynamic name.
+        Implements reading a variable by dynamic name.
 
         Behavior:
         - Local variables: Look up in _scope dict
@@ -4426,7 +4385,7 @@ class MUMPSRuntime:
     def set_var(self, name: str, value: Any, _scope: Dict[str, Any]) -> None:
         """Set variable value by name (name indirection).
 
-        Spec 012 (T008): Implements writing a variable by dynamic name.
+        Implements writing a variable by dynamic name.
 
         Behavior:
         - Local variables: Store in _scope dict
@@ -4505,7 +4464,6 @@ class MUMPSRuntime:
     ) -> None:
         """Set variable via indirection using unified components.
 
-        Feature: 018-unified-variable-system (T040, T111)
         Replaces scattered set_var + resolve calls with unified approach.
 
         Uses IndirectionResolver.resolve_to_name() to determine the target,
@@ -4564,7 +4522,7 @@ class MUMPSRuntime:
             if "(" in target and (target[0].isalpha() or target[0] in "%^"):
                 target = resolver._evaluate_subscripts_in_name(target)
 
-            # T091c-lit: Append any per_level_subscripts to the target
+            # Append any per_level_subscripts to the target
             # For @"A(1)"@(2), source="A(1)", per_level_subscripts=[[2]]
             # Target should be "A(1,2)"
             if per_level_subscripts:
@@ -4612,7 +4570,6 @@ class MUMPSRuntime:
     ) -> Any:
         """Get variable value via indirection using unified components.
 
-        Feature: 018-unified-variable-system (T104, T111)
         Replaces scattered get_var + resolve calls with unified approach.
 
         For READ operations (getting values), we need different semantics than
@@ -4687,7 +4644,6 @@ class MUMPSRuntime:
                 return self.get_var(source, _scope)
 
         # Use unified IndirectionResolver for all cases
-        # Feature: 018-unified-variable-system (T115)
         from m2py.core.scope import CurrentScope
         from m2py.core.indirection import IndirectionResolver
         from m2py.core.exceptions import LVUNDEFError
@@ -4792,7 +4748,6 @@ class MUMPSRuntime:
     ) -> None:
         """Resolve an indirected lock name and acquire/release the lock.
 
-        Spec 021-correctness-features Phase 6 (T039, T041):
         Parses the name expression (may contain subscripts), resolves
         through multiple indirection levels if needed, and delegates to
         the existing lock()/unlock() methods in globals.
@@ -4868,7 +4823,7 @@ class MUMPSRuntime:
                 self.globals.lock(base_name, subs, lock_type=effective_lockop)
 
     # =========================================================================
-    # Transaction Restart Variable Snapshots (Spec 021 Phase 8)
+    # Transaction Restart Variable Snapshots
     # =========================================================================
 
     def snapshot_locals(
@@ -4971,7 +4926,7 @@ class MUMPSRuntime:
     ) -> Any:
         """Resolve indirection and return MArray for call-by-reference aliasing.
 
-        Spec 017 Phase 23 (T134e): Used for indirected by-reference parameters
+        Used for indirected by-reference parameters
         like .@IX where IX contains a variable name. Instead of returning the
         VALUE (like get_indirected), this returns the MArray OBJECT so the
         callee can share the same variable tree.
@@ -5024,7 +4979,7 @@ class MUMPSRuntime:
         levels: int = 1,
         per_level_subscripts: Optional[List[List[Any]]] = None,
     ) -> Any:
-        """Get VALUE via indirection for use in subscript context (T087).
+        """Get VALUE via indirection for use in subscript context.
 
         Unlike get_indirected() which resolves to NAME and validates the result,
         this method uses IndirectionResolver with SUBSCRIPT context to get
@@ -5079,7 +5034,6 @@ class MUMPSRuntime:
     ) -> None:
         """Kill variable via indirection using unified components.
 
-        Feature: 018-unified-variable-system (T086)
         Replaces scattered kill_var + resolve calls with unified approach.
 
         Uses IndirectionResolver.resolve_to_name() to determine the target,
@@ -5273,7 +5227,6 @@ class MUMPSRuntime:
     def _split_argument_list(arg_str: str) -> List[str]:
         """Split comma-separated argument list respecting parentheses.
 
-        Feature: 017 T088 - Argument Indirection Command Lists
         Exposed as staticmethod for use in generated code.
 
         See module-level _split_argument_list for details.
@@ -5475,7 +5428,6 @@ class MUMPSRuntime:
     ) -> str:
         """Resolve FOR loop indirection target using unified components.
 
-        Feature: 018-unified-variable-system (T089)
         Replaces resolve_indirection_name for FOR loop variable indirection.
 
         FOR loop indirection like F @A=1:1:3 requires resolving to get the
@@ -5530,7 +5482,6 @@ class MUMPSRuntime:
     ) -> Any:
         """Evaluate argument indirection using unified components.
 
-        Feature: 018-unified-variable-system (T050, T051)
         This is the FIX for Challenge 6 bug.
 
         Argument indirection evaluates the resolved value AS AN EXPRESSION,
@@ -5552,7 +5503,7 @@ class MUMPSRuntime:
             _scope: Current scope dictionary
             levels: Number of indirection levels (1 for @A, 2 for @@A, etc.)
             per_level_subscripts: Subscripts per level for @A@(s1)@(s2) form
-            treat_empty_as_truthy: If True, empty string resolves to 1 (T052 for IF)
+            treat_empty_as_truthy: If True, empty string resolves to 1 (for IF)
                                    If False, empty string raises error (WRITE, SET, etc.)
 
         Returns:
@@ -5571,7 +5522,7 @@ class MUMPSRuntime:
             evaluate_argument_indirection("A", scope, levels=2)
             # Returns 1 (TRUE) because 1=1 is true
 
-            # I @A where A="" (T052)
+            # I @A where A=""
             evaluate_argument_indirection("A", scope, levels=1, treat_empty_as_truthy=True)
             # Returns 1 (TRUE) - empty indirection in IF is TRUE
         """
@@ -5663,8 +5614,8 @@ class MUMPSRuntime:
             per_level_subscripts: Subscripts per level for @A@(s1)@(s2) form
 
         Raises:
-            LVUNDEFError: If source variable is undefined (T052)
-            VarExpectedError: If resolved value is empty (T052)
+            LVUNDEFError: If source variable is undefined
+            VarExpectedError: If resolved value is empty
         """
         from m2py.core.scope import CurrentScope
         from m2py.core.indirection import IndirectionResolver
@@ -5686,10 +5637,10 @@ class MUMPSRuntime:
                 source,
                 levels=levels,
                 per_level_subscripts=per_level_subscripts,
-                strict_undef=True,  # T052: undefined source should error
+                strict_undef=True,  # Undefined source should error
             )
 
-        # T052: Empty string value should raise error in WRITE context
+        # Empty string value should raise error in WRITE context
         if not raw_value:
             raise VarExpectedError(
                 source, f"Empty indirection value in WRITE context: {source}"
@@ -5790,7 +5741,7 @@ class MUMPSRuntime:
     def kill_var(self, name: str, _scope: Dict[str, Any]) -> None:
         """Kill variable by name (name indirection).
 
-        Spec 017 Phase 6: Implements KILL with indirection.
+        Implements KILL with indirection.
 
         Behavior:
         - Local variables: Remove from _scope dict or kill subscript
@@ -5866,7 +5817,7 @@ class MUMPSRuntime:
     def merge_var(self, name: str, source: "MArray", _scope: Dict[str, Any]) -> None:
         """Merge source tree into variable by name (name indirection for MERGE).
 
-        Spec 017 Phase 13: Implements MERGE with indirection destination.
+        Implements MERGE with indirection destination.
 
         Behavior:
         - Local variables: Merge into local variable tree in _scope
@@ -5948,7 +5899,7 @@ class MUMPSRuntime:
     def get_tree_var(self, name: str, _scope: Dict[str, Any]) -> Optional["MArray"]:
         """Get variable tree by name (name indirection for MERGE source).
 
-        Spec 017 Phase 13: Implements MERGE with indirection source.
+        Implements MERGE with indirection source.
 
         Behavior:
         - Local variables: Return MArray from _scope (or subtree)
@@ -6016,7 +5967,6 @@ class MUMPSRuntime:
     def _is_valid_var_name(self, name: str) -> bool:
         """Check if name looks like a valid MUMPS variable name.
 
-        Feature: 018-unified-variable-system
         Now delegates to core.names.is_valid_varname() for unified validation.
 
         Args:
@@ -6859,7 +6809,7 @@ class MUMPSRuntime:
     ) -> CallTarget:
         """Parse indirect DO/GOTO target into components.
 
-        Spec 012 (T010): Parses target strings for indirect DO/GOTO.
+        Parses target strings for indirect DO/GOTO.
 
         Formats supported:
         - "LABEL" → local label
@@ -6956,7 +6906,7 @@ class MUMPSRuntime:
     ) -> Any:
         """Execute MUMPS code string at runtime (XECUTE).
 
-        Spec 012 (T011): Implements dynamic MUMPS code execution.
+        Implements dynamic MUMPS code execution.
 
         Behavior:
         - Parses code as MUMPS using m2py parser
@@ -6969,7 +6919,7 @@ class MUMPSRuntime:
         which runs Python code. The contract specifies execute() but we
         need a different name to avoid shadowing the existing method.
 
-        T075p: When caller_globals is provided, include it in the execution
+        When caller_globals is provided, include it in the execution
         namespace so XECUTE'd code can call module-level label functions
         (DO/GOTO to labels in the calling routine).
 
@@ -7032,7 +6982,7 @@ class MUMPSRuntime:
         try:
             python_code = generate_python(wrapped_code, routine_name="XECUTE")
         except Exception as e:
-            # T067: Provide useful context in XECUTE syntax error message
+            # Provide useful context in XECUTE syntax error message
             # Include the original MUMPS code so user knows what failed
             error_msg = f"XECUTE parse error in '{mumps_code}': {e}"
             raise SyntaxError(error_msg) from e
@@ -7050,13 +7000,13 @@ class MUMPSRuntime:
 
         # Copy scope variables into namespace for direct access
         # Generated code uses _scope.get("VAR", "") pattern, so this works
-        # T091c: Update scope BEFORE adding callables so labels take precedence
+        # Update scope BEFORE adding callables so labels take precedence
         # In MUMPS, D A always refers to label A, not variable A
         namespace.update(_scope)
 
-        # T075p: Include caller's globals so XECUTE can access module labels
+        # Include caller's globals so XECUTE can access module labels
         # This allows DO/GOTO to labels in the calling routine
-        # T091c: Add callables AFTER scope so labels override variables
+        # Add callables AFTER scope so labels override variables
         if caller_globals:
             # Only include callable items (functions) to avoid polluting namespace
             for name, value in caller_globals.items():
@@ -7069,18 +7019,18 @@ class MUMPSRuntime:
 
             # The generated code defines a function, we need to call it
             if "XECUTE" in namespace and callable(namespace["XECUTE"]):
-                # T007: Push XECUTE stack frame with MUMPS source as mcode
+                # Push XECUTE stack frame with MUMPS source as mcode
                 self.push_stack_frame("XECUTE", mcode=mumps_code)
                 try:
                     result = namespace["XECUTE"](self, _scope=_scope)
                 finally:
-                    # T007: Pop XECUTE stack frame
+                    # Pop XECUTE stack frame
                     self.pop_stack_frame()
             else:
                 result = None
 
             # Sync $TEST back - store in both _scope and self._test
-            # Spec 012 Phase 6 (T038): XECUTE does NOT stack $TEST
+            # XECUTE does NOT stack $TEST
             # The modified $TEST must be visible to caller
             if "_test" in namespace:
                 _scope["_test"] = namespace["_test"]
@@ -7246,7 +7196,6 @@ class MUMPSRuntime:
             exec(python_code, namespace)
 
             # Re-inject runtime after module execution
-            # (the generated code no longer creates its own _rt since Phase 13)
             namespace["_rt"] = self
 
             # Set up runtime context for $TEXT function support
@@ -7274,8 +7223,8 @@ class MUMPSRuntime:
                 entry_point = self._find_first_function(python_code)
 
             # Call entry point if found
-            # Phase 13 (T076): Entry point functions now require _rt as first parameter
-            # T075b: Use run_with_goto_support to handle external GOTOs
+            # Entry point functions require _rt as first parameter
+            # Use run_with_goto_support to handle external GOTOs
             if entry_point and entry_point in namespace:
                 func = namespace[entry_point]
                 if callable(func):
@@ -7301,7 +7250,7 @@ class MUMPSRuntime:
             )
 
         except SystemExit:
-            # Spec 011 Phase 19: HALT command raises SystemExit(0)
+            # HALT command raises SystemExit(0)
             # This is a normal termination, not an error
             test_value = namespace.get("_test", False)
             return ExecutionResult(
@@ -7360,10 +7309,10 @@ __all__ = [
     "run_with_goto_support",
     "resolve_goto_target",
     "call_external_with_offset",
-    # Spec 021: Phase 3 data structures
+    # Data structures
     "StackFrame",
     "TransactionLocalSnapshot",
-    # Spec 009: Global storage and helpers
+    # Global storage and helpers
     "GlobalStorageBackend",
     "InMemoryGlobalStorage",
     "get_global_storage",
@@ -7371,34 +7320,34 @@ __all__ = [
     "m_set_extract",
     "m_data",
     "m_data_global",
-    # Spec 010: Runtime exceptions
+    # Runtime exceptions
     "MRuntimeError",
-    # Spec 010: $ORDER and $QUERY helpers
+    # $ORDER and $QUERY helpers
     "m_order",
     "m_order_global",
     "m_query",
     "m_query_global",
-    # Spec 010: $SELECT helper
+    # $SELECT helper
     "_raise_select_false",
-    # Spec 010: $PIECE and $EXTRACT helpers (Phase 5)
+    # $PIECE and $EXTRACT helpers
     "m_piece",
     "m_extract",
-    # Spec 010: $GET helpers (Phase 6)
+    # $GET helpers
     "m_get",
     "m_get_global",
-    # Spec 010: $FIND helper (Phase 7)
+    # $FIND helper
     "m_find",
-    # Spec 011: String comparison and pattern match helpers
-    # Note: Contains ([) and Follows (]) are inlined; only sorts-after needs runtime
+    # String comparison and pattern match helpers
+    # Contains ([) and Follows (]) are inlined; only sorts-after needs runtime
     "m_sorts_after",
     "m_pattern_match",
-    # Spec 012: Indirection & XECUTE
+    # Indirection & XECUTE
     "IndirectionError",
     "CallTarget",
-    # Spec 018: SubscriptVarRef for subscript variable references
+    # SubscriptVarRef for subscript variable references
     "SubscriptVarRef",
     "VarRef",  # Backward compatibility alias for SubscriptVarRef
-    # T088: Argument list parsing for indirection
+    # Argument list parsing for indirection
     "_split_argument_list",
     "_evaluate_subscript",
     "_evaluate_subscripts",

@@ -1,4 +1,4 @@
-"""Line dispatch utilities for computed offset support (Spec 007).
+"""Line dispatch utilities for computed offset support.
 
 This module provides:
 - Line map generation: builds `_line_map` from source lines to (label, offset) tuples
@@ -17,11 +17,6 @@ from m2py.codegen.names import translate_name
 if TYPE_CHECKING:
     from m2py.asg.elements import MRoutine
     from m2py.codegen.emitter import CodeEmitter
-
-
-# NOTE: Offset call detection is now done in analysis layer via classify_gotos().
-# The routine.has_offset_calls ASG field should be used instead of traversing here.
-# See m2py.analysis.goto_analysis._detect_offset_calls() for the implementation.
 
 
 def generate_line_map(routine: "MRoutine") -> Dict[int, Tuple[str, int]]:
@@ -56,8 +51,7 @@ def generate_line_map(routine: "MRoutine") -> Dict[int, Tuple[str, int]]:
         Returns:
             {1: ("STAR", 0), 2: ("STAR", 1), 3: ("STAR", 2), 4: ("STAR", 3)}
 
-        Note:
-            Label names are translated to valid Python identifiers using translate_name().
+        Label names are translated to valid Python identifiers using translate_name().
             For example, numeric label "2" becomes "_n_2" so getattr() works correctly
             when accessing the label function on the imported module.
     """

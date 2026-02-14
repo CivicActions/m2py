@@ -1,13 +1,9 @@
 """Unified variable access abstraction.
 
 This module provides the CurrentScope class for unified variable access
-across different storage mechanisms (Python locals, _scope dict, state._locals),
-Constitution VII: All variable access (static or indirected) uses the same path,
-preventing "variable not found" bugs that occur when codegen uses Python locals
-but runtime uses _scope dict.
-
-Feature: 018-unified-variable-system
-Requirements: FR-025 (LVUNDEF), FR-036, FR-037, FR-038 (CurrentScope)
+across different storage mechanisms (Python locals, _scope dict, state._locals).
+All variable access (static or indirected) uses the same code path to prevent
+discrepancies between codegen and runtime.
 """
 
 from __future__ import annotations
@@ -28,10 +24,11 @@ class CurrentScope:
     - _scope dict (FUNCTION_WITH_OUTPUTS, SUBROUTINE strategies)
     - state._locals (REQUIRES_RUNTIME strategy)
 
-    FR-036, FR-037: Provides the "Current Scope" abstraction from spec.
-    FR-038: Automatically extracts .value from MArray objects.
-    FR-025: Unconditionally raises LVUNDEF (M6 error) when accessing undefined
-            local variables (Spec 021 Phase 12).
+    Provides the "Current Scope" abstraction: a single interface for all
+    variable access regardless of the generated code strategy.
+    Automatically extracts .value from MArray objects.
+    Unconditionally raises LVUNDEF (M6 error) when accessing undefined
+    local variables.
     """
 
     def __init__(
@@ -63,10 +60,9 @@ class CurrentScope:
         Raises:
             LVUNDEFError: If local variable is undefined (M6 error)
 
-        Note: Handles subscripted names by parsing and traversing.
-        FR-025: Unconditionally raises LVUNDEF for undefined local variables
-                (Spec 021 Phase 12 - no strict_mode conditional).
-        FR-038: Extracts .value from MArray objects automatically.
+        Handles subscripted names by parsing and traversing.
+        Unconditionally raises LVUNDEF for undefined local variables.
+        Extracts .value from MArray objects automatically.
         """
         # Handle subscripted names
         if "(" in name:
@@ -79,7 +75,7 @@ class CurrentScope:
         # Look up in storage mechanisms - try both MUMPS and Python names
         value = self._lookup(py_name, _SENTINEL, mumps_name=name)
 
-        # Spec 021 (T079): Unconditional LVUNDEF - always raise for undefined
+        # Unconditional LVUNDEF - always raise for undefined
         if value is _SENTINEL:
             raise LVUNDEFError(name)
 
@@ -116,7 +112,7 @@ class CurrentScope:
         base = self._lookup(py_name, None, mumps_name=name)
 
         if base is None:
-            # Spec 021 (T079): Unconditional LVUNDEF
+            # Unconditional LVUNDEF for undefined base variable
             subs_str = ",".join(str(s) for s in subscripts)
             raise LVUNDEFError(f"{name}({subs_str})")
 
@@ -130,7 +126,7 @@ class CurrentScope:
             # data_code: 0=none, 1=value, 10=descendants, 11=both
             # LVUNDEF should fire if there's no value (data_code in 0, 10)
             if data_code in (0, 10):
-                # Spec 021 (T079): Unconditional LVUNDEF
+                # Unconditional LVUNDEF for undefined subscripted variable
                 subs_str = ",".join(str(s) for s in subscripts)
                 raise LVUNDEFError(f"{name}({subs_str})")
             # Navigate to get the actual value
@@ -149,7 +145,7 @@ class CurrentScope:
         Returns:
             True if variable is defined, False otherwise
 
-        Note: This checks for $DATA style existence - a variable is defined
+        Checks for $DATA-style existence — a variable is defined
         if it has a value at the specified location.
         """
         # Translate MUMPS name to Python identifier
@@ -383,8 +379,8 @@ class CurrentScope:
         Returns:
             Variable value or default if not found
 
-        Note: Some code paths store using MUMPS names, others use Python names.
-        We try both to handle mixed conventions.
+        Some code paths store using MUMPS names, others use Python names.
+        Both are tried to handle mixed conventions.
         """
         if self._scope_dict is not None:
             # Try MUMPS name first (for code that stores using MUMPS names)
@@ -411,7 +407,7 @@ class CurrentScope:
             del self._scope_dict[py_name]
 
     def _extract_value(self, obj: Any) -> Any:
-        """Extract value from MArray if needed (FR-038)."""
+        """Extract value from MArray if needed."""
         if obj is None:
             return ""  # MUMPS undefined = empty string
 

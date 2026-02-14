@@ -1,7 +1,7 @@
 """Variable access expression generators for 3-way strategy dispatch.
 
-Spec 020 Phase 8 (T031): Consolidates inline 3-way variable-access
-dispatch patterns into reusable helpers.
+Consolidates inline 3-way variable-access dispatch patterns into
+reusable helpers.
 
 The three strategies are:
 - SIMPLE_FUNCTIONS: variables live in ``_scope`` dict

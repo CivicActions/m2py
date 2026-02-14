@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 def _select_goto_strategy(routine: "MRoutine") -> GotoStrategy:
     """Select code generation strategy based on routine analysis.
 
-    Spec 006 (T043-T044): Automatic strategy selection based on ASG flags.
-    No user configuration needed - strategy is determined by analysis results.
+    Automatic strategy selection based on ASG flags. No user configuration
+    needed - strategy is determined by analysis results.
 
     Args:
         routine: Analyzed MRoutine with needs_trampoline flag set
@@ -32,16 +32,15 @@ def _select_goto_strategy(routine: "MRoutine") -> GotoStrategy:
     Strategy Selection:
         - `needs_trampoline=True` → TRAMPOLINE with RoutineState
         - Offset calls present → TRAMPOLINE (for _start_offset parameter support)
-        - Otherwise → SIMPLE_FUNCTIONS (current Spec 005 behavior)
+        - Otherwise → SIMPLE_FUNCTIONS (default when no cross-label GOTOs)
 
-    Note:
-        UNRESOLVED and EXTERNAL GOTOs are checked at statement level during
-        code generation, not at strategy selection. They raise UnsupportedFeatureError.
+    UNRESOLVED and EXTERNAL GOTOs are checked at statement level during
+    code generation, not at strategy selection. They raise UnsupportedFeatureError.
     """
     if routine.needs_trampoline:
         return GotoStrategy.TRAMPOLINE
-    # Spec 007: Use TRAMPOLINE when offset calls exist for _start_offset support
-    # Note: has_offset_calls is populated by classify_gotos() analysis pass
+    # Use TRAMPOLINE when offset calls exist for _start_offset support
+    # has_offset_calls is populated by classify_gotos() analysis pass
     if routine.has_offset_calls:
         return GotoStrategy.TRAMPOLINE
     return GotoStrategy.SIMPLE_FUNCTIONS
@@ -105,9 +104,6 @@ def _get_reachable_labels(routine: "MRoutine") -> set[str]:
 def _check_unsupported_gotos(routine: "MRoutine") -> None:
     """Check for unsupported GOTO patterns and raise if found.
 
-    Spec 006 (T045a, T045b): Emit UnsupportedFeatureError for GOTO patterns
-    that are deferred to later specs.
-
     Only checks labels that are reachable from the routine entry point.
     Labels that contain unresolved GOTOs but are only callable externally
     are allowed - they simply won't be generated.
@@ -132,10 +128,7 @@ def _check_unsupported_gotos(routine: "MRoutine") -> None:
         for stmt in label.body.walk_statements():
             if isinstance(stmt, MGotoStatement):
                 if stmt.goto_type == GotoType.UNRESOLVED:
-                    raise UnsupportedFeatureError(
-                        "UNRESOLVED GOTO not supported - See Spec 012"
-                    )
-                # Spec 008 Phase 6: EXTERNAL GOTOs now supported
+                    raise UnsupportedFeatureError("UNRESOLVED GOTO not supported")
 
 
 def generate_python(
@@ -185,10 +178,10 @@ def generate_python(
     parser.analyze_variables(routine, compute_transitive=True)
     parser.compute_signatures(routine)
 
-    # Spec 006 (T045a, T045b): Check for unsupported GOTO patterns
+    # Check for unsupported GOTO patterns
     _check_unsupported_gotos(routine)
 
-    # Spec 006 (T043-T044): Select generation strategy based on analysis
+    # Select generation strategy based on analysis
     strategy = _select_goto_strategy(routine)
 
     # Generate Python code

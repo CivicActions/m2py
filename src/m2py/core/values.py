@@ -4,11 +4,7 @@ All MUMPS value-model functions live here.  ``codegen/helpers.py``
 re-exports the public symbols for backward compatibility with
 generated code.
 
-Constitution VI (Cross-Cutting Semantics): a single implementation
-shared by codegen, runtime, and core layers.
-
-Feature: 019-foundation-cleanup
-Requirements: FR-011, FR-012, FR-013, FR-014, FR-020
+A single implementation shared by codegen, runtime, and core layers.
 """
 
 from __future__ import annotations
@@ -19,7 +15,7 @@ from typing import Any, Union
 
 
 # ---------------------------------------------------------------------------
-# Canonical number → string  (FR-011)
+# Canonical number → string
 # ---------------------------------------------------------------------------
 
 
@@ -124,7 +120,7 @@ def mumps_canonical_str(value: Union[int, float, Decimal]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# String coercion  (FR-014)
+# String coercion
 # ---------------------------------------------------------------------------
 
 
@@ -168,7 +164,7 @@ def m_str(value: Any) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Numeric coercion  (FR-014)
+# Numeric coercion
 # ---------------------------------------------------------------------------
 
 
@@ -257,7 +253,7 @@ def m_num(value: Any) -> Union[int, float, Decimal]:
 
 
 # ---------------------------------------------------------------------------
-# Truth evaluation  (FR-014)
+# Truth evaluation
 # ---------------------------------------------------------------------------
 
 
@@ -270,7 +266,7 @@ def m_truth(value: Any) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Comparison  (FR-014)
+# Comparison
 # ---------------------------------------------------------------------------
 
 
@@ -303,7 +299,7 @@ def m_compare(left: Any, op: str, right: Any) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Decimal binary-operation helper  (FR-020 / S-06)
+# Decimal binary-operation helper
 # ---------------------------------------------------------------------------
 
 

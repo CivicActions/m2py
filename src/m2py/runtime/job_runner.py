@@ -12,8 +12,6 @@ the child process runs this module as its entry point. It:
 Usage (invoked by MUMPSRuntime.start_job()):
     python -m m2py.runtime.job_runner --routine <name> --label <label> \\
         --db-path <sqlite_path> [--args <json_args>]
-
-Spec 022: Phase 4 — Large Architecture (F-04)
 """
 
 from __future__ import annotations
@@ -59,7 +57,7 @@ def main() -> None:
     rt._current_device.name = child_device
 
     # Handle I/O redirection if specified
-    # Spec 022 Phase 9 Gap 3 (T110): INPUT/OUTPUT/ERROR redirection
+    # INPUT/OUTPUT/ERROR redirection for JOB'd processes
     if args.output:
         try:
             rt.open_device(args.output, ["NEWVERSION"], None)
@@ -101,7 +99,7 @@ def main() -> None:
             rt._current_label_lines = label_lines
 
         # Run with goto support (handles GotoExternal for cross-routine control)
-        # Spec 022 Phase 9 Gap 2 (T106): Pass actual_args to entry function
+        # Pass actual_args to entry function
         # so JOB CHILD^ROUTINE(arg1,arg2) delivers values to CHILD(A,B)
         from m2py.runtime import run_with_goto_support
 

@@ -2,7 +2,7 @@
 
 This module provides low-level parsing using textX grammars to convert MUMPS
 line content into textX model objects. These models can then be analyzed by
-the SemanticAnalyzer to produce full ASG nodes.
+``analyze_command()`` in ``semantic_analyzer.py`` to produce full ASG nodes.
 
 **Parsing Functions** (primary API):
 - `parse_line_content()` - Parse line text → textX LineContent model

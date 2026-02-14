@@ -1,7 +1,7 @@
 """Shared state infrastructure for cross-label GOTO code generation.
 
-Spec 006 Phase 4: Provides functions to generate RoutineState dataclass
-for trampoline pattern. RoutineState carries variables across label boundaries.
+Provides functions to generate RoutineState dataclass for trampoline pattern.
+RoutineState carries variables across label boundaries.
 
 Pattern (static fields):
     @dataclass
@@ -9,7 +9,7 @@ Pattern (static fields):
         X: Any = None           # Simple variable
         A: MArray = field(default_factory=MArray)  # Array variable
 
-Pattern (dynamic locals - Spec 017):
+Pattern (dynamic locals):
     @dataclass
     class RoutineState:
         _locals: dict = field(default_factory=dict)  # All local variables
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 def routine_uses_dynamic_locals(routine: "MRoutine") -> bool:
     """Check if routine needs dynamic locals dict instead of static fields.
 
-    Spec 017: Routines with argumentless KILL or argumentless NEW need
+    Routines with argumentless KILL or argumentless NEW need dynamic
     dynamic variable storage because we cannot enumerate all variables
     statically. These routines use state._locals dict for all variable
     access instead of state.VAR individual fields.
@@ -65,11 +65,11 @@ def routine_uses_dynamic_locals(routine: "MRoutine") -> bool:
 def generate_routine_state_class(routine: "MRoutine") -> str:
     """Generate RoutineState dataclass definition for a routine.
 
-    Spec 006 (T048): Builds RoutineState dataclass from analysis results.
-    Uses routine.routine_state_vars for simple variables and
+    Builds RoutineState dataclass from analysis results. Uses
+    routine.routine_state_vars for simple variables and
     routine.array_vars for MArray fields.
 
-    Spec 017: When routine has argumentless KILL or NEW, generates dict-based
+    When routine has argumentless KILL or NEW, generates dict-based
     RoutineState with _locals and _new_stack fields instead of static fields.
 
     Args:
@@ -85,13 +85,13 @@ def generate_routine_state_class(routine: "MRoutine") -> str:
             Y: Any = None
             A: MArray = field(default_factory=MArray)
 
-    Example output (dynamic - Spec 017):
+    Example output (dynamic):
         @dataclass
         class RoutineState:
             _locals: dict = field(default_factory=dict)
             _new_stack: list = field(default_factory=list)
     """
-    # Spec 017: Check if routine needs dynamic locals
+    # Check if routine needs dynamic locals
     if routine_uses_dynamic_locals(routine):
         return _generate_dynamic_state_class()
 
@@ -138,7 +138,7 @@ class RoutineState:
 def _generate_dynamic_state_class() -> str:
     """Generate RoutineState with dynamic _locals dict for argumentless KILL/NEW.
 
-    Spec 017: When a routine uses argumentless KILL or NEW, we cannot use
+    When a routine uses argumentless KILL or NEW, we cannot use
     static fields because we need to clear/save ALL variables dynamically.
 
     Returns:
@@ -163,7 +163,7 @@ class RoutineState:
 def generate_state_initialization(routine: "MRoutine") -> str:
     """Generate initial state creation for routine entry.
 
-    Spec 006 (T049): Creates initial RoutineState instance at routine entry.
+    Creates initial RoutineState instance at routine entry.
 
     Args:
         routine: Analyzed MRoutine

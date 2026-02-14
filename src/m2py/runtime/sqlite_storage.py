@@ -10,8 +10,6 @@ Features:
     - MUMPS numeric-before-string collation for $ORDER
     - Cross-process lock coordination via locks table
     - Transaction support (TSTART/TCOMMIT/TROLLBACK → SAVEPOINT/RELEASE/ROLLBACK)
-
-Spec 022: Phase 4 — Large Architecture (F-01, F-04)
 """
 
 from __future__ import annotations
@@ -170,7 +168,7 @@ class SQLiteGlobalStorage:
             self._naked_indicator = None
 
     # =========================================================================
-    # Core Global Operations (T047-T049)
+    # Core Global Operations
     # =========================================================================
 
     def get(
@@ -353,7 +351,7 @@ class SQLiteGlobalStorage:
         return (name, full_subscripts)
 
     # =========================================================================
-    # $ORDER (T050)
+    # $ORDER
     # =========================================================================
 
     def order(
@@ -423,7 +421,7 @@ class SQLiteGlobalStorage:
         return ""
 
     # =========================================================================
-    # $QUERY (T051)
+    # $QUERY
     # =========================================================================
 
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
@@ -486,7 +484,7 @@ class SQLiteGlobalStorage:
         return f"^{name}({','.join(formatted_subs)})"
 
     # =========================================================================
-    # MERGE (T052)
+    # MERGE
     # =========================================================================
 
     def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
@@ -565,7 +563,7 @@ class SQLiteGlobalStorage:
             self._merge_tree_recursive(name, subscripts + (child_sub,), child)
 
     # =========================================================================
-    # $INCREMENT (T053)
+    # $INCREMENT
     # =========================================================================
 
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
@@ -629,7 +627,7 @@ class SQLiteGlobalStorage:
         self._cleanup_ancestors(name, subscripts)
 
     # =========================================================================
-    # Transaction Support (T054)
+    # Transaction Support
     # =========================================================================
 
     def transaction_start(self) -> None:
@@ -669,7 +667,7 @@ class SQLiteGlobalStorage:
         return self._tlevel
 
     # =========================================================================
-    # Lock Operations — SQLite-backed cross-process locking (Phase 7)
+    # Lock Operations
     # =========================================================================
 
     def lock(
@@ -681,7 +679,7 @@ class SQLiteGlobalStorage:
     ) -> bool:
         """Acquire or release a lock on ^NAME(subscripts).
 
-        Spec 022 Phase 7: SQLite-backed cross-process lock manager.
+        SQLite-backed cross-process lock manager.
 
         Supports hierarchical blocking:
         - Lock ^A blocks ^A(x) for all x (parent blocks children)
@@ -902,7 +900,7 @@ class SQLiteGlobalStorage:
     def unlock_all(self) -> None:
         """Release all locks held by the current process.
 
-        Spec 022 Phase 7: Deletes all lock rows owned by current PID.
+        Deletes all lock rows owned by current PID.
         Called automatically when a JOB'd child process exits.
         """
         pid = os.getpid()
@@ -911,7 +909,7 @@ class SQLiteGlobalStorage:
     def get_locks(self) -> list[tuple[str, str, int]]:
         """Return all locks held by the current process.
 
-        Spec 022 Phase 9 (T138): Used by ZSHOW \"L\".
+        Used by ZSHOW "L".
 
         Returns:
             List of (lock_name, subscripts_json, lock_count) tuples
@@ -958,7 +956,7 @@ class SQLiteGlobalStorage:
     def ssvn_lock(self, subscript: str) -> str:
         """Query ^$LOCK(lockname) for lock information.
 
-        Spec 022 Phase 7: Queries SQLite locks table.
+        Queries the SQLite locks table.
         """
         json_subs = self._subs_to_json(())
         row = self._conn.execute(

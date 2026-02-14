@@ -1,8 +1,4 @@
-"""Exceptions for the unified variable system.
-
-Feature: 018-unified-variable-system
-Requirements: FR-025 (LVUNDEF), FR-010 (VarExpectedError)
-"""
+"""Exceptions for the MUMPS variable system."""
 
 
 class LVUNDEFError(Exception):

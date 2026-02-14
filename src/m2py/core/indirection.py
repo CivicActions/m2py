@@ -5,11 +5,8 @@ This module provides the IndirectionResolver class for resolving MUMPS
 per-level subscripts, recursive @-expressions, and context-aware
 finalization (NAME vs ARGUMENT).
 
-Constitution VII: Used ONLY for truly dynamic cases where codegen
-cannot statically resolve the indirection.
-
-Feature: 018-unified-variable-system
-Requirements: FR-010 through FR-022
+Used only for truly dynamic cases where codegen cannot statically
+resolve the indirection.
 """
 
 from enum import Enum
@@ -53,8 +50,8 @@ class IndirectionContext(Enum):
 class IndirectionResolver:
     """Runtime resolver for @-expressions.
 
-    Constitution VII: Used ONLY for truly dynamic cases where
-    codegen cannot statically resolve the indirection.
+    Used only for truly dynamic cases where codegen cannot statically
+    resolve the indirection.
 
     Supports:
     - Single level: @X
@@ -93,7 +90,7 @@ class IndirectionResolver:
             context: How to use final resolved value
             direct_subscripts: Subscripts for @X(subs) form
             per_level_subscripts: Subscripts per resolution level for @X@(s1)@(s2)
-            treat_empty_as_truthy: T052 - if True, empty string in ARGUMENT context
+            treat_empty_as_truthy: If True, empty string in ARGUMENT context
                                    returns 1 (TRUE). Used by IF indirection.
 
         Returns:
@@ -132,7 +129,7 @@ class IndirectionResolver:
                 # Expand the naked reference to full global name
                 value = self._expand_naked_reference_string(current)
             else:
-                # T065: Check if source variable is defined before getting value
+                # Check if source variable is defined before getting value
                 # This raises LVUNDEF for @UNDEF (undefined source variable)
                 if self._is_valid_var_name(current) and not self._scope.exists(current):
                     # Global variables - check via _state
@@ -539,20 +536,20 @@ class IndirectionResolver:
         Instead of returning the string to m_truth(), we parse and
         evaluate the actual MUMPS expression.
 
-        T052 (Challenge 7): Empty string in argument context is TRUE in YDB.
-        This is YDB-specific behavior where `I @A` where A="" returns TRUE,
+        Empty string in argument context is TRUE in YDB. This is
+        YDB-specific behavior where `I @A` where A="" returns TRUE,
         even though `I ""` returns FALSE. The distinction appears to be:
         - Successful indirection resolution (even to empty) → TRUE
         - Direct empty string evaluation → FALSE
 
-        T053a: Argument list indirection - when @A contains comma-separated
+        Argument list indirection: when @A contains comma-separated
         values like "00.1,2", it expands to multiple IF conditions ANDed.
         Example: I @B where B="00.1,2" → I 00.1,2 → (0.1 AND 2) → TRUE
 
         Args:
             expr_string: MUMPS expression like "1=0", "X>5", "$E(S,1,3)"
                         Can also be comma-separated list: "1=1,0" (AND of conditions)
-            treat_empty_as_truthy: T052 - if True, empty string returns 1 (TRUE)
+            treat_empty_as_truthy: If True, empty string returns 1 (TRUE).
                                    Used by IF indirection. Other contexts (WRITE, SET)
                                    should pass False to get error on empty.
 
@@ -566,7 +563,7 @@ class IndirectionResolver:
             evaluate_expression("1=0") → 0  # False
             evaluate_expression("X>5") → 1  # True if X=10
             evaluate_expression("$E(\"ABC\",2)") → "B"
-            evaluate_expression("", treat_empty_as_truthy=True) → 1  # T052
+            evaluate_expression("", treat_empty_as_truthy=True) → 1  # Empty is truthy in IF
             evaluate_expression("", treat_empty_as_truthy=False) → VarExpectedError
             evaluate_expression("00.1,2") → 1  # Both 0.1 and 2 are truthy → TRUE
             evaluate_expression("1=1,0") → 0  # 1=1 is TRUE but 0 is FALSE → FALSE
@@ -574,9 +571,9 @@ class IndirectionResolver:
         # Handle empty string based on context
         if not expr_string or not expr_string.strip():
             if treat_empty_as_truthy:
-                # T052: Empty string in IF argument indirection is TRUE (YDB-specific)
+                # Empty string in IF argument indirection is TRUE (YDB-specific)
                 # This handles I @A where A="" → TRUE
-                # Note: This differs from I "" → FALSE (direct empty string check)
+                # This differs from I "" → FALSE (direct empty string check)
                 return 1
             else:
                 # For WRITE, SET, etc. - empty string is an error
@@ -584,7 +581,7 @@ class IndirectionResolver:
 
         stripped = expr_string.strip()
 
-        # T053a: Check for comma-separated argument list (IF argument expansion)
+        # Check for comma-separated argument list (IF argument expansion)
         # In MUMPS, I @A where A="cond1,cond2" expands to I cond1,cond2
         # which means evaluate cond1 AND cond2 (all must be truthy)
         args = self._split_argument_list(stripped)
@@ -602,7 +599,7 @@ class IndirectionResolver:
     def _split_argument_list(self, expr_string: str) -> List[str]:
         """Split expression on commas that are outside quotes and parentheses.
 
-        T053a: For IF argument indirection, "00.1,2" should split into ["00.1", "2"].
+        For IF argument indirection, "00.1,2" should split into ["00.1", "2"].
         But "$P(X,Y)" should NOT split (comma inside parens).
         And '"A,B"' should NOT split (comma inside quotes).
 
@@ -745,7 +742,7 @@ class IndirectionResolver:
             Variable value
 
         Raises:
-            LVUNDEFError: If variable is undefined (unconditional per Spec 021)
+            LVUNDEFError: If variable is undefined (M6 error)
         """
         # Handle subscripted names
         if "(" in name:
@@ -1009,7 +1006,7 @@ class IndirectionResolver:
         # Check for name indirection subscripts pattern: VAR@(subs)
         # This is different from VAR(subs) - the @() means "append these subscripts
         # to whatever VAR resolves to"
-        # IMPORTANT: We need to distinguish:
+        # We need to distinguish:
         #   - VAR@(subs) = name-indirection subscripts (@ after variable name)
         #   - VAR(@X) = subscript indirection (@ inside subscripts)
         # Only look for @( that appears BEFORE any opening parenthesis
@@ -1427,8 +1424,7 @@ class IndirectionResolver:
     def _is_valid_var_name(self, name: str) -> bool:
         """Check if name is a valid MUMPS variable name.
 
-        Feature: 018-unified-variable-system
-        Now delegates to core.names.is_valid_varname() for unified validation.
+        Delegates to core.names.is_valid_varname() for validation.
 
         Args:
             name: String to check (may include subscripts)

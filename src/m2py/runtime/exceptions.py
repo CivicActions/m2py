@@ -2,8 +2,6 @@
 
 Provides exception classes for MUMPS runtime errors that have specific
 error codes. These mirror YottaDB error codes for compatibility.
-
-Spec 010: Initial implementation for intrinsic function errors.
 """
 
 
@@ -52,8 +50,6 @@ class DeviceError(MRuntimeError):
 
     Raised when I/O device operations fail. Subclasses provide
     specific error codes for different failure modes.
-
-    Spec 022: Phase 4 — Large Architecture (F-02)
     """
 
     def __init__(self, code: str, message: str = "") -> None:
@@ -81,9 +77,8 @@ class DeviceOpenFailError(DeviceError):
     MUMPS error code: DEVOPENFAIL
     Corresponds to YottaDB %SYSTEM-E-DEVOPENFAIL error.
 
-    This is raised for errors like file-not-found or permission denied.
-    Note: This error is raised regardless of whether a timeout was
-    specified on the OPEN command (FR-022).
+    This is raised for errors like file-not-found or permission denied,
+    regardless of whether a timeout was specified on the OPEN command.
 
     Example:
         OPEN "/nonexistent/path.txt"  ; raises DeviceOpenFailError

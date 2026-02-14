@@ -77,7 +77,7 @@ class MScope(ASGElement):
         Walks through all statements in this scope and recurses into
         any nested scopes (IF then/else bodies, FOR bodies, DO blocks, etc.).
         Covers ``get_body_scope``, ``get_then_scope``, and ``get_else_scope``
-        to ensure complete statement coverage (S-10, FR-010).
+        to ensure complete statement coverage.
         """
         from m2py.asg.type_helpers import (
             get_body_scope,
@@ -126,21 +126,21 @@ class MLabel(ASGElement):
     # Function signature (populated by compute_signatures)
     signature: Optional[Any] = field(default=None, repr=False)  # FunctionSignature
 
-    # Spec 006 (T069a): Self-loop flag (populated by classify_gotos)
+    # Self-loop flag (populated by classify_gotos)
     # True if label contains intra-label backward GOTO to itself (creates while True: pattern)
     has_self_loop: bool = False
 
-    # Spec 011: NEW statement presence flag (populated by variable analysis)
+    # NEW statement presence flag (populated by variable analysis)
     # True if label contains any MNewStatement (NEW, NEW X, NEW (X))
     # Used by codegen to determine if NewScopeManager context is needed
     has_new_statements: bool = False
 
-    # Spec 013: Fall-through flag (populated by semantic analyzer)
+    # Fall-through flag (populated by classify_gotos)
     # True if label should fall through to the next label when it completes
     # (i.e., it doesn't end with QUIT, GOTO, or HALT)
     needs_fallthrough: bool = False
 
-    # Spec 013: Next label reference (populated by semantic analyzer)
+    # Next label reference (populated by classify_gotos)
     # Points to the next label in sequence for fall-through, None if last label
     next_label: Optional["MLabel"] = field(default=None, repr=False)
 
@@ -206,18 +206,18 @@ class MRoutine(ASGElement):
     # Parse errors encountered during parsing (for error-tolerant mode)
     parse_errors: List["MParseError"] = field(default_factory=list, repr=False)
 
-    # T102: Pre-computed codegen hint (populated by classify_gotos)
+    # Pre-computed codegen hint (populated by classify_gotos)
     needs_loop_exit_exception: bool = False  # True if any MULTI_LOOP_EXIT GOTO exists
 
-    # Spec 006 (T033): Trampoline pattern flag (populated by classify_gotos)
+    # Trampoline pattern flag (populated by classify_gotos)
     # True if ANY cross-label GOTOs exist - requires trampoline for proper control flow
     needs_trampoline: bool = False
 
-    # Spec 006 (T039a): Variables needing RoutineState fields (populated by compute_all_signatures)
+    # Variables needing RoutineState fields (populated by compute_all_signatures)
     # Union of all label's output_variables that are read by other labels (cross-label flow)
     routine_state_vars: set = field(default_factory=set, repr=False)
 
-    # Spec 006 (T039b): Variables with subscripted access requiring MArray fields
+    # Variables with subscripted access requiring MArray fields
     # Populated by compute_all_signatures when subscripted local variable access detected
     array_vars: set = field(default_factory=set, repr=False)
 
@@ -226,23 +226,23 @@ class MRoutine(ASGElement):
     # callers via GOTO. Populated by compute_all_signatures.
     routine_input_only_vars: set = field(default_factory=set, repr=False)
 
-    # Spec 007: True if any GOTO/DO has offset expression (populated by classify_gotos)
+    # True if any GOTO/DO has offset expression (populated by classify_gotos)
     # Triggers TRAMPOLINE strategy and _line_map generation for line-based dispatch
     has_offset_calls: bool = False
 
-    # Spec 017: True if any argumentless KILL (K with no args) exists in routine
+    # True if any argumentless KILL (K with no args) exists in routine
     # Requires runtime local variable tracking (state._locals dict) in TRAMPOLINE mode
     has_argumentless_kill: bool = False
 
-    # Spec 017: True if any argumentless NEW (N with no args) exists in routine
+    # True if any argumentless NEW (N with no args) exists in routine
     # Requires runtime scope stack (state._new_stack) in TRAMPOLINE mode
     has_argumentless_new: bool = False
 
-    # Spec 019: True if any exclusive KILL (K (X)) exists in routine
+    # True if any exclusive KILL (K (X)) exists in routine
     # Requires dynamic_locals since we must enumerate all vars to kill the complement
     has_exclusive_kill: bool = False
 
-    # Spec 019: True if any exclusive NEW (N (X)) exists in routine
+    # True if any exclusive NEW (N (X)) exists in routine
     # Requires dynamic_locals since we must enumerate all vars to NEW the complement
     has_exclusive_new: bool = False
 

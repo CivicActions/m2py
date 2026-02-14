@@ -25,11 +25,10 @@ Examples:
 - 3N1"-"4N → 3 digits, dash, 4 digits (phone format)
 - .E → any string (including empty)
 
-Codegen Note:
-    The E pattern code generates `.` which does NOT match newlines by default.
-    Per MUMPS 1995 spec 7.2.3, E matches "any character including non-printable"
-    which includes newlines. Code generators MUST use re.DOTALL flag when
-    compiling patterns containing E code to ensure correct newline handling.
+The E pattern code generates `.` which does NOT match newlines by default.
+Per MUMPS 1995 spec 7.2.3, E matches "any character including non-printable"
+which includes newlines. Code generators must use re.DOTALL flag when
+compiling patterns containing E code to ensure correct newline handling.
 """
 
 import re

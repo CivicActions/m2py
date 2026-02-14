@@ -7,7 +7,6 @@ MUMPS names can contain characters that are invalid in Python identifiers:
 
 This module re-exports from core/names.py for backward compatibility.
 The canonical implementation is in core/names.py.
-Spec: 018-unified-variable-system, Phase 2 (T011)
 """
 
 # Re-export from the unified core module for backward compatibility

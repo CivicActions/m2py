@@ -732,7 +732,7 @@ class SemanticAnalyzer:
     def _analyze_SetCommand(self, cmd: Any, parent: Any) -> MSetStatement:
         """Analyze SET command into MSetStatement.
 
-        Spec 017: Maintains ordered_items list for correct left-to-right evaluation
+        Maintains ordered_items list for correct left-to-right evaluation
         of SET arguments including interleaved argument indirections.
         """
         stmt = MSetStatement()
@@ -1429,7 +1429,7 @@ class SemanticAnalyzer:
     def _analyze_XecuteCommand(self, cmd: Any, parent: Any) -> MXecuteStatement:
         """Analyze XECUTE command into MXecuteStatement.
 
-        T075q: Capture per-argument postconditions for XECUTE.
+        Captures per-argument postconditions for XECUTE.
         X P,Q:X=10,R:X=10,S  -- Q and R only execute if X=10
         """
         from m2py.asg.statements import MXecuteArg
@@ -1442,7 +1442,7 @@ class SemanticAnalyzer:
             for arg in cmd.args:
                 if hasattr(arg, "expr") and arg.expr:
                     expr = self.analyze(arg.expr, stmt)
-                    # T075q: Capture argument postcondition
+                    # Capture argument postcondition
                     postcond = None
                     if hasattr(arg, "postcond") and arg.postcond:
                         # Postcondition has a .condition field with the actual expression

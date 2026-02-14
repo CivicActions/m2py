@@ -10,8 +10,6 @@ Device types:
     - TCPDevice: TCP socket client connections (OPEN "host:port":params)
 
 Each device tracks per-device ISVs: $X, $Y, $KEY, $ZEOF.
-
-Spec 022: Phase 4 — Large Architecture (F-02, F-12)
 """
 
 from __future__ import annotations
@@ -137,7 +135,7 @@ class PrincipalDevice(MUMPSDevice):
 
     The principal device is always device "0". It wraps the current
     stdout/_output list for writes and stdin for reads, preserving
-    the exact behavior of the pre-Phase-4 runtime.
+    the standard runtime behavior.
 
     For testing, output is captured in the runtime's ``_output`` list
     and can be retrieved with ``get_output()``. This matches the
@@ -147,8 +145,6 @@ class PrincipalDevice(MUMPSDevice):
     The device holds a back-reference to the runtime so that output
     goes to ``runtime._output``. This ensures backward compatibility
     with tests that do ``runtime._output = []`` to reset capture.
-
-    Spec 022: Phase 4 — US4 ($PRINCIPAL uses device abstraction layer)
     """
 
     def __init__(self, runtime: Any = None) -> None:
@@ -176,7 +172,7 @@ class PrincipalDevice(MUMPSDevice):
         """Read from stdin.
 
         Supports combinations of maxlen and timeout, matching the
-        pre-Phase-4 behavior of the read helper functions.
+        established behavior of the read helper functions.
 
         Args:
             maxlen: Maximum characters to read. None = read full line.
@@ -271,7 +267,7 @@ class PrincipalDevice(MUMPSDevice):
     def write(self, data: str) -> None:
         """Write data to output buffer, tracking $X.
 
-        Matches pre-Phase-4 behavior: only printable characters
+        Matches established behavior: only printable characters
         (ord >= 32) increment $X. $Y is NOT affected by write().
 
         Args:
@@ -370,7 +366,6 @@ class FileDevice(MUMPSDevice):
         - STREAM → disables record-size limits (stored but not enforced yet)
         - RECORDSIZE=n → truncates output lines at n characters (stored, not yet enforced)
 
-    Spec 022: Phase 4 — US2 (File I/O), US3 (Device Parameters), US9 ($ZEOF)
     """
 
     def __init__(self, name: str, file_obj: Any, mode: str = "r") -> None:
@@ -492,7 +487,6 @@ class TCPDevice(MUMPSDevice):
         - $ZEOF: Set to True when socket is closed by remote end
         - $X/$Y: Updated on write as with other devices
 
-    Spec 022: Phase 4 — US5 (TCP Socket I/O)
     """
 
     def __init__(self, name: str, sock: Any) -> None:

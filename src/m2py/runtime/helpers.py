@@ -1,20 +1,16 @@
 """Runtime helper functions for MUMPS special operations.
 
-Spec 009: Provides helper functions for operations that cannot be expressed
+Provides helper functions for operations that cannot be expressed
 as simple Python expressions:
 
 - m_set_piece: LHS $PIECE assignment (S $P(X,"^",2)="NEW")
 - m_set_extract: LHS $EXTRACT assignment (S $E(X,2,3)="XX")
 - m_data: $DATA function for local arrays
 - m_data_global: $DATA function for global variables
-
-Spec 010: Extended with array traversal functions:
 - m_order: $ORDER function for local arrays
 - m_order_global: $ORDER function for global variables
 - m_query: $QUERY function for local arrays
 - m_query_global: $QUERY function for global variables
-
-Spec 017 Phase 18: Added m_var_value for cross-routine variable access:
 - m_var_value: Extract scalar value from either MArray or plain value
 
 These helpers are imported in generated code and called at runtime.
@@ -131,8 +127,6 @@ def m_format_output(value: Any) -> str:
     - Negative numbers keep the minus sign (-0.5 → "-.5")
     - No scientific notation (1E+2 → "100")
 
-    Spec 011 Phase 9: Ensures numeric output matches MUMPS formatting.
-
     Args:
         value: Any value to format for output
 
@@ -149,7 +143,7 @@ def m_format_output(value: Any) -> str:
     """
     from decimal import Decimal
 
-    # T075h: Handle MArray objects by extracting their value
+    # Handle MArray objects by extracting their value
     # This is needed for TRAMPOLINE strategy where state._locals contains MArrays
     # and _rt.write(state._locals.get('V', '')) passes MArray objects
     if hasattr(value, "value"):
@@ -712,7 +706,7 @@ def m_query_global(
 
 
 # =============================================================================
-# Phase 5: String function helpers ($PIECE, $EXTRACT - RHS extraction)
+# String function helpers ($PIECE, $EXTRACT - RHS extraction)
 # =============================================================================
 
 
@@ -721,7 +715,7 @@ def m_piece(
 ) -> str:
     """Extract piece(s) from a delimited string (RHS $PIECE).
 
-    Spec 010 Phase 5 (T027): $PIECE extracts substrings by delimiter position.
+    $PIECE extracts substrings by delimiter position.
 
     Args:
         string: The string to extract from
@@ -787,7 +781,7 @@ def m_piece(
 def m_extract(string: str, from_pos: int, to_pos: int) -> str:
     """Extract substring by character position (RHS $EXTRACT).
 
-    Spec 010 Phase 5 (T031): $EXTRACT extracts substrings by position.
+    $EXTRACT extracts substrings by position.
     MUMPS uses 1-based indexing with inclusive range.
 
     Args:
@@ -837,7 +831,7 @@ def m_extract(string: str, from_pos: int, to_pos: int) -> str:
 def m_find(string: str, target: str, start: int = 1) -> int:
     """Find substring and return position AFTER the match (RHS $FIND).
 
-    Spec 010 Phase 7 (T043): $FIND locates substring and returns position
+    $FIND locates substring and returns position
     AFTER the end of the match. Returns 0 if not found.
 
     Args:
@@ -890,7 +884,7 @@ def m_get(
 ) -> str:
     """Safe variable retrieval with default value (RHS $GET).
 
-    Spec 010 Phase 6 (T038): $GET returns the value if defined, otherwise the default.
+    $GET returns the value if defined, otherwise the default.
     Distinguished from MArray.get() which always returns "" for undefined.
 
     Args:
@@ -945,7 +939,7 @@ def m_get_global(
 ) -> str:
     """Safe global variable retrieval with default value (RHS $GET).
 
-    Spec 010 Phase 6 (T039): $GET on global variables.
+    $GET on global variables.
 
     Args:
         backend: GlobalStorageBackend instance
@@ -1050,7 +1044,7 @@ def m_increment_global(
 def _raise_select_false() -> None:
     """Raise SELECTFALSE error for $SELECT with no true condition.
 
-    Spec 010 Phase 3: This function is called as the final fallback in generated
+    This function is called as the final fallback in generated
     $SELECT expressions. If all conditions evaluate to false, this raises
     MRuntimeError with the SELECTFALSE error code.
 
@@ -1135,7 +1129,7 @@ def m_name(
 ) -> str:
     """Convert variable reference to canonical name string ($NAME).
 
-    Spec 010 Phase 9 (T059): Implements $NAME intrinsic function.
+    Implements the $NAME intrinsic function.
 
     Args:
         var_name: Variable name (without caret for globals)
@@ -1172,7 +1166,7 @@ def m_name(
 def m_qlength(name: str) -> int:
     """Count subscripts in a name string ($QLENGTH).
 
-    Spec 010 Phase 9 (T060): Implements $QLENGTH intrinsic function.
+    Implements the $QLENGTH intrinsic function.
 
     Args:
         name: Canonical name string like "A(1,2,3)" or "^GLO(1,2)"
@@ -1230,7 +1224,7 @@ def m_qlength(name: str) -> int:
 def m_qsubscript(name: str, position: int) -> str:
     """Extract subscript from name string ($QSUBSCRIPT).
 
-    Spec 010 Phase 9 (T061): Implements $QSUBSCRIPT intrinsic function.
+    Implements the $QSUBSCRIPT intrinsic function.
 
     Args:
         name: Canonical name string like "A(1,2,3)"
@@ -1308,7 +1302,7 @@ def m_qsubscript(name: str, position: int) -> str:
 def m_justify(value: float, width: int, decimals: int) -> str:
     """Right-justify a numeric value with decimal formatting ($JUSTIFY).
 
-    Spec 010 Phase 10 (T067): Implements 3-argument $JUSTIFY.
+    Implements 3-argument $JUSTIFY.
 
     Uses ROUND_HALF_UP (traditional rounding) per MUMPS spec, not
     ROUND_HALF_EVEN (banker's rounding) which Python's Decimal default uses.
@@ -1356,8 +1350,8 @@ def m_fnumber(
 ) -> str:
     """Format number with specified formatting codes ($FNUMBER).
 
-    Spec 010 Phase 10 (T069): Implements $FNUMBER intrinsic function.
-    Updated Phase 24: Rewritten to compose format codes correctly per ANSI spec.
+    Implements the $FNUMBER intrinsic function.
+    Composes format codes correctly per ANSI spec.
 
     Format codes (composable):
     - "," = add comma separators for thousands
@@ -1507,7 +1501,7 @@ def m_fnumber(
 
 
 # =============================================================================
-# Spec 010: $TRANSLATE function
+# $TRANSLATE function
 # =============================================================================
 
 
@@ -1551,7 +1545,7 @@ def m_translate(string: str, from_chars: str, to_chars: str = "") -> str:
 
 
 # =============================================================================
-# Spec 011: String Comparison Operators
+# String Comparison Operators
 # =============================================================================
 
 # Note: Contains ([) and Follows (]) operators are inlined in codegen as:
@@ -1607,14 +1601,14 @@ def m_sorts_after(left: Any, right: Any) -> int:
 
 
 # =============================================================================
-# Spec 011: Pattern Match Operator
+# Pattern Match Operator
 # =============================================================================
 
 
 def m_pattern_match(string: Any, pattern: str) -> int:
     """Match string against MUMPS pattern (MUMPS ? operator).
 
-    This runtime helper is used only for **indirect patterns** (X?@Y) where
+    This runtime helper is used only for indirect patterns (X?@Y) where
     the pattern is determined at runtime. For direct/literal patterns (X?1A.N),
     codegen inlines a pre-compiled regex via re.fullmatch() for better performance.
 
@@ -1651,7 +1645,7 @@ def m_pattern_match(string: Any, pattern: str) -> int:
 
 
 # =============================================================================
-# Spec 011: NEW Command Scope Management
+# NEW Command Scope Management
 # =============================================================================
 
 
@@ -1710,7 +1704,7 @@ class NewScopeManager:
         """
         self._scope = scope
         self._saved: dict = {}
-        # Phase 21: Stack-based restore actions for proper NEW unwinding
+        # Stack-based restore actions for proper NEW unwinding
         # Each entry is ('var', name, value) or ('scope', snapshot_dict)
         self._restore_actions: list = []
         # Track individually NEWed variables for dedup (reset on new_all/new_exclusive)
@@ -1726,11 +1720,11 @@ class NewScopeManager:
         This runs on both normal return and exceptions, ensuring
         MUMPS NEW semantics are preserved.
 
-        Phase 21: Process restore actions in reverse order to properly
+        Process restore actions in reverse order to properly
         unwind nested NEW scopes (argumentless/exclusive NEW within
         functions that have formal param NEWs).
         """
-        # Phase 21: Process restore actions in reverse (LIFO) for correct unwinding
+        # Process restore actions in reverse (LIFO) for correct unwinding
         for action in reversed(self._restore_actions):
             if action[0] == "scope":
                 # Argumentless or exclusive NEW: restore full scope snapshot
@@ -1757,7 +1751,7 @@ class NewScopeManager:
         If the variable has already been individually NEWed at the current
         scope level, this is a no-op (first NEW wins per MUMPS spec).
 
-        Phase 21: Uses _individually_newed set for dedup tracking, and
+        Uses _individually_newed set for dedup tracking, and
         appends to _restore_actions list for proper stack-based unwinding.
 
         Args:
@@ -1780,7 +1774,7 @@ class NewScopeManager:
     def new_all(self) -> None:
         """NEW all local variables - save scope snapshot and clear.
 
-        Phase 21: Argumentless NEW saves the entire scope and clears it.
+        Argumentless NEW saves the entire scope and clears it.
         Resets the individually-NEWed tracking set so subsequent selective
         NEWs can save variables relative to the new (empty) scope.
 
@@ -1795,7 +1789,7 @@ class NewScopeManager:
     def new_exclusive(self, keep_vars: set) -> None:
         """Exclusive NEW - save all except specified variables.
 
-        Phase 21: N (X,Y) saves the entire scope snapshot and removes
+        Exclusive NEW (N (X,Y)) saves the entire scope snapshot and removes
         all variables NOT in keep_vars. Resets individually-NEWed tracking.
 
         Args:
@@ -1813,7 +1807,7 @@ class NewScopeManager:
     ) -> None:
         """NEW a special variable like $ETRAP or $ECODE.
 
-        Spec 013 Phase 12: Handles NEW for special variables that use
+        Handles NEW for special variables that use
         runtime setters instead of _scope storage.
 
         VistA pattern: N $ETRAP,$ESTACK S $ETRAP="D ERR^ROUTINE"
@@ -1839,7 +1833,7 @@ class NewScopeManager:
 def unwind_new_stack(state) -> None:
     """Unwind all NEW frames in state._new_stack on subroutine exit.
 
-    Phase 21: When a subroutine (TRAMPOLINE wrapper) exits via QUIT,
+    When a subroutine (TRAMPOLINE wrapper) exits via QUIT,
     all NEW frames pushed during that subroutine must be unwound.
     Processes entries in LIFO order (most recent NEW first).
 
@@ -1875,7 +1869,7 @@ def unwind_new_stack(state) -> None:
 
 
 # =============================================================================
-# $ZDATE Function Helper (Spec 021 Phase 10 - User Story 8)
+# $ZDATE Function Helper
 # =============================================================================
 
 # Default month names (uppercase, 3 chars) used when months arg is empty
@@ -1924,7 +1918,7 @@ def m_zdate(
     import datetime
     import re
 
-    # T068: Enforce 64-character format string limit per YDB specification
+    # Enforce 64-character format string limit per YDB specification
     if len(fmt) > 64:
         from m2py.runtime.exceptions import MRuntimeError
 
@@ -2028,7 +2022,7 @@ def m_zdate(
 
 
 # =============================================================================
-# $ZMESSAGE function — error code to message text (Spec 021 Phase 14, T094)
+# $ZMESSAGE function — error code to message text
 # =============================================================================
 
 # Common YDB error codes and their message text
@@ -2062,7 +2056,7 @@ _YDB_ERROR_MESSAGES: dict[int, str] = {
 def m_zmessage(code: int | str) -> str:
     """Return error message text for a YDB error code.
 
-    Spec 021 Phase 14 (T094): Lookup table of common YDB error codes.
+    Lookup table of common YDB error codes.
 
     Args:
         code: YDB error code (integer or numeric string)

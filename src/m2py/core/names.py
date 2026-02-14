@@ -1,14 +1,9 @@
 """Bidirectional MUMPS ↔ Python name translation.
 
-This module provides the **single source of truth** for translating
-MUMPS identifiers to valid Python identifiers and back.
-
-Constitution VII: Single implementation shared by codegen (compile time)
-and runtime (dynamic resolution) to ensure variable names are consistent
-across all code paths.
-
-Feature: 018-unified-variable-system
-Requirements: FR-005 through FR-009
+Canonical module for translating MUMPS identifiers to valid Python
+identifiers and back. Shared by codegen (compile time) and runtime
+(dynamic resolution) to ensure variable names are consistent across
+all code paths.
 """
 
 from __future__ import annotations
@@ -113,9 +108,9 @@ class NameTranslator:
         Returns:
             The original MUMPS identifier
 
-        Note: This is used by runtime when parsing variable names from
-        indirection values. Example: If user sets @"_pct_FOO"=5, runtime
-        needs to know this refers to MUMPS variable %FOO.
+        Used by runtime when parsing variable names from indirection
+        values. For example, if user sets @"_pct_FOO"=5, runtime needs
+        to know this refers to MUMPS variable %FOO.
 
         Examples:
             >>> NameTranslator.from_python("TEST")
@@ -155,7 +150,7 @@ class NameTranslator:
     def is_valid_varname(name: str, allow_subscripts: bool = False) -> bool:
         """Check if string is a valid MUMPS variable name (local or global).
 
-        This is the **unified validation function** for variable names.
+        This is the unified validation function for variable names.
         Handles locals, globals, and naked references.
 
         Args:
@@ -212,19 +207,14 @@ class NameTranslator:
 
 # Module-level convenience functions for backward compatibility
 def translate_name(mumps_name: str) -> str:
-    """Convenience function to translate a MUMPS name to Python.
-
-    Deprecated: Use NameTranslator.to_python() directly.
-    """
+    """Convenience wrapper around NameTranslator.to_python()."""
     return NameTranslator.to_python(mumps_name)
 
 
 def is_valid_varname(name: str, allow_subscripts: bool = False) -> bool:
     """Module-level convenience for NameTranslator.is_valid_varname().
 
-    Feature: 018-unified-variable-system
-
-    This is the **single source of truth** for MUMPS variable name validation.
+    Canonical function for MUMPS variable name validation.
     Handles local variables, global variables, and naked references.
 
     Args:

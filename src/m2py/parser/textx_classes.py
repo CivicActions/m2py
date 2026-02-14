@@ -9,8 +9,8 @@ Key insight: textX custom classes must:
 2. Accept `parent` as the first parameter
 3. Accept all attributes defined in the grammar rule
 
-We use a class factory approach to create wrappers that inherit from ASG classes
-but adapt to textX's calling convention.
+Each class inherits from an ASG class and overrides ``__init__`` to adapt
+to textX's calling convention.
 """
 
 from typing import List, Optional, Type
@@ -51,8 +51,8 @@ def _unwrap_expr(expr):
 
     For simple expressions, we return the operand directly (our custom ASG class).
     For expressions with operators (binary ops, pattern match), the textX structure
-    is preserved here because SemanticAnalyzer._analyze_Expr() will process the
-    tail elements to build proper ASG nodes (MBinaryOp, MPatternMatch, etc.).
+    is preserved here because the semantic analyzer's _analyze_Expr() will process
+    the tail elements to build proper ASG nodes (MBinaryOp, MPatternMatch, etc.).
     """
     if expr is None:
         return None
@@ -100,15 +100,14 @@ def _unwrap_subscripts(subscripts):
 
 
 def _get_function_arg_list(args):
-    """Convert FunctionArgs to a list of FunctionArg objects.
+    """Extract FunctionArg objects from the first+rest grammar structure.
 
-    Handles both old format (args.args) and new format (args.first + args.rest).
-    New format allows empty leading arguments: (,arg2) -> [None, arg2]
+    The grammar uses first+rest to allow empty leading arguments: (,arg2) -> [None, arg2]
     """
     if args is None:
         return []
 
-    # Check for new format: first + rest
+    # Extract from first + rest structure
     if hasattr(args, "first"):
         result = []
         # Add first arg (may be None for empty leading position)
@@ -558,8 +557,8 @@ class SelectFunction(MIntrinsicFunction):
     We map this to MIntrinsicFunction with proper MSelectArg ASG nodes
     containing the unwrapped condition and value expressions.
 
-    Note: Name is preserved as-is (not uppercased) for consistency with
-    IntrinsicFunction. Code generators normalize function names as needed.
+    Name is preserved as-is (not uppercased); code generators normalize
+    function names as needed.
     """
 
     def __init__(self, parent=None, name: str = "", args=None):
@@ -755,9 +754,9 @@ class UnknownCommand:
 class FunctionArgs:
     """Custom class for FunctionArgs grammar rule.
 
-    Provides backward-compatible .args property for tests that access function
-    arguments directly. The grammar uses first+rest pattern to support empty
-    leading arguments like (,arg2), but external code expects args list.
+    Wraps the first+rest grammar pattern and exposes a flat .args property
+    for convenient access. The first+rest structure supports empty leading
+    arguments like (,arg2).
     """
 
     def __init__(self, parent=None, first=None, rest=None, **kwargs):

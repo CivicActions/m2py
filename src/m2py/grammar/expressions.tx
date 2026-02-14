@@ -46,7 +46,7 @@ UnaryExpr:
 ;
 
 // Binary operators - using regex to avoid issues with multi-char operators
-// NOTE: ? and '? are handled separately as PatternMatchOp
+// ? and '? are handled separately as PatternMatchOp
 BinaryOp:
     // Multi-character operators first (order matters in PEG)
     // '& is NAND, '! is NOR, '> '< '= are negated comparisons
@@ -529,9 +529,9 @@ FUNCNAME:
 ;
 
 // Special variable name (these are specific keywords)
-// Includes both full names and valid abbreviations
-// CRITICAL: Order longest matches FIRST to prevent partial matching issues
-// e.g., ZTWORMHOLE must match before ZT, otherwise $ZTWORMHOLE parses as $ZT + WORMHOLE
+// Includes both full names and valid abbreviations.
+// Longest matches are ordered FIRST to prevent partial matching issues;
+// e.g., ZTWORMHOLE must match before ZT, otherwise $ZTWORMHOLE parses as $ZT + WORMHOLE.
 //
 // Standard MUMPS Special Variables:
 //   IOREFERENCE, PIOREFERENCE - I/O reference tracking
@@ -591,16 +591,15 @@ FUNCNAME:
 //   Single letters: D, H, I, J, K, P, Q, R, S, T, X, Y
 //
 // MUMPS is case-insensitive for special variable names
-// NOTE: Uses (?![A-Za-z0-9]) lookahead to ensure complete word match.
+// Uses (?![A-Za-z0-9]) lookahead to ensure complete word match.
 // Without this, $ZTWO would incorrectly match $ZT and leave "WO" unconsumed.
 SVARNAME:
     /(?:[Zz][Tt][Ww][Oo][Rr][Mm][Hh][Oo][Ll][Ee]|[Zz][Tt][Rr][Ii][Gg][Gg][Ee][Rr][Oo][Pp]|[Zz][Tt][Oo][Ll][Dd][Vv][Aa][Ll][Uu][Ee]|[Zz][Ii][Nn][Tt][Ee][Rr][Rr][Uu][Pp][Tt]|[Zz][Pp][Oo][Ss][Ii][Tt][Ii][Oo][Nn]|[Pp][Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Ii][Oo][Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Zz][Cc][Mm][Dd][Ll][Ii][Nn][Ee]|[Zz][Tt][Uu][Pp][Dd][Aa][Tt][Ee]|[Tt][Rr][Ee][Ss][Tt][Aa][Rr][Tt]|[Pp][Rr][Ii][Nn][Cc][Ii][Pp][Aa][Ll]|[Rr][Ee][Ff][Ee][Rr][Ee][Nn][Cc][Ee]|[Zz][Yy][Ee][Rr][Rr][Oo][Rr]|[Zz][Gg][Bb][Ll][Dd][Ii][Rr]|[Zz][Ss][Tt][Aa][Tt][Uu][Ss]|[Zz][Tt][Vv][Aa][Ll][Uu][Ee]|[Zz][Tt][Ss][Ll][Aa][Tt][Ee]|[Zz][Tt][Dd][Ee][Ll][Ii][Mm]|[Zz][Tt][Ll][Ee][Vv][Ee][Ll]|[Hh][Oo][Rr][Oo][Ll][Oo][Gg]|[Ss][Tt][Oo][Rr][Aa][Gg][Ee]|[Ee][Ss][Tt][Aa][Cc][Kk]|[Ss][Yy][Ss][Tt][Ee][Mm]|[Dd][Ee][Vv][Ii][Cc][Ee]|[Zz][Ll][Ee][Vv][Ee][Ll]|[Tt][Ll][Ee][Vv][Ee][Ll]|[Zz][Ee][Rr][Rr][Oo][Rr]|[Zz][Tt][Nn][Aa][Mm][Ee]|[Zz][Tt][Cc][Oo][Dd][Ee]|[Zz][Tt][Dd][Aa][Tt][Aa]|[Ee][Tt][Rr][Aa][Pp]|[Ee][Cc][Oo][Dd][Ee]|[Ss][Tt][Aa][Cc][Kk]|[Zz][Ss][Tt][Ee][Pp]|[Zz][Tt][Rr][Aa][Pp]|[Qq][Uu][Ii][Tt]|[Tt][Ee][Ss][Tt]|[Zz][Pp][Oo][Ss]|[Zz][Kk][Ee][Yy]|[Zz][Ee][Oo][Ff]|[Zz][Jj][Oo][Bb]|[Zz][Pp][Oo][Uu][Tt]|[Zz][Pp][Aa][Tt][Nn]|[Zz][Pp][Ii][Nn]|[Zz][Ii][Nn][Tt]|[Kk][Ee][Yy]|[Jj][Oo][Bb]|[Pp][Ii][Oo][Rr]|[Zz][Tt][Ll]|[Ii][Oo][Rr]|[Ii][Oo]|[Ee][Cc]|[Ee][Ss]|[Ee][Tt]|[Ss][Tt]|[Ss][Yy]|[Tt][Ll]|[Tt][Rr]|[Zz][Ll]|[Zz][Tt]|[Zz][Ee]|[Zz][Pp]|[Zz][Jj]|[DdHhIiJjKkPpQqRrSsTtXxYy])(?![A-Za-z0-9])/
 ;
 
-// Quoted string (handles "" or '' escaping for double and single quotes)
-// MUMPS only supports double-quoted "text" strings
+// Quoted string: MUMPS only supports double-quoted "text" strings.
 // Inside a string, double-quote is escaped by doubling: ""
-// Note: Single quote ' is the NOT operator, NOT a string delimiter
+// Single quote ' is the NOT operator, not a string delimiter.
 STRING_VALUE:
     /"([^"]|"")*"/
 ;

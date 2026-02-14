@@ -92,7 +92,8 @@ SetIndirection:
 ;
 
 // Single assignment: target=value or (targets)=value
-// Note: MUMPS spec 8.1.4 allows argument postconditions only on DO/GOTO/XECUTE
+// Per MUMPS spec 8.1.4, argument postconditions apply only to DO/GOTO/XECUTE,
+// not SET assignments.
 Assignment:
     targets=SetTargets '=' value=Expr
 ;
@@ -135,8 +136,9 @@ WriteCommand:
 ;
 
 // Write argument: format control or expression
-// Comma is optional before format controls but required between expressions
-// Note: MUMPS spec 8.1.4 allows argument postconditions only on DO/GOTO/XECUTE
+// Comma is optional before format controls but required between expressions.
+// Per MUMPS spec 8.1.4, argument postconditions apply only to DO/GOTO/XECUTE,
+// not WRITE.
 WriteArg:
     /,/? arg=WriteArgValue
 ;
@@ -181,7 +183,8 @@ ReadCommand:
 //   *VAR or *VAR:timeout - single char read
 //   "prompt",VAR:timeout - prompt followed by read
 //   !!?10,"prompt",VAR - multiple format/prompt before variable (! adjacent)
-// Note: MUMPS spec 8.1.4 allows argument postconditions only on DO/GOTO/XECUTE
+// Per MUMPS spec 8.1.4, argument postconditions apply only to DO/GOTO/XECUTE,
+// not READ.
 ReadArg:
     /,/? arg=ReadArgValue
 ;
@@ -231,7 +234,7 @@ CharReadVar:
 
 // IF command: I|IF conditions (comma-separated = AND)
 // Per MUMPS spec: "IF with n arguments is equivalent to n IFs"
-// IMPORTANT: Uses single space (not WS) to distinguish:
+// Uses single space (not WS) to distinguish:
 //   - "I 1 S X=1" = IF with condition 1, then SET (one space after I)
 //   - "I  S X=1"  = argumentless IF, then SET (two spaces = command separator)
 IfCommand:
@@ -354,8 +357,8 @@ IndirectChain:
 ;
 
 // Label reference: label, label+offset, label^routine, label+^routine, ^routine
-// NOTE: MUMPS labels can be numeric (1, 012, 0) or alphanumeric (%ABC, LABEL1)
-// Uses OffsetExpr instead of Expr to prevent consuming ^routine as a global variable
+// MUMPS labels can be numeric (1, 012, 0) or alphanumeric (%ABC, LABEL1).
+// Uses OffsetExpr instead of Expr to prevent consuming ^routine as a global variable.
 // The offset is optional when immediately followed by ^routine (means offset 0):
 //   G LABEL+^ROUTINE is equivalent to G LABEL+0^ROUTINE
 // Routine can be either a literal name or an indirect expression: LABEL^ROUTINE or LABEL^@VAR
@@ -374,19 +377,19 @@ LABELNAME:
 ;
 
 // QUIT command: Q|QUIT with optional return value
-// NOTE: Must not consume command keywords as return value
-// Using negative lookahead to prevent "Q S X" from treating "S" as value
-// Key: Command keyword followed by space+arg pattern indicates next command
+// Must not consume command keywords as return value.
+// Uses negative lookahead to prevent "Q S X" from treating "S" as value.
+// A command keyword followed by space+arg pattern indicates the next command.
 QuitCommand:
     /([Qq][Uu][Ii][Tt]|[Qq])(?![A-Za-z])/ postcond=Postcondition? (SingleSpace !CommandWithArg value=Expr)?
 ;
 
 // Pattern: Command keyword followed by space + likely argument pattern
-// This distinguishes "Q S X=1" (QUIT then SET) from "Q X" (QUIT with value)
-// Note: SET requires whitespace between S and the target variable
-// CRITICAL: Also detect command keywords followed by : (postcondition)
-// NOTE: "S=1" is a valid MUMPS expression (comparison), NOT a SET command
-//       SET requires: S<space>VAR= not S=
+// This distinguishes "Q S X=1" (QUIT then SET) from "Q X" (QUIT with value).
+// SET requires whitespace between S and the target variable.
+// Also detects command keywords followed by : (postcondition).
+// "S=1" is a valid MUMPS expression (comparison), not a SET command;
+// SET requires: S<space>VAR= not S=.
 // This pattern detects UNAMBIGUOUS command starts that cannot be confused
 // with variable names in expressions. We use conservative matching:
 // - Full command words (SET, WRITE, etc.) are always commands

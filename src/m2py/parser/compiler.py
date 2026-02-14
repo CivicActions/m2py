@@ -2,9 +2,8 @@
 
 This module provides ``compile_mumps_line``, the single entry-point for
 turning a raw MUMPS code string into a list of fully-analysed ASG
-statements.  It is used by XECUTE code-generation (and any future
-inline-compilation needs) so that ``codegen/`` never imports parser or
-analysis internals directly.
+statements.  It is used by XECUTE code-generation so that ``codegen/``
+never imports parser or analysis internals directly.
 """
 
 from __future__ import annotations
@@ -35,8 +34,7 @@ def compile_mumps_line(
 
     Args:
         code_str: MUMPS source code string (single line, no label prefix).
-        context: Reserved for future use (analysis context for variable
-            resolution).  Currently unused.
+        context: Unused. Accepted for API forward-compatibility.
 
     Returns:
         A list of analysed ``MStatement`` ASG nodes on success.

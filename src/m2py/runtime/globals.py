@@ -1,6 +1,6 @@
 """Global variable storage backends for MUMPS global references.
 
-Spec 009: Provides GlobalStorageBackend protocol and implementations for
+Provides GlobalStorageBackend protocol and implementations for
 persisting global variables (^NAME). Default is InMemoryGlobalStorage
 for testing and standalone execution.
 
@@ -17,14 +17,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-# Spec 010: Import collation key and query helper for $ORDER/$QUERY
+# Import collation key and query helper for $ORDER/$QUERY
 from m2py.runtime.helpers import (
     _mumps_collation_key,
     _find_next_valued_node,
     m_format_output,
 )
 
-# Spec 018: Use SubscriptCanonicalizer for proper subscript handling
+# Use SubscriptCanonicalizer for proper subscript handling
 from m2py.core.subscripts import SubscriptCanonicalizer
 
 if TYPE_CHECKING:
@@ -179,8 +179,6 @@ class GlobalStorageBackend(Protocol):
     ) -> str:
         """Return next/previous subscript at level.
 
-        Spec 009 T062: Protocol stub for $ORDER function support.
-
         Args:
             name: Global name without caret
             subscripts: Current subscript path (last element is starting point)
@@ -196,8 +194,6 @@ class GlobalStorageBackend(Protocol):
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
         """Return full reference of next node with data.
 
-        Spec 009 T063: Protocol stub for $QUERY function support.
-
         Args:
             name: Global name without caret
             subscripts: Current subscript path
@@ -211,7 +207,7 @@ class GlobalStorageBackend(Protocol):
     def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
         """Get subtree as MArray for MERGE source.
 
-        Spec 017 Phase 13: Protocol for MERGE global→local and global→global.
+        Protocol for MERGE global-to-local and global-to-global.
 
         Args:
             name: Global name without caret
@@ -227,7 +223,7 @@ class GlobalStorageBackend(Protocol):
     ) -> None:
         """Merge MArray tree into global at ^NAME(subscripts).
 
-        Spec 017 Phase 13: Protocol for MERGE local→global and global→global.
+        Protocol for MERGE local-to-global and global-to-global.
 
         Args:
             name: Global name without caret
@@ -238,8 +234,6 @@ class GlobalStorageBackend(Protocol):
 
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
         """Atomically increment value at ^NAME(subscripts).
-
-        Spec 009 T064: Protocol stub for $INCREMENT function support.
 
         Args:
             name: Global name without caret
@@ -258,8 +252,6 @@ class GlobalStorageBackend(Protocol):
     def kill_node(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Kill only the value at node, preserving descendants.
 
-        Spec 009 T065: Protocol stub for ZKILL/ZWITHDRAW support.
-
         Unlike kill(), this only removes the value at the specified node
         while keeping all descendant nodes intact.
 
@@ -274,7 +266,7 @@ class GlobalStorageBackend(Protocol):
         ...
 
     # =========================================================================
-    # Lock Operations (Spec 013 FR-019)
+    # Lock Operations
     # =========================================================================
 
     def lock(
@@ -285,8 +277,6 @@ class GlobalStorageBackend(Protocol):
         lock_type: str = "+",
     ) -> bool:
         """Acquire or release a lock on ^NAME(subscripts).
-
-        Spec 013 FR-019: Protocol for LOCK command support.
 
         Args:
             name: Global/lock name without caret (e.g., "PATIENT")
@@ -305,8 +295,6 @@ class GlobalStorageBackend(Protocol):
     def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Release a lock on ^NAME(subscripts).
 
-        Spec 013 FR-019: Explicit unlock operation.
-
         Args:
             name: Global/lock name without caret
             subscripts: Tuple of string subscript values
@@ -317,16 +305,12 @@ class GlobalStorageBackend(Protocol):
         ...
 
     def unlock_all(self) -> None:
-        """Release all locks held by current process.
-
-        Spec 013 FR-019: Argumentless LOCK releases all locks.
-        """
+        """Release all locks held by current process."""
         ...
 
     def get_locks(self) -> list[tuple[str, str, int]]:
         """Return all locks held by the current process/thread.
 
-        Spec 022 Phase 9 (T137): Protocol for ZSHOW "L" support.
         Returns list of (lock_name, json_subscripts, lock_count) tuples.
 
         Returns:
@@ -335,13 +319,13 @@ class GlobalStorageBackend(Protocol):
         ...
 
     # =========================================================================
-    # Transaction Operations (Spec 013 FR-015)
+    # Transaction Operations
     # =========================================================================
 
     def transaction_start(self) -> None:
         """Begin a transaction (TSTART).
 
-        Spec 013 FR-015: Initiates a new transaction or increments
+        Initiates a new transaction or increments
         transaction nesting level.
 
         Behavior:
@@ -354,7 +338,7 @@ class GlobalStorageBackend(Protocol):
     def transaction_commit(self) -> None:
         """Commit current transaction (TCOMMIT).
 
-        Spec 013 FR-015: Commits or decrements transaction level.
+        Commits or decrements transaction level.
 
         Behavior:
             - If $TLEVEL = 1, commits the transaction
@@ -368,7 +352,7 @@ class GlobalStorageBackend(Protocol):
     def transaction_rollback(self) -> None:
         """Rollback current transaction (TROLLBACK).
 
-        Spec 013 FR-015: Reverts changes since matching TSTART.
+        Reverts changes since matching TSTART.
 
         Behavior:
             - Reverts changes since TSTART
@@ -382,21 +366,17 @@ class GlobalStorageBackend(Protocol):
     def get_tlevel(self) -> int:
         """Return current transaction nesting level ($TLEVEL).
 
-        Spec 013 FR-015: Returns transaction depth.
-
         Returns:
             Current transaction nesting level (0 = no transaction)
         """
         ...
 
     # =========================================================================
-    # SSVN Queries (Spec 013 FR-029)
+    # SSVN Queries
     # =========================================================================
 
     def ssvn_global(self, subscript: str) -> str:
         """Query ^$GLOBAL(name) for global existence.
-
-        Spec 013 FR-029: Structured System Variable query.
 
         Args:
             subscript: Global name to query
@@ -409,8 +389,6 @@ class GlobalStorageBackend(Protocol):
     def ssvn_job(self, subscript: str) -> str:
         """Query ^$JOB(pid) for job/process information.
 
-        Spec 013 FR-029: Structured System Variable query.
-
         Args:
             subscript: Process ID to query
 
@@ -422,8 +400,6 @@ class GlobalStorageBackend(Protocol):
     def ssvn_lock(self, subscript: str) -> str:
         """Query ^$LOCK(lockname) for lock information.
 
-        Spec 013 FR-029: Structured System Variable query.
-
         Args:
             subscript: Lock name to query
 
@@ -434,8 +410,6 @@ class GlobalStorageBackend(Protocol):
 
     def ssvn_routine(self, subscript: str) -> str:
         """Query ^$ROUTINE(routinename) for routine metadata.
-
-        Spec 013 FR-029: Structured System Variable query.
 
         Args:
             subscript: Routine name to query
@@ -454,10 +428,10 @@ class GlobalStorageBackend(Protocol):
 class InMemoryGlobalStorage:
     """In-memory global storage for testing and standalone execution.
 
-    Spec 009 (T006-T007): Implements GlobalStorageBackend protocol using
+    Implements GlobalStorageBackend protocol using
     MArray structures for hierarchical storage.
 
-    Spec 013: Extended with lock table, transaction support, and SSVNs.
+    Includes lock table, transaction support, and SSVN queries.
 
     Lock operations are simple single-process dict operations. For cross-process
     lock semantics (blocking, timeout, process isolation), use SQLiteGlobalStorage.
@@ -474,11 +448,11 @@ class InMemoryGlobalStorage:
         # Naked indicator (single-process, no threading needed)
         self._naked_indicator_value: tuple[str, tuple[str, ...]] | None = None
 
-        # Spec 013: Lock table - maps (name, subscripts) to (owner_pid, count)
+        # Lock table - maps (name, subscripts) to (owner_pid, count)
         # Simple dict — no blocking, no threading. Single-process only.
         self._lock_table: dict[tuple[str, tuple[str, ...]], tuple[int, int]] = {}
 
-        # Spec 013: Transaction support
+        # Transaction support
         self._tlevel: int = 0
         self._transaction_snapshots: list[dict[str, MArray]] = []
 
@@ -502,7 +476,7 @@ class InMemoryGlobalStorage:
         they represent different nodes than their canonical equivalents.
         e.g., ^A("01") is a different node than ^A(1).
 
-        Spec 018: Uses SubscriptCanonicalizer for proper MUMPS semantics.
+        Uses SubscriptCanonicalizer for proper MUMPS semantics.
         """
         return SubscriptCanonicalizer.canonicalize(subscript)
 
@@ -702,7 +676,7 @@ class InMemoryGlobalStorage:
     ) -> str:
         """Return next/previous subscript in MUMPS collation order.
 
-        Spec 010: Full implementation of $ORDER function.
+        Full implementation of $ORDER function.
 
         Args:
             name: Global name without caret
@@ -769,8 +743,6 @@ class InMemoryGlobalStorage:
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
         """Return full reference of next node with data.
 
-        Spec 010 Phase 2: Full implementation of $QUERY function.
-
         Args:
             name: Global name without caret
             subscripts: Current position subscripts. Use ("",) to start from beginning.
@@ -806,10 +778,7 @@ class InMemoryGlobalStorage:
         return f"^{name}({','.join(formatted_subs)})"
 
     def kill_node(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Kill only the value at node, preserving descendants.
-
-        Spec 009 T066: Implementation for ZKILL/ZWITHDRAW.
-        """
+        """Kill only the value at node, preserving descendants."""
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -833,8 +802,6 @@ class InMemoryGlobalStorage:
 
     def get_tree(self, name: str, subscripts: tuple[str, ...]) -> "MArray | None":
         """Get subtree rooted at ^NAME(subscripts) as MArray for MERGE.
-
-        Spec 011 Phase 16: Extract a global subtree for local MERGE operations.
 
         Args:
             name: Global name without caret
@@ -864,8 +831,6 @@ class InMemoryGlobalStorage:
         self, name: str, subscripts: tuple[str, ...], source: "MArray"
     ) -> None:
         """Merge MArray tree into global at ^NAME(subscripts).
-
-        Spec 014 Task C1: MERGE local→global and global→global operations.
 
         Copies all nodes with values from source tree into global destination.
         Does not delete existing nodes - only adds/overwrites values.
@@ -904,7 +869,6 @@ class InMemoryGlobalStorage:
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
         """Atomically increment value at ^NAME(subscripts).
 
-        Spec 009 T064: $INCREMENT implementation.
         Single-process: no locking needed.
 
         Args:
@@ -952,7 +916,7 @@ class InMemoryGlobalStorage:
         self._update_naked_indicator("", ())
 
     # =========================================================================
-    # Lock Operations Implementation (Spec 013)
+    # Lock Operations
     # =========================================================================
 
     def lock(
@@ -964,7 +928,7 @@ class InMemoryGlobalStorage:
     ) -> bool:
         """Acquire or release a lock on ^NAME(subscripts).
 
-        Spec 013 FR-019: Simple single-process lock implementation.
+        Simple single-process lock implementation.
         Locks are owned by os.getpid(). No blocking — in a single-process
         environment, all locks are owned by the same PID and always succeed.
 
@@ -1011,7 +975,7 @@ class InMemoryGlobalStorage:
     def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Release a lock on ^NAME(subscripts).
 
-        Spec 013 FR-019: Only releases locks owned by the current process.
+        Only releases locks owned by the current process.
         """
         import os
 
@@ -1030,7 +994,7 @@ class InMemoryGlobalStorage:
     def unlock_all(self) -> None:
         """Release all locks held by the current process.
 
-        Spec 013 FR-019: Argumentless LOCK releases all locks.
+        Argumentless LOCK releases all locks.
         """
         import os
 
@@ -1042,7 +1006,7 @@ class InMemoryGlobalStorage:
     def get_locks(self) -> list[tuple[str, str, int]]:
         """Return all locks held by the current process.
 
-        Spec 022 Phase 9 (T137): Used by ZSHOW "L".
+        Used by ZSHOW "L".
 
         Returns:
             List of (lock_name, subscripts_json, lock_count) tuples
@@ -1059,13 +1023,13 @@ class InMemoryGlobalStorage:
         return rows
 
     # =========================================================================
-    # Transaction Operations Implementation (Spec 013)
+    # Transaction Operations
     # =========================================================================
 
     def transaction_start(self) -> None:
         """Begin a transaction (TSTART).
 
-        Spec 013 FR-015: Saves a deep copy snapshot of globals for rollback.
+        Saves a deep copy snapshot of globals for rollback.
         """
 
         # Deep copy the entire globals dictionary
@@ -1079,7 +1043,7 @@ class InMemoryGlobalStorage:
     def transaction_commit(self) -> None:
         """Commit current transaction (TCOMMIT).
 
-        Spec 013 FR-015: Decrements level and discards snapshot on full commit.
+        Decrements level and discards snapshot on full commit.
 
         Raises:
             RuntimeError: If $TLEVEL = 0 (M44 error)
@@ -1094,7 +1058,7 @@ class InMemoryGlobalStorage:
     def transaction_rollback(self) -> None:
         """Rollback current transaction (TROLLBACK).
 
-        Spec 013 FR-015: Restores globals from snapshot.
+        Restores globals from snapshot.
         Per MUMPS spec 8.2.21: Argumentless TROLLBACK rolls back ALL levels.
 
         Raises:
@@ -1113,28 +1077,26 @@ class InMemoryGlobalStorage:
     def get_tlevel(self) -> int:
         """Return current transaction nesting level ($TLEVEL).
 
-        Spec 013 FR-015: Returns transaction depth.
-
         Returns:
             Current transaction nesting level (0 = no transaction)
         """
         return self._tlevel
 
     # =========================================================================
-    # SSVN Query Operations Implementation (Spec 013)
+    # SSVN Query Operations
     # =========================================================================
 
     def ssvn_global(self, subscript: str) -> str:
         """Query ^$GLOBAL(name) for global existence.
 
-        Spec 013 FR-029: Returns "1" if global exists, "" otherwise.
+        Returns "1" if global exists, "" otherwise.
         """
         return "1" if subscript in self._globals else ""
 
     def ssvn_job(self, subscript: str) -> str:
         """Query ^$JOB(pid) for job/process information.
 
-        Spec 021 Phase 13 (T086): Returns "1" if the process with the
+        Returns "1" if the process with the
         given PID exists and is alive, "" otherwise.
         For the current process, always returns "1".
         For other processes, uses os.kill(pid, 0) to probe liveness.
@@ -1162,7 +1124,7 @@ class InMemoryGlobalStorage:
     def ssvn_lock(self, subscript: str) -> str:
         """Query ^$LOCK(lockname) for lock information.
 
-        Spec 013 FR-029: Returns lock count if locked, empty if not.
+        Returns lock count if locked, empty if not.
         """
         # Parse subscript as (name, subscripts) key
         # For simplicity, treat subscript as global name with no subscripts
@@ -1174,7 +1136,7 @@ class InMemoryGlobalStorage:
     def ssvn_routine(self, subscript: str) -> str:
         """Query ^$ROUTINE(routinename) for routine metadata.
 
-        Spec 021 Phase 13 (T087): Checks if a routine is importable
+        Checks if a routine is importable
         as a Python module under the m2py namespace, or exists as a
         .m file in the current directory.
 
@@ -1222,7 +1184,7 @@ class InMemoryGlobalStorage:
         return result
 
     # =========================================================================
-    # Namespace-aware Global Operations (Spec 021 Phase 15)
+    # Namespace-aware Global Operations
     # =========================================================================
 
     def _ns_name(self, name: str, namespace: str) -> str:
@@ -1248,7 +1210,7 @@ class InMemoryGlobalStorage:
     ) -> None:
         """Set a global variable in a specific namespace.
 
-        Spec 021 Phase 15 (T101): For extended global references.
+        For extended global references.
 
         Args:
             name: Global name (without ^)
@@ -1266,7 +1228,7 @@ class InMemoryGlobalStorage:
     ) -> str | None:
         """Get a global variable from a specific namespace.
 
-        Spec 021 Phase 15 (T101): For extended global references.
+        For extended global references.
 
         Args:
             name: Global name (without ^)

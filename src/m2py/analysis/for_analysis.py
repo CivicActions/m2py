@@ -141,7 +141,7 @@ def _analyze_fors_in_scope(
     """
     for stmt in scope.statements:
         if isinstance(stmt, MForStatement):
-            # T087: Always set loop_type during analysis
+            # Always set loop_type during analysis
             stmt.loop_type = _classify_for_loop_type(stmt)
 
             # Check if VALUE parameters contain variable references

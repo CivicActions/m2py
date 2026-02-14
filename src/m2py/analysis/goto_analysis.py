@@ -50,7 +50,7 @@ def classify_gotos(routine: MRoutine) -> None:
     This function analyzes each MGotoStatement in the routine and:
     1. Sets the goto_type based on target and context
     2. Populates exits_loops with enclosing FOR loops exited
-    3. Sets routine.needs_trampoline if any cross-label GOTO exists (Spec 006)
+    3. Sets routine.needs_trampoline if any cross-label GOTO exists
     4. Sets routine.needs_loop_exit_exception if MULTI_LOOP_EXIT GOTOs exist
 
     Must be called AFTER resolve_references() so MCall.target is populated.
@@ -75,14 +75,14 @@ def classify_gotos(routine: MRoutine) -> None:
             label.body, label_idx, label, label_positions, routine, enclosing_fors=[]
         )
 
-    # T103: Set needs_loop_exit_exception if any MULTI_LOOP_EXIT GOTO exists
+    # Set needs_loop_exit_exception if any MULTI_LOOP_EXIT GOTO exists
     routine.needs_loop_exit_exception = _needs_loop_exit_exception(routine)
 
-    # Spec 006 (T035-T036): Set needs_trampoline if ANY cross-label GOTOs exist
+    # Set needs_trampoline if ANY cross-label GOTOs exist
     # This is the sole trigger for trampoline pattern with RoutineState
     routine.needs_trampoline = _detect_cross_label_gotos(routine)
 
-    # Spec 007: Set has_offset_calls if any GOTO/DO has offset expression
+    # Set has_offset_calls if any GOTO/DO has offset expression
     # This triggers TRAMPOLINE strategy even without cross-label GOTOs
     routine.has_offset_calls = _detect_offset_calls(routine)
 
@@ -90,7 +90,7 @@ def classify_gotos(routine: MRoutine) -> None:
     # This requires dynamic locals for proper cross-routine variable visibility
     routine.has_external_gotos = _detect_external_gotos(routine)
 
-    # Spec 013: Set fall-through flags on labels
+    # Set fall-through flags on labels
     # Labels without explicit exit (QUIT/GOTO/HALT) fall through to the next label
     _detect_fallthrough(routine)
 
@@ -215,7 +215,7 @@ def _classify_single_goto(
     """
     # Check each target (usually just one, but GOTO can have multiple)
     for call in stmt.targets:
-        # Spec 012 Phase 8 (T049-T052): Check for indirection first
+        # Check for indirection first
         # Indirect GOTOs are resolved at runtime, not statically
         if call.label_is_indirect or call.routine_is_indirect:
             stmt.goto_type = GotoType.INDIRECT
@@ -268,7 +268,7 @@ def _classify_single_goto(
                 # back to the label start. Example:
                 #   TEST S X=X+1 W X I X<10 G TEST Q
                 stmt.goto_type = GotoType.BACKWARD_JUMP
-                # Spec 006 (T069a): Mark label as having self-loop for while True: generation
+                # Mark label as having self-loop for while True: generation
                 current_label.has_self_loop = True
             else:
                 # Has offset: G LABEL+n
@@ -301,7 +301,7 @@ def _classify_single_goto(
                     else:
                         # Target is at or before GOTO position = backward
                         stmt.goto_type = GotoType.BACKWARD_JUMP
-                        # Spec 006 (T069a): Mark label as having self-loop for while True: generation
+                        # Mark label as having self-loop for while True: generation
                         current_label.has_self_loop = True
                 else:
                     # Cannot determine direction statically (dynamic offset or missing line info)
@@ -326,7 +326,7 @@ def _classify_single_goto(
             if len(enclosing_fors) == 1:
                 stmt.goto_type = GotoType.LOOP_EXIT
                 stmt.exits_loops = list(enclosing_fors)
-                # V1FORC2/I-377 fix: Same-label LOOP_EXIT needs special handling
+                # Same-label LOOP_EXIT needs special handling
                 # When GOTO targets the same label from inside a FOR loop, we need to
                 # break the FOR loop AND continue the outer while True self-loop
                 if not stmt.is_cross_label and target_label.name == current_label.name:
@@ -342,7 +342,7 @@ def _classify_single_goto(
                 if stmt not in for_stmt.exit_points:
                     for_stmt.exit_points.append(stmt)
 
-            # T088-T091: Pre-compute FOR fields for codegen
+            # Pre-compute FOR fields for codegen
             # Set has_cross_label_exit if this GOTO crosses label boundary
             if stmt.is_cross_label:
                 # For LOOP_EXIT, the single enclosing FOR needs the flag
@@ -364,7 +364,7 @@ def _classify_single_goto(
                     if target_name:
                         enclosing_fors[0].exit_target = target_name
 
-            # V1FORC2 fix: MULTI_LOOP_EXIT always needs exception wrapper, regardless of cross_label
+            # MULTI_LOOP_EXIT always needs exception wrapper, regardless of cross_label
             # For cross-label: after catching, call target label
             # For same-label: after catching, continue (restart the while True self-loop)
             if stmt.goto_type == GotoType.MULTI_LOOP_EXIT:
@@ -387,7 +387,7 @@ def _classify_single_goto(
                 stmt.goto_type = GotoType.LOOP_EXIT
             stmt.exits_loops = list(enclosing_fors)
 
-    # T096-T099: Compute is_restructurable and codegen_pattern after all classification
+    # Compute is_restructurable and codegen_pattern after all classification
     _compute_codegen_fields(stmt, enclosing_if)
 
 
@@ -420,7 +420,7 @@ def _compute_codegen_fields(
     elif stmt.goto_type in (GotoType.EXTERNAL, GotoType.UNRESOLVED):
         stmt.codegen_pattern = GotoCodegenPattern.UNSUPPORTED
     elif stmt.goto_type == GotoType.BACKWARD_JUMP:
-        # Backward jumps are unsupported in Spec 005
+        # Backward jumps are unsupported
         stmt.codegen_pattern = GotoCodegenPattern.UNSUPPORTED
     elif stmt.goto_type == GotoType.FORWARD_JUMP and not stmt.is_cross_label:
         # Intra-label forward jump - can be restructured
@@ -455,7 +455,7 @@ def _needs_loop_exit_exception(routine: MRoutine) -> bool:
 def _detect_cross_label_gotos(routine: MRoutine) -> bool:
     """Check if the routine has ANY cross-label GOTO statements.
 
-    Spec 006 (T034): Detects cross-label GOTOs that require trampoline pattern.
+    Detects cross-label GOTOs that require trampoline pattern.
     This includes BOTH forward and backward cross-label jumps. The trampoline
     pattern is required for ALL cross-label GOTOs to:
     1. Avoid stack growth with repeated cross-label calls
@@ -486,7 +486,7 @@ def _detect_cross_label_gotos(routine: MRoutine) -> bool:
 def _detect_offset_calls(routine: MRoutine) -> bool:
     """Check if the routine contains any offset calls (GOTO/DO with offsets).
 
-    Spec 007: Detects GOTO/DO with offset expressions (e.g., G LABEL+N, D SUB+2).
+    Detects GOTO/DO with offset expressions (e.g., G LABEL+N, D SUB+2).
     When offset calls exist, the TRAMPOLINE strategy is required for line-based
     dispatch via _line_map and _start_offset parameter support.
 
@@ -524,7 +524,7 @@ def _detect_external_gotos(routine: MRoutine) -> bool:
     variables set before a GOTO must be visible in the target routine.
 
     This checks for MCall targets with non-None routine field (indicates external).
-    T091c-ext: Also checks XECUTE constant values for external GOTO patterns.
+    Also checks XECUTE constant values for external GOTO patterns.
 
     Args:
         routine: The routine to check
@@ -542,7 +542,7 @@ def _detect_external_gotos(routine: MRoutine) -> bool:
                 for target in stmt.targets:
                     if target.routine is not None:
                         return True
-            # T091c-ext: Check XECUTE constant values for external GOTO patterns
+            # Check XECUTE constant values for external GOTO patterns
             # Look for "G ^" or "G LABEL^" patterns in the constant strings
             elif isinstance(stmt, MXecuteStatement) and stmt.constant_values:
                 for const_val in stmt.constant_values:
@@ -560,8 +560,8 @@ def _detect_external_gotos(routine: MRoutine) -> bool:
 def _detect_fallthrough(routine: MRoutine) -> None:
     """Detect labels that need fall-through to the next label.
 
-    Spec 013 (T028-T030): MUMPS labels fall through to the next label
-    if they don't end with an explicit exit (QUIT, GOTO, or HALT).
+    MUMPS labels fall through to the next label if they don't end with
+    an explicit exit (QUIT, GOTO, or HALT).
 
     This function sets:
     - MLabel.needs_fallthrough: True if label should fall through

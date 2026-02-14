@@ -14,13 +14,11 @@ class GotoStrategy(Enum):
     its GOTO patterns. Strategy is selected automatically based on ASG
     analysis flags (no user configuration needed).
 
-    Spec 006 Decision: Trampoline pattern handles ALL cross-label GOTOs
-    including cyclic patterns. State machine strategy was evaluated but
-    deferred - trampoline handles all patterns discovered in VistA analysis.
+    The trampoline pattern handles all cross-label GOTO patterns including
+    cyclic patterns discovered in VistA analysis.
 
     Values:
         SIMPLE_FUNCTIONS: Labels as simple Python functions (no cross-label GOTOs).
-            - Current Spec 005 behavior
             - Labels generate `def LABEL(): ...`
             - Intra-label GOTOs use if/else restructuring
 

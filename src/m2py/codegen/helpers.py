@@ -47,9 +47,9 @@ def m_str(value: Any) -> str:
         >>> m_str(Decimal("9999997799E14"))
         '999999779900000000000000'
     """
-    # T075h: Handle MArray objects by extracting their value
-    # This is needed for TRAMPOLINE strategy where state._locals contains MArrays
-    # and expressions like m_str(state._locals.get('V', '')) receive MArray objects
+    # Handle MArray objects by extracting their value.
+    # In TRAMPOLINE strategy, state._locals contains MArrays and expressions
+    # like m_str(state._locals.get('V', '')) receive MArray objects.
     if hasattr(value, "value"):
         # Recursively extract value in case of nested MArrays
         return m_str(value.value)
@@ -128,7 +128,7 @@ def m_num(value: Any) -> Union[int, float, Decimal]:
        - Return 0 if first char is non-numeric/non-sign (including whitespace!)
        - Return canonicalized number
 
-    NOTE: Leading whitespace makes a string non-numeric! " 42" → 0
+    Leading whitespace makes a string non-numeric: " 42" → 0.
 
     Args:
         value: Any Python value to convert
@@ -158,8 +158,8 @@ def m_num(value: Any) -> Union[int, float, Decimal]:
         >>> m_num("3.14ABC")
         3.14
     """
-    # T075h: Handle MArray objects by extracting their value
-    # This is needed for TRAMPOLINE strategy where state._locals contains MArrays
+    # Handle MArray objects by extracting their value.
+    # In TRAMPOLINE strategy, state._locals contains MArrays.
     if hasattr(value, "value"):
         return m_num(value.value)
 
@@ -459,7 +459,7 @@ def m_mod(left: Any, right: Any) -> Union[int, float, Decimal]:
         )
 
         # MUMPS modulo: dividend - (divisor * floor(dividend / divisor))
-        # Note: Decimal's % uses truncation, but MUMPS wants floor division
+        # Decimal's % uses truncation, but MUMPS wants floor division
         quotient = left_dec / right_dec
         # Use math.floor on the float representation for correct floor semantics
         floored = Decimal(str(math.floor(float(quotient))))
@@ -507,7 +507,7 @@ def m_compare(left: Any, op: str, right: Any) -> int:
         >>> m_compare("", "<", 1)
         1  # 0 < 1
     """
-    # T075h: Handle MArray objects by extracting their value (recursively)
+    # Handle MArray objects by extracting their value (recursively)
     while hasattr(left, "value"):
         left = left.value
     while hasattr(right, "value"):

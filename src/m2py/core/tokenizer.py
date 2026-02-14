@@ -1,13 +1,9 @@
 """Delimiter-aware string splitting respecting nesting and quotes.
 
-This module provides the single source of truth for splitting strings
-at top-level delimiters while respecting parenthesis nesting and
-MUMPS double-quote semantics.
+Canonical implementation for splitting strings at top-level delimiters
+while respecting parenthesis nesting and MUMPS double-quote semantics.
 
-Replaces 13+ hand-rolled parenthesis-depth state machines scattered
-across runtime/__init__.py, core/scope.py, and core/indirection.py.
-
-Constitution III: Strict layer separation — core/ has no codegen imports.
+This module has no codegen dependencies.
 """
 
 from __future__ import annotations

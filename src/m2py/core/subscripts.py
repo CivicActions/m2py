@@ -1,13 +1,10 @@
 """Subscript value canonicalization per MUMPS rules.
 
-This module provides the **single source of truth** for canonicalizing
-subscript values. Numeric subscripts have a single canonical form;
-string subscripts are preserved unless they represent canonical numeric values.
+Canonical module for canonicalizing subscript values. Numeric subscripts
+have a single canonical form; string subscripts are preserved unless
+they represent canonical numeric values.
 
-Constitution II: YDB behavior is authoritative for edge cases.
-
-Feature: 018-unified-variable-system
-Requirements: FR-003, FR-004
+YDB behavior is authoritative for edge cases.
 """
 
 from __future__ import annotations

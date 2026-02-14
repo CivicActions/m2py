@@ -76,7 +76,7 @@ class MSetStatement(MStatement):
     Assigns values to one or more targets:
     SET X=1, SET A=1,B=2, SET (A,B)=1
 
-    Supports argument indirection (Spec 012 Phase 9):
+    Supports argument indirection:
     SET @A where A contains "X=1,Y=2"
 
     The ordered_items list maintains original left-to-right order of all
@@ -249,11 +249,11 @@ class MForStatement(MStatement):
         False  # True if VALUE params reference loop var
     )
 
-    # T088-T090: Pre-computed fields for codegen (populated by classify_gotos)
+    # Pre-computed fields for codegen (populated by classify_gotos)
     has_cross_label_exit: bool = False  # True if any exit GOTO targets different label
     needs_exception_wrapper: bool = False  # True if outermost FOR for MULTI_LOOP_EXIT
     has_same_label_exit: bool = (
-        False  # V1FORC2: True if MULTI_LOOP_EXIT to same label (needs continue)
+        False  # True if MULTI_LOOP_EXIT to same label (needs continue)
     )
     exit_target: Optional[str] = (
         None  # Target label name (MUMPS name, codegen translates)
@@ -288,7 +288,7 @@ class MGotoStatement(MStatement):
     # Set during classify_gotos() when goto_type=FORWARD_JUMP and is_cross_label=False
     target_stmt_index: Optional[int] = None
 
-    # T096-T098: Pre-computed codegen fields (populated by classify_gotos)
+    # Pre-computed codegen fields (populated by classify_gotos)
     is_restructurable: bool = False  # True if can be restructured to if/else
     codegen_pattern: Optional[GotoCodegenPattern] = None  # Pattern for code generation
 
@@ -304,11 +304,11 @@ class MDoStatement(MStatement):
 
     This class handles BOTH labeled DO calls and argumentless DO blocks:
 
-    1. **Labeled DO** (targets not empty):
+    1. Labeled DO (targets not empty):
        DO label, D label^routine, D label(args)
        - targets contains MCall references to be executed
 
-    2. **Argumentless DO** (targets empty, body populated):
+    2. Argumentless DO (targets empty, body populated):
        DO
        . command1
        . command2
@@ -565,7 +565,7 @@ class MBreakStatement(MStatement):
 class MXecuteArg:
     """Single XECUTE argument with optional postcondition.
 
-    T075q: XECUTE arguments can have individual postconditions:
+    XECUTE arguments can have individual postconditions:
     X arg1,arg2:cond,arg3  -- arg2 only executes if cond is true
     """
 
@@ -580,7 +580,7 @@ class MXecuteStatement(MStatement):
     Executes code from string:
     X "SET X=1", XECUTE code
 
-    T075q: Arguments can have individual postconditions:
+    Arguments can have individual postconditions:
     X P,Q:X=10,R:X=10,S  -- Q and R only execute if X=10
 
     Always use the `arguments` list for code expressions.

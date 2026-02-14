@@ -1,9 +1,8 @@
 """Expression code generation for MUMPS-to-Python transpilation.
 
 Generates Python expression strings from MUMPS ASG expression nodes.
-Handles literals, variables, binary operations, unary operations, and extrinsic functions.
-
-Spec 010: Extended with intrinsic function dispatch table for $LENGTH, $PIECE, etc.
+Handles literals, variables, binary operations, unary operations,
+extrinsic functions, and intrinsic function dispatch ($LENGTH, $PIECE, etc.).
 """
 
 from __future__ import annotations
@@ -68,16 +67,15 @@ if TYPE_CHECKING:
 
 
 # =============================================================================
-# Limitation Constants (Spec 014)
+# Limitation Constants
 # =============================================================================
 
 # ANSI Standard Library routines (LIM-014)
 # STRING and CHARACTER libraries have zero VistA usage - all functions blocked.
-# MATH library has basic functions implemented (Spec 013), others blocked.
+# MATH library has basic functions implemented; others blocked.
 ANSI_LIBRARY_ROUTINES_BLOCKED: frozenset[str] = frozenset({"STRING", "CHARACTER"})
 
-# Implemented MATH library functions (Spec 013 Phase 13)
-# These are the functions defined in m2py/runtime/routines/MATH.py
+# Implemented MATH library functions (defined in m2py/runtime/routines/MATH.py)
 MATH_FUNCTIONS_IMPLEMENTED: frozenset[str] = frozenset(
     {
         "%EXP",
@@ -97,14 +95,13 @@ MATH_FUNCTIONS_IMPLEMENTED: frozenset[str] = frozenset(
 )
 
 # YDB Z-functions with zero VistA usage (LIM-015)
-# These are implementation-defined per FR-017 and parsed but not implemented.
+# These are implementation-defined and parsed but not implemented.
 # Codegen raises NotImplementedError for these functions.
-# Note: ZDATE was removed from this set in Spec 021 Phase 10 (now implemented)
 Z_FUNCTIONS_UNIMPLEMENTED: frozenset[str] = frozenset({"ZWIDTH"})
 
 
 # =============================================================================
-# Intrinsic Function Dispatch Table (Spec 010)
+# Intrinsic Function Dispatch Table
 # =============================================================================
 
 # Type alias for intrinsic function generator functions
@@ -121,9 +118,8 @@ def generate_intrinsic_function(
 ) -> str:
     """Generate Python code for MUMPS intrinsic function.
 
-    Dispatches to function-specific generators based on the function name.
-    Falls back to existing special-case handlers for $DATA and $TEXT until
-    they are migrated to this dispatch table.
+    Dispatches to function-specific generators based on the function name
+    using the INTRINSIC_GENERATORS dispatch table.
 
     Args:
         expr: MIntrinsicFunction ASG node
@@ -164,16 +160,16 @@ def generate_expr(
     - MUnaryOp → unary operation
     - MExtrinsicFunction → function call with $TEST save/restore
     - MIntrinsicFunction → intrinsic function dispatch table
-    - MIndirection → runtime indirection call (Spec 012)
+    - MIndirection → runtime indirection call
 
     Args:
         expr: ASG expression node
         ctx: Generator context (for name translation, etc.)
         if_condition: If True, this expression is an IF condition, which
-                     affects how argument indirection handles empty strings (T052)
+                     affects how argument indirection handles empty strings
         subscript_context: If True, this expression is in a subscript position.
                      Affects indirection: @VAR returns VALUE (for use as subscript)
-                     instead of resolving to NAME (T087)
+                     instead of resolving to NAME
 
     Returns:
         Python expression string
@@ -197,27 +193,27 @@ def generate_expr(
         return _generate_unary_op(expr, ctx)
     elif isinstance(expr, MExtrinsicFunction):
         return _generate_extrinsic(expr, ctx)
-    # Spec 015: External C functions ($&name, $&package.name)
+    # External C functions ($&name, $&package.name)
     elif isinstance(expr, MExternalFunction):
         return _generate_external_function(expr, ctx)
     elif isinstance(expr, MSpecialVariable):
         return _generate_special_variable(expr, ctx)
-    # Spec 010: Dispatch all intrinsic functions through unified handler
+    # Dispatch all intrinsic functions through unified handler.
     # This handles both MIntrinsicFunction ASG nodes and parser textx classes
     # (IntrinsicFunction, TextFunction, SelectFunction) which all inherit
     # from MIntrinsicFunction.
     elif isinstance(expr, MIntrinsicFunction):
         return generate_intrinsic_function(expr, ctx)
-    # Spec 011 Phase 12: Pattern match expressions
+    # Pattern match expressions
     elif isinstance(expr, MPatternMatch):
         return _generate_pattern_match(expr, ctx)
-    # Spec 012 Phase 3 (T016): Handle name indirection (@VAR)
-    # T087: Pass subscript_context to generate VALUE instead of NAME resolution
+    # Name indirection (@VAR)
+    # subscript_context generates VALUE instead of NAME resolution
     elif isinstance(expr, MIndirection):
         return _generate_indirection(
             expr, ctx, if_condition=if_condition, subscript_context=subscript_context
         )
-    # Spec 013 Phase 16 (FR-029): Handle structured system variables (^$GLOBAL etc)
+    # Structured system variables (^$GLOBAL, ^$JOB, etc.)
     elif isinstance(expr, MStructuredSystemVariable):
         return _generate_ssvn(expr, ctx)
     else:
@@ -274,17 +270,13 @@ def _generate_literal(lit: MLiteral) -> str:
 def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     """Generate Python variable reference from MVariable.
 
-    Spec 006: When using TRAMPOLINE strategy and the variable is in state_vars,
-    access it via `state.VAR` instead of just `VAR`.
-
-    Spec 006 (T075): Handle subscripted variable reads for MArray-backed variables.
-    For array variables, generate: state.A.get(subscripts)
-
-    Spec 008 (T085): For SIMPLE_FUNCTIONS strategy, read variables from _scope
-    dictionary for cross-routine visibility: _scope.get('VAR', '')
-
-    Spec 017 (T014): For routines with argumentless KILL/NEW in TRAMPOLINE strategy,
-    use state._locals dict for dynamic variable access.
+    Variable access depends on code generation strategy:
+    - TRAMPOLINE with state_vars: access via `state.VAR`
+    - TRAMPOLINE with dynamic locals (argumentless KILL/NEW): access via
+      `state._locals` dict for dynamic variable resolution
+    - TRAMPOLINE with subscripted arrays: access via `state.A.get(subscripts)`
+    - SIMPLE_FUNCTIONS: read from `_scope` dict for cross-routine visibility
+    - Fallback: plain Python variable name
 
     Args:
         var: MVariable node
@@ -296,11 +288,11 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     # Translate name to valid Python identifier
     python_name = translate_name(var.name)
 
-    # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+    # Dynamic locals for argumentless KILL/NEW support
     if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
         if var.subscripts:
             # Generate subscript expressions
-            # T087: Pass subscript_context=True so indirection in subscripts
+            # subscript_context=True so indirection in subscripts
             # returns VALUE instead of validating as NAME
             subscript_exprs = [
                 generate_expr(sub, ctx, subscript_context=True)
@@ -310,16 +302,16 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
             base = f"state._locals.get({python_name!r}, MArray())"
             return f"{base}.get({', '.join(subscript_exprs)})"
         else:
-            # T075h: Simple variable - get value from _locals dict
+            # Simple variable - get value from _locals dict.
             # state._locals may contain MArray objects (from SET) or plain values
-            # (from external TRAMPOLINE routine returns), so we use m_var_value
-            # to handle both cases uniformly
+            # (from external TRAMPOLINE routine returns), so m_var_value
+            # handles both cases uniformly.
             return f"m_var_value(state._locals.get({python_name!r}))"
 
-    # Spec 006 (T075): Handle subscripted array access
+    # Handle subscripted array access
     if var.subscripts:
         # Generate subscript expressions
-        # T087: Pass subscript_context=True so indirection in subscripts
+        # subscript_context=True so indirection in subscripts
         # returns VALUE instead of validating as NAME
         subscript_exprs = [
             generate_expr(sub, ctx, subscript_context=True) for sub in var.subscripts
@@ -330,9 +322,9 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
             # MArray in RoutineState: state.A.get(subscripts)
             base = f"state.{python_name}"
         elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Spec 009 (T022-T023): Access arrays from _scope using MArray
-            # MArray.get(*subscripts) returns "" for undefined (MUMPS semantics)
-            # Use python_name (translated) to match SET statement key format
+            # Access arrays from _scope using MArray.
+            # MArray.get(*subscripts) returns "" for undefined (MUMPS semantics).
+            # Uses python_name (translated) to match SET statement key format.
             base = f"_scope.get({python_name!r}, MArray())"
         else:
             # Plain Python local variable (TRAMPOLINE without state_vars)
@@ -341,16 +333,14 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
         # Use .get() for reading - returns value or "" if undefined
         return f"{base}.get({', '.join(subscript_exprs)})"
 
-    # Spec 006: Check if variable should be accessed via state (TRAMPOLINE)
+    # Check if variable should be accessed via state (TRAMPOLINE)
     if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.state_vars:
         return f"state.{python_name}"
 
-    # Spec 008 (T085): Read variables from _scope for SIMPLE_FUNCTIONS strategy
-    # Spec 009 (T022): Use MArray.value to read simple variables (consistency with subscripted)
-    # Return empty string for undefined variables (MUMPS semantics via MArray.value)
-    # Spec 017 Phase 18: Use m_var_value to handle both MArray and plain values
-    # (External TRAMPOLINE routines may return plain strings in _scope)
-    # Use python_name (translated) to match SET statement key format
+    # Read variables from _scope for SIMPLE_FUNCTIONS strategy.
+    # Uses m_var_value to handle both MArray and plain values (external
+    # TRAMPOLINE routines may return plain strings in _scope).
+    # Uses python_name (translated) to match SET statement key format.
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
         return f"m_var_value(_scope.get({python_name!r}))"
 
@@ -367,7 +357,7 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
 def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
     """Generate Python expression for global variable READ.
 
-    Spec 009 (T027): Generate _rt.globals.get() call for global variable reads.
+    Generates _rt.globals.get() calls for global variable reads.
 
     Args:
         var: MGlobal or GlobalVariable node (GlobalVariable inherits from MGlobal)
@@ -389,13 +379,13 @@ def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
     # the type distinction. Numeric literals (Decimal, int, float) should
     # canonicalize differently than string literals.
     # Example: Decimal("1.0") → "1" (numeric), but "1.0" → "1.0" (string)
-    # T087: Pass subscript_context=True so indirection in subscripts
+    # subscript_context=True so indirection in subscripts
     # returns VALUE instead of validating as NAME
     subscripts_tuple = gen_subscripts_tuple(
         var.subscripts or [], ctx, subscript_context=True
     )
 
-    # Spec 021 Phase 15: Handle extended global references with namespace
+    # Handle extended global references with namespace
     if isinstance(var, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
         ns = getattr(var.environment, "value", "") if var.environment else ""
         return (
@@ -403,7 +393,7 @@ def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
             f"namespace={ns!r}) or '')"
         )
 
-    # Spec 009 (T028): Return empty string for undefined globals
+    # Return empty string for undefined globals
     # _rt.globals.get() returns None for undefined, convert to ""
     return f"(_rt.globals.get({global_name!r}, {subscripts_tuple}) or '')"
 
@@ -411,7 +401,7 @@ def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
 def _generate_naked_global_variable(var: NakedGlobal, ctx: "GeneratorContext") -> str:
     """Generate Python expression for naked global reference READ.
 
-    Spec 009 (T032): Generate resolve_naked + get for naked global reads.
+    Generates resolve_naked + get calls for naked global reads.
 
     Args:
         var: NakedGlobal node
@@ -426,13 +416,13 @@ def _generate_naked_global_variable(var: NakedGlobal, ctx: "GeneratorContext") -
     """
     # Generate subscript expressions
     # DO NOT wrap in str() - let the runtime's _canonicalize_subscript handle it
-    # T087: Pass subscript_context=True so indirection in subscripts
+    # subscript_context=True so indirection in subscripts
     # returns VALUE instead of validating as NAME
     subscripts_tuple = gen_subscripts_tuple(
         var.subscripts or [], ctx, subscript_context=True
     )
 
-    # Spec 009 (T028): Return empty string for undefined globals
+    # Return empty string for undefined globals
     # resolve_naked returns (name, subscripts), use * to unpack into get()
     return f"(_rt.globals.get(*_rt.globals.resolve_naked({subscripts_tuple})) or '')"
 
@@ -440,8 +430,8 @@ def _generate_naked_global_variable(var: NakedGlobal, ctx: "GeneratorContext") -
 def _generate_ssvn(ssvn: MStructuredSystemVariable, ctx: "GeneratorContext") -> str:
     """Generate Python expression for MUMPS structured system variable (SSVN).
 
-    Spec 013 Phase 16 (FR-029): Generates calls to database abstraction layer
-    for SSVNs ^$GLOBAL, ^$JOB, ^$LOCK, ^$ROUTINE.
+    Generates calls to database abstraction layer for SSVNs
+    ^$GLOBAL, ^$JOB, ^$LOCK, ^$ROUTINE, etc.
 
     Args:
         ssvn: MStructuredSystemVariable node (name without ^$)
@@ -560,69 +550,69 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
         return "_rt.quit_flag()"
 
     # $TLEVEL / $TL - transaction nesting level
-    # Spec 013 FR-015: Returns current transaction depth (0 = no transaction)
+    # Returns current transaction depth (0 = no transaction)
     if name in ("TLEVEL", "TL"):
         return "_rt.tlevel()"
 
     # $ZJOB / $ZJ - last JOB'd process ID
-    # Spec 013 Phase 11: Returns PID of last process started by JOB command
+    # Returns PID of last process started by JOB command
     if name in ("ZJOB", "ZJ"):
         return "_rt.zjob()"
 
     # $ECODE / $EC - error code list
-    # Spec 013 Phase 12 (FR-026): Comma-delimited list of active error codes
+    # Comma-delimited list of active error codes
     if name in ("ECODE", "EC"):
         return "_rt.ecode()"
 
     # $ETRAP / $ET - error trap code
-    # Spec 013 Phase 12 (FR-026): M code to execute on error
+    # M code to execute on error
     if name in ("ETRAP", "ET"):
         return "_rt.etrap()"
 
     # $ZERROR / $ZE - application error message
-    # Spec 013 Phase 12 (FR-045): Application-supplied error message text
+    # Application-supplied error message text
     if name in ("ZERROR", "ZE"):
         return "_rt.zerror()"
 
     # $ZTRAP / $ZT - error trap code (alternate form)
-    # Spec 021 Phase 5 (T034): M code to execute on error when $ETRAP is empty
+    # M code to execute on error when $ETRAP is empty
     if name in ("ZTRAP", "ZT"):
         return "_rt.ztrap()"
 
     # $ZSTATUS / $ZS - last error status
-    # Spec 021 Phase 5 (T034): Error status in YDB format
+    # Error status in YDB format
     if name in ("ZSTATUS", "ZS"):
         return "_rt.zstatus()"
 
     # $ZPOSITION / $ZP - current code position
-    # Spec 021 Phase 5 (T034): Current position as "label+offset^routine"
+    # Current position as "label+offset^routine"
     if name in ("ZPOSITION", "ZP"):
         return "_rt.zposition()"
 
     # $SYSTEM / $SY - system identification
-    # Spec 017 Phase 23: Returns "V,S" where V is MDC-assigned implementor number
+    # Returns "V,S" where V is MDC-assigned implementor number
     if name in ("SYSTEM", "SY"):
         return "_rt.system()"
 
     # $ESTACK / $ES - relative error stack depth
-    # Spec 021 Phase 4 (T022): Returns $STACK minus the level where NEW $ESTACK was done
+    # Returns $STACK minus the level where NEW $ESTACK was done
     if name in ("ESTACK", "ES"):
         return "str(_rt.estack())"
 
     # $PRINCIPAL / $P - principal I/O device
-    # Spec 017 Phase 23: Returns the principal device identifier
-    # Note: $P without arguments is $PRINCIPAL (not $PIECE which requires args)
+    # Returns the principal device identifier.
+    # $P without arguments is $PRINCIPAL (not $PIECE which requires args).
     if name in ("PRINCIPAL", "P", "PIOR", "PIOREFERENCE"):
         return "_rt.principal()"
 
     # $KEY / $K - terminal input key
-    # Spec 017 Phase 23: Returns terminator from last READ command
+    # Returns terminator from last READ command
     if name in ("KEY", "K"):
         return "_rt.key()"
 
     # $ZEOF / $ZE(OF) - end-of-file indicator
-    # Spec 022 Phase 4 (US9): Returns 1 if current device is at EOF, 0 otherwise
-    # Note: $ZE is ambiguous ($ZERROR vs $ZEOF). YDB resolves $ZE to $ZERROR,
+    # Returns 1 if current device is at EOF, 0 otherwise.
+    # $ZE is ambiguous ($ZERROR vs $ZEOF). YDB resolves $ZE to $ZERROR,
     # $ZEOF requires at least 4 chars. We match full name only.
     if name == "ZEOF":
         return "_rt.zeof()"
@@ -639,16 +629,14 @@ def _generate_indirection(
 ) -> str:
     """Generate Python expression for name indirection (@VAR).
 
-    Spec 012 Phase 3 (T016): Dispatches to codegen/indirection.py for
-    runtime indirection handling.
-
-    Feature: 018-unified-variable-system - Now uses unified runtime methods:
+    Dispatches to codegen/indirection.py for runtime indirection handling.
+    Uses unified runtime methods:
     - Simple NAME: @X → _rt.get_indirected("X", _scope, levels=1)
     - Multi-level NAME: @@X → _rt.get_indirected("X", _scope, levels=2)
     - With subscripts: @NAME@(1,2) → handled via per_level_subscripts
     - ARGUMENT type: @A in IF → evaluates value of A as expression
 
-    T087: subscript_context changes indirection behavior:
+    subscript_context changes indirection behavior:
     - subscript_context=False (default): Resolves to NAME, validates result
     - subscript_context=True: Evaluates indirection and returns VALUE for subscript use
       Example: ^V1A(@^(4)) where ^(4)="^V1A(5)" and ^V1A(5)=55
@@ -657,8 +645,8 @@ def _generate_indirection(
     Args:
         ind: MIndirection ASG node
         ctx: Generator context
-        if_condition: If True, this is an IF condition - affects T052 empty handling
-        subscript_context: If True, return VALUE instead of resolving NAME (T087)
+        if_condition: If True, this is an IF condition - affects empty string handling
+        subscript_context: If True, return VALUE instead of resolving NAME
 
     Returns:
         Python expression string
@@ -674,7 +662,7 @@ def _generate_indirection(
     if ind.indirection_type == IndirectionType.ARGUMENT:
         return generate_argument_indirection(ind, ctx, if_condition=if_condition)
     elif subscript_context:
-        # T087: Subscript context - get VALUE for use as subscript
+        # Subscript context - get VALUE for use as subscript
         return generate_subscript_indirection(ind, ctx)
     else:
         # NAME type (default) - look up variable by resolved name
@@ -807,9 +795,8 @@ def _generate_unary_op(op: MUnaryOp, ctx: "GeneratorContext") -> str:
 def _generate_pattern_match(expr: MPatternMatch, ctx: "GeneratorContext") -> str:
     """Generate Python pattern match expression from MPatternMatch.
 
-    Spec 011 Phase 12: Pattern match operator.
-    Spec 015 Phase 3: Uses pre-compiled regex for direct patterns to avoid
-    runtime re-compilation.
+    Handles the MUMPS pattern match operator (?). Uses pre-compiled regex
+    for direct patterns to avoid runtime re-compilation.
 
     Supports both direct patterns (literal) and indirect patterns (@X).
     Also handles negated pattern match ('?) which returns the inverse.
@@ -849,13 +836,13 @@ def _generate_pattern_match(expr: MPatternMatch, ctx: "GeneratorContext") -> str
 def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python extrinsic function call from MExtrinsicFunction.
 
-    T066: Extrinsic functions ($$label) require $TEST save/restore semantics.
+    Extrinsic functions ($$label) require $TEST save/restore semantics.
     Per MUMPS spec, the caller's $TEST is saved before the call and restored
     after, so the callee's $TEST changes don't leak back.
 
-    Spec 010 (T020): Handle by-reference parameters. When arguments are passed
-    by reference (.VAR), the caller's variables are updated when the callee
-    modifies them. This is handled by:
+    By-reference parameters: When arguments are passed by reference (.VAR),
+    the caller's variables are updated when the callee modifies them.
+    This is handled by:
     1. Callee returns tuple (value, *byref_outputs) when has by-ref outputs
     2. Caller passes _byref list with variable names for by-ref args
     3. _call_extrinsic helper unpacks and updates caller's scope
@@ -864,11 +851,11 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         _call_extrinsic(_rt, LABEL, arg1, arg2)
         _call_extrinsic(_rt, LABEL, arg1, arg2, _scope=_scope, _byref=['A', 'B'])
 
-    Generated pattern (external - Spec 008 Phase 7):
+    Generated pattern (external):
         _call_extrinsic(_rt, ext2.ADD, arg1, arg2, _scope=_scope, _byref=['A', 'B'])
 
     The _call_extrinsic helper handles save/restore of _test and by-ref unpacking.
-    Phase 13 (T081): _rt is passed explicitly as first parameter.
+    _rt is passed explicitly as first parameter.
 
     Args:
         expr: MExtrinsicFunction node
@@ -885,7 +872,7 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         raise NotImplementedError("Extrinsic function without target not supported")
 
     label_name = expr.target.name
-    # T100: $$^ROUTINE means call the routine's entry point (routine name as label)
+    # $$^ROUTINE means call the routine's entry point (routine name as label)
     if not label_name and expr.target.routine:
         label_name = expr.target.routine
     if not label_name:
@@ -901,7 +888,7 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
         byref_list = ", ".join(repr(name) for name in byref_names)
         byref_param = f", _byref=[{byref_list}]"
 
-    # Spec 008 Phase 7 (T043-T046): Handle external routine extrinsic
+    # Handle external routine extrinsic
     if expr.target.routine:
         routine_name = expr.target.routine
 
@@ -926,11 +913,11 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
                     f"(only basic trig/exp/log functions supported)"
                 )
 
-        # Spec 013 Phase 13: Check for bundled routines first (e.g., MATH for $$%SIN^MATH)
+        # Check for bundled routines first (e.g., MATH for $$%SIN^MATH)
         # Bundled routines are in m2py.runtime.routines package
         bundled_routines = {"MATH"}  # Add more as needed
 
-        # T068-T070: Translate routine name to valid Python module name
+        # Translate routine name to valid Python module name
         # %ROUTINE becomes _pct_ROUTINE for Python import compatibility
         python_module_name = translate_name(routine_name)
 
@@ -940,16 +927,15 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
             # Bundled routines don't need name translation (they're Python modules)
             module_ref = routine_name
         else:
-            # T044: Generate import statement for external routine
+            # Generate import statement for external routine
             ctx.emitter.line(f"import {python_module_name}")
             module_ref = python_module_name
 
         # Translate label name to Python function name
         func_name = translate_name(label_name)
 
-        # T045-T046: Generate call via _call_extrinsic with module prefix and _scope
-        # The _call_extrinsic helper provides $TEST save/restore and by-ref unpacking
-        # Phase 13 (T081): Pass _rt as first parameter
+        # Generate call via _call_extrinsic with module prefix and _scope.
+        # The _call_extrinsic helper provides $TEST save/restore and by-ref unpacking.
         if args:
             return f"_call_extrinsic(_rt, {module_ref}.{func_name}, {args}, _scope=_scope{byref_param})"
         else:
@@ -959,7 +945,7 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     # Translate label name to Python function name
     func_name = translate_name(label_name)
 
-    # Spec 010 (T020): For internal calls with by-ref, need _scope for by-ref unpacking
+    # For internal calls with by-ref, need _scope for by-ref unpacking
     if byref_names:
         if args:
             return (
@@ -969,8 +955,7 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
             return f"_call_extrinsic(_rt, {func_name}, _scope=_scope{byref_param})"
 
     # Generate: _call_extrinsic(_rt, FUNC, arg1, arg2, _scope=_scope)
-    # Phase 13 (T081): Pass _rt as first parameter
-    # T076-T078: Always pass _scope for cross-routine variable visibility
+    # Always pass _scope for cross-routine variable visibility
     if args:
         return f"_call_extrinsic(_rt, {func_name}, {args}, _scope=_scope)"
     else:
@@ -982,7 +967,7 @@ def _generate_external_function(
 ) -> str:
     """Generate Python call for external C function ($&name, $&package.name).
 
-    Spec 015: External C functions call native code linked into the MUMPS runtime.
+    External C functions call native code linked into the MUMPS runtime.
     These are implementation-specific and cannot be directly transpiled to Python.
 
     Examples:
@@ -1017,9 +1002,9 @@ def _generate_extrinsic_arguments_with_byref(
 ) -> tuple[str, list[str | None]]:
     """Generate Python arguments for extrinsic function call with by-ref info.
 
-    Spec 010 (T020): Returns both the argument string and a list of by-ref
-    variable names. The by-ref list has the variable name for BY_REFERENCE
-    arguments and None for BY_VALUE arguments.
+    Returns both the argument string and a list of by-ref variable names.
+    The by-ref list has the variable name for BY_REFERENCE arguments and
+    None for BY_VALUE arguments.
 
     Args:
         arguments: List of MActualParameter
@@ -1040,9 +1025,9 @@ def _generate_extrinsic_arguments_with_byref(
             parts.append("None")
             byref_names.append(None)
         elif arg.passing_mode == PassingMode.BY_REFERENCE:
-            # By-reference: pass the MArray object directly for aliasing
-            # Spec 017 Phase 23: The callee shares the same MArray, so
-            # $D(param) sees descendants and param(sub) accesses caller's tree
+            # By-reference: pass the MArray object directly for aliasing.
+            # The callee shares the same MArray, so $D(param) sees
+            # descendants and param(sub) accesses caller's tree.
             has_byref = True
             if arg.variable_name:
                 # Direct by-ref (.X): pass the MArray object from scope
@@ -1050,8 +1035,8 @@ def _generate_extrinsic_arguments_with_byref(
                 parts.append(f"_scope.get({var_name!r}, MArray())")
                 byref_names.append(var_name)
             elif arg.expression and isinstance(arg.expression, MIndirection):
-                # Indirected by-ref (.@IX): resolve indirection to MArray
-                # Spec 017 Phase 23: Uses runtime to resolve name then get MArray
+                # Indirected by-ref (.@IX): resolve indirection to MArray.
+                # Uses runtime to resolve name then get MArray.
                 ind_expr = generate_expr(arg.expression, ctx)
                 # Replace get_indirected with get_indirected_marray for by-ref
                 marray_expr = ind_expr.replace(
@@ -1083,8 +1068,8 @@ def _generate_extrinsic_arguments_with_byref(
 def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $DATA/$D function.
 
-    Spec 009 Phase 8, Spec 010 Phase 6: Generate m_data() or m_data_global()
-    calls based on whether the argument is a local or global variable.
+    Generates m_data() or m_data_global() calls based on whether
+    the argument is a local or global variable.
 
     $DATA returns:
     - 0: Undefined, no descendants
@@ -1114,7 +1099,6 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Handle MIndirection: $D(@A@(1)) needs runtime resolution
     if isinstance(var, MIndirectionType):
-        # Feature: 018-unified-variable-system (T143f)
         # For indirection, use unified resolve_for_target API via helper
         from m2py.codegen.indirection import generate_data_indirection_name
 
@@ -1134,13 +1118,12 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         # Global variable: m_data_global(_rt.globals, 'NAME', subscripts)
         return f"m_data_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
     elif isinstance(var, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
-        # Spec 021 Phase 15: Extended global $DATA with namespace prefix
+        # Extended global $DATA with namespace prefix
         ns = getattr(var.environment, "value", "") if var.environment else ""
         ns_name = f"{ns}:{var_name}" if ns else var_name
         return f"m_data_global(_rt.globals, {ns_name!r}, {subscripts_tuple})"
     elif isinstance(var, NakedGlobal):
         # Naked global: resolve then call m_data_global
-        # Spec 014 (T061): Naked references in $DATA
         return (
             f"(lambda _n, _s: m_data_global(_rt.globals, _n, _s))"
             f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
@@ -1152,8 +1135,8 @@ def _gen_data(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $GET/$G function.
 
-    Spec 010 Phase 6 (T040): Generate m_get() or m_get_global() calls based on
-    whether the argument is a local or global variable.
+    Generates m_get() or m_get_global() calls based on whether
+    the argument is a local or global variable.
 
     $GET returns the variable's value if defined, otherwise the default value.
     It distinguishes between undefined and defined-as-empty-string.
@@ -1191,7 +1174,6 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Handle MIndirection: $G(@A) needs runtime resolution
     if isinstance(var, MIndirectionType):
-        # Feature: 018-unified-variable-system
         # For indirection, use unified get_indirected API via helper
         from m2py.codegen.indirection import generate_get_indirection_name
 
@@ -1220,7 +1202,7 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"{default_code}, update_naked=False))[1])({subscripts_tuple})"
         )
     elif isinstance(var, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
-        # Spec 021 Phase 15: Extended global $GET with namespace prefix
+        # Extended global $GET with namespace prefix
         ns = getattr(var.environment, "value", "") if var.environment else ""
         ns_name = f"{ns}:{var_name}" if ns else var_name
         return (
@@ -1229,7 +1211,6 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         )
     elif isinstance(var, NakedGlobal):
         # Naked global: resolve, pre-set naked, then call m_get_global
-        # Spec 014 (T061): Naked references in $GET
         return (
             f"(lambda _n, _s: (_rt.globals.set_order_naked(_n, _s), "
             f"m_get_global(_rt.globals, _n, _s, {default_code}, "
@@ -1244,8 +1225,8 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $ORDER/$O function.
 
-    Spec 010 Phase 2: Generate m_order() or m_order_global() calls based on
-    whether the argument is a local or global variable.
+    Generates m_order() or m_order_global() calls based on whether
+    the argument is a local or global variable.
 
     $ORDER returns the next subscript in MUMPS collation order:
     - Negative numbers (most negative first)
@@ -1364,7 +1345,6 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             else:
                 full_name_expr = f'"{base_name}"'
 
-            # Feature: 018-unified-variable-system
             # Use resolve_for_target (unified method) to get the variable NAME.
             # $ORDER/$NEXT just need the name to find the next subscript.
             name_expr = (
@@ -1414,7 +1394,7 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"{direction_code}, update_naked=False))[1])({subscripts_tuple})"
         )
     elif isinstance(var, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
-        # Spec 021 Phase 15: Extended global $ORDER with namespace prefix
+        # Extended global $ORDER with namespace prefix
         ns = getattr(var.environment, "value", "") if var.environment else ""
         ns_name = f"{ns}:{var_name}" if ns else var_name
         return (
@@ -1422,9 +1402,8 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             f"{direction_code})"
         )
     elif isinstance(var, NakedGlobal):
-        # Naked global: resolve, pre-set naked, then call m_order_global
-        # Spec 014 (T061): Naked references in $ORDER
-        # Use tuple expression for naked indicator ordering like GlobalVariable
+        # Naked global: resolve, pre-set naked, then call m_order_global.
+        # Use tuple expression for naked indicator ordering like GlobalVariable.
         return (
             f"(lambda _n, _s: (_rt.globals.set_order_naked(_n, _s), "
             f"m_order_global(_rt.globals, _n, _s, {direction_code}, "
@@ -1437,8 +1416,8 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $QUERY/$Q function.
 
-    Spec 010 Phase 2: Generate m_query() or m_query_global() calls based on
-    whether the argument is a local or global variable.
+    Generates m_query() or m_query_global() calls based on whether
+    the argument is a local or global variable.
 
     $QUERY returns the full reference of the next node with a value in
     depth-first traversal order.
@@ -1466,7 +1445,6 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Handle MIndirection: $Q(@A@("")) needs runtime resolution
     if isinstance(var, MIndirectionType):
-        # Feature: 018-unified-variable-system
         # For indirection, use unified API via helper
         from m2py.codegen.indirection import generate_query_indirection_name
 
@@ -1488,13 +1466,12 @@ def _gen_query(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         # Global variable: m_query_global(_rt.globals, 'NAME', subscripts)
         return f"m_query_global(_rt.globals, {var_name!r}, {subscripts_tuple})"
     elif isinstance(var, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
-        # Spec 021 Phase 15: Extended global $QUERY with namespace prefix
+        # Extended global $QUERY with namespace prefix
         ns = getattr(var.environment, "value", "") if var.environment else ""
         ns_name = f"{ns}:{var_name}" if ns else var_name
         return f"m_query_global(_rt.globals, {ns_name!r}, {subscripts_tuple})"
     elif isinstance(var, NakedGlobal):
         # Naked global: resolve then call m_query_global
-        # Spec 014 (T061): Naked references in $QUERY
         return (
             f"(lambda _n, _s: m_query_global(_rt.globals, _n, _s))"
             f"(*_rt.globals.resolve_naked({subscripts_tuple}))"
@@ -1650,7 +1627,7 @@ def _generate_text(expr, ctx: "GeneratorContext") -> str:
 def _gen_select(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $SELECT/$S function.
 
-    Spec 010 Phase 3: Generate chained conditional expression that evaluates
+    Generates a chained conditional expression that evaluates
     condition:value pairs left-to-right, returning the value for the first
     true condition. If no condition is true, raises MRuntimeError("SELECTFALSE").
 
@@ -1696,14 +1673,14 @@ def _gen_select(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
 
 # =============================================================================
-# Phase 5: String Functions ($LENGTH, $PIECE, $EXTRACT)
+# String Functions ($LENGTH, $PIECE, $EXTRACT)
 # =============================================================================
 
 
 def _gen_length(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $LENGTH/$L function.
 
-    Spec 010 Phase 5 (T024-T026): $LENGTH has two forms:
+    $LENGTH has two forms:
     1. $L(string) - returns character count (len())
     2. $L(string, delimiter) - returns piece count (count + 1)
 
@@ -1740,7 +1717,7 @@ def _gen_length(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_piece(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $PIECE/$P function.
 
-    Spec 010 Phase 5 (T027-T030): $PIECE extracts delimited pieces.
+    $PIECE extracts delimited pieces.
     $P(string, delimiter [, from [, to]])
 
     Per MUMPS spec, `from` defaults to 1 when omitted.
@@ -1784,7 +1761,7 @@ def _gen_piece(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_extract(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $EXTRACT/$E function.
 
-    Spec 010 Phase 5 (T031-T034): $EXTRACT extracts substrings by position.
+    $EXTRACT extracts substrings by position.
     $E(string [, from [, to]])
 
     MUMPS uses 1-based indexing. Default from=1, default to=from.
@@ -1823,8 +1800,8 @@ def _gen_extract(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_find(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $FIND/$F function.
 
-    Spec 010 Phase 7 (T044): $FIND locates substring and returns position
-    AFTER the match. $F(string, target [, start])
+    $FIND locates a substring and returns the position AFTER the match.
+    $F(string, target [, start])
 
     Returns 0 if not found, or position AFTER the match (1-indexed).
 
@@ -1859,8 +1836,8 @@ def _gen_find(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_translate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $TRANSLATE/$TR function.
 
-    Spec 010 Phase 7 (T047): $TRANSLATE performs character-by-character
-    replacement or deletion. $TR(string, from [, to])
+    $TRANSLATE performs character-by-character replacement or deletion.
+    $TR(string, from [, to])
 
     Characters in 'from' are replaced by corresponding characters in 'to'.
     If 'to' is shorter than 'from', extra characters in 'from' are deleted.
@@ -1905,7 +1882,7 @@ def _gen_translate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_ascii(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $ASCII/$A function.
 
-    Spec 010 Phase 7 (T050): $ASCII returns ASCII code of character.
+    $ASCII returns the ASCII code of a character.
     $A(string [, position])
 
     Returns -1 if position is out of range or string is empty.
@@ -1940,7 +1917,7 @@ def _gen_ascii(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_char(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $CHAR/$C function.
 
-    Spec 010 Phase 7 (T051): $CHAR converts ASCII codes to characters.
+    $CHAR converts ASCII codes to characters.
     $C(code1 [, code2, ...])
 
     Multiple arguments produce concatenated characters.
@@ -1979,7 +1956,7 @@ def _gen_char(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_random(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $RANDOM/$R function.
 
-    Spec 010 Phase 8 (T055): $RANDOM generates random integers from 0 to limit-1.
+    $RANDOM generates random integers from 0 to limit-1.
     $R(limit) returns a random integer in range [0, limit-1].
 
     Raises MRuntimeError("RANDARGNEG") if limit <= 0.
@@ -2032,8 +2009,8 @@ def _m_random_checked(limit: int) -> int:
 def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $NAME/$NA function.
 
-    Spec 010 Phase 9 (T062): $NAME converts a variable reference to a canonical
-    name string representation.
+    $NAME converts a variable reference to a canonical name string
+    representation.
 
     $NAME(varref [, depth]) returns the canonical name of the variable:
     - depth omitted or > subscript count: all subscripts
@@ -2060,7 +2037,6 @@ def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Handle MIndirection: $NA(@A) needs runtime resolution
     if isinstance(var, MIndirectionType):
-        # Feature: 018-unified-variable-system
         from m2py.codegen.indirection import generate_name_function_indirection
 
         # Get depth argument if present
@@ -2108,7 +2084,7 @@ def _gen_name(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_qlength(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $QLENGTH/$QL function.
 
-    Spec 010 Phase 9 (T063): $QLENGTH counts subscripts in a name string.
+    $QLENGTH counts subscripts in a name string.
 
     $QLENGTH(name) returns the number of subscripts in the name string.
 
@@ -2132,7 +2108,7 @@ def _gen_qlength(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_qsubscript(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $QSUBSCRIPT/$QS function.
 
-    Spec 010 Phase 9 (T064): $QSUBSCRIPT extracts a subscript from a name string.
+    $QSUBSCRIPT extracts a subscript from a name string.
 
     $QSUBSCRIPT(name, position) returns:
     - position=0: variable name (with ^ for globals)
@@ -2162,7 +2138,7 @@ def _gen_qsubscript(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_justify(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $JUSTIFY/$J function.
 
-    Spec 010 Phase 10 (T067): $JUSTIFY right-justifies a value within a field width.
+    $JUSTIFY right-justifies a value within a field width.
 
     $JUSTIFY(expr, width [, decimals]):
     - Right-justify expr within width characters
@@ -2203,7 +2179,7 @@ def _gen_justify(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_reverse(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $REVERSE/$RE function.
 
-    Spec 010 Phase 10 (T068): $REVERSE reverses a string.
+    $REVERSE reverses a string.
 
     Args:
         expr: MIntrinsicFunction ASG node with 1 argument
@@ -2225,7 +2201,7 @@ def _gen_reverse(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 def _gen_fnumber(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $FNUMBER/$FN function.
 
-    Spec 010 Phase 10 (T070): $FNUMBER formats a number with various options.
+    $FNUMBER formats a number with various options.
 
     $FNUMBER(number, codes [, decimals]):
     - codes: string containing formatting codes
@@ -2267,17 +2243,17 @@ def _gen_fnumber(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 # =============================================================================
 # Registration happens at module load time after all functions are defined.
 
-# Phase 2: $ORDER, $QUERY
+# $ORDER, $QUERY
 INTRINSIC_GENERATORS["O"] = _gen_order
 INTRINSIC_GENERATORS["ORDER"] = _gen_order
 INTRINSIC_GENERATORS["Q"] = _gen_query
 INTRINSIC_GENERATORS["QUERY"] = _gen_query
 
-# Phase 3: $SELECT
+# $SELECT
 INTRINSIC_GENERATORS["S"] = _gen_select
 INTRINSIC_GENERATORS["SELECT"] = _gen_select
 
-# Phase 5: String functions ($LENGTH, $PIECE, $EXTRACT)
+# String functions ($LENGTH, $PIECE, $EXTRACT)
 INTRINSIC_GENERATORS["L"] = _gen_length
 INTRINSIC_GENERATORS["LENGTH"] = _gen_length
 INTRINSIC_GENERATORS["P"] = _gen_piece
@@ -2285,13 +2261,13 @@ INTRINSIC_GENERATORS["PIECE"] = _gen_piece
 INTRINSIC_GENERATORS["E"] = _gen_extract
 INTRINSIC_GENERATORS["EXTRACT"] = _gen_extract
 
-# Phase 6: Data functions ($DATA, $GET)
+# Data functions ($DATA, $GET)
 INTRINSIC_GENERATORS["D"] = _gen_data
 INTRINSIC_GENERATORS["DATA"] = _gen_data
 INTRINSIC_GENERATORS["G"] = _gen_get
 INTRINSIC_GENERATORS["GET"] = _gen_get
 
-# Phase 7: String search and transform functions ($FIND, $TRANSLATE, $ASCII, $CHAR)
+# String search and transform functions ($FIND, $TRANSLATE, $ASCII, $CHAR)
 INTRINSIC_GENERATORS["F"] = _gen_find
 INTRINSIC_GENERATORS["FIND"] = _gen_find
 INTRINSIC_GENERATORS["TR"] = _gen_translate
@@ -2301,11 +2277,11 @@ INTRINSIC_GENERATORS["ASCII"] = _gen_ascii
 INTRINSIC_GENERATORS["C"] = _gen_char
 INTRINSIC_GENERATORS["CHAR"] = _gen_char
 
-# Phase 8: Numeric functions ($RANDOM)
+# Numeric functions ($RANDOM)
 INTRINSIC_GENERATORS["R"] = _gen_random
 INTRINSIC_GENERATORS["RANDOM"] = _gen_random
 
-# Phase 9: Array utility functions ($NAME, $QLENGTH, $QSUBSCRIPT)
+# Array utility functions ($NAME, $QLENGTH, $QSUBSCRIPT)
 INTRINSIC_GENERATORS["NA"] = _gen_name
 INTRINSIC_GENERATORS["NAME"] = _gen_name
 INTRINSIC_GENERATORS["QL"] = _gen_qlength
@@ -2313,7 +2289,7 @@ INTRINSIC_GENERATORS["QLENGTH"] = _gen_qlength
 INTRINSIC_GENERATORS["QS"] = _gen_qsubscript
 INTRINSIC_GENERATORS["QSUBSCRIPT"] = _gen_qsubscript
 
-# Phase 10: Formatting functions ($JUSTIFY, $FNUMBER, $REVERSE)
+# Formatting functions ($JUSTIFY, $FNUMBER, $REVERSE)
 INTRINSIC_GENERATORS["J"] = _gen_justify
 INTRINSIC_GENERATORS["JUSTIFY"] = _gen_justify
 INTRINSIC_GENERATORS["FN"] = _gen_fnumber
@@ -2323,15 +2299,14 @@ INTRINSIC_GENERATORS["REVERSE"] = _gen_reverse
 
 
 # =============================================================================
-# Spec 021 Phase 10: $ZDATE function (User Story 8)
+# $ZDATE function
 # =============================================================================
 
 
 def _gen_zdate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $ZDATE/$ZD function.
 
-    Spec 021 Phase 10 (User Story 8): $ZDATE formats $HOROLOG values into
-    human-readable date/time strings.
+    $ZDATE formats $HOROLOG values into human-readable date/time strings.
 
     $ZDATE(horolog[,format[,months[,days]]]):
     - horolog: $HOROLOG value (days or days,seconds)
@@ -2383,7 +2358,7 @@ def _gen_zdate(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 INTRINSIC_GENERATORS["ZD"] = _gen_zdate
 INTRINSIC_GENERATORS["ZDATE"] = _gen_zdate
 
-# $TEXT (Spec 008, migrated to dispatch table for consistency)
+# $TEXT
 INTRINSIC_GENERATORS["T"] = _generate_text
 INTRINSIC_GENERATORS["TEXT"] = _generate_text
 
@@ -2532,7 +2507,7 @@ INTRINSIC_GENERATORS["INCREMENT"] = _gen_increment
 def _gen_stack(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $STACK/$ST function.
 
-    Spec 021 (T046): $STACK returns information about the call stack.
+    $STACK returns information about the call stack.
     - $STACK(-1): returns current stack depth
     - $STACK(n): returns frame type at level n ("DO", "$$", "XECUTE", etc.)
     - $STACK(n,"PLACE"): returns "LABEL+offset^ROUTINE"
@@ -2568,8 +2543,8 @@ INTRINSIC_GENERATORS["ST"] = _gen_stack
 def _gen_zsystem(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $ZSYSTEM special variable.
 
-    Spec 021 Phase 11 (T076): $ZSYSTEM returns the exit code from the last
-    ZSYSTEM command as a string. No arguments.
+    $ZSYSTEM returns the exit code from the last ZSYSTEM command
+    as a string. No arguments.
 
     Returns:
         Python expression that evaluates to exit code string
@@ -2584,8 +2559,8 @@ INTRINSIC_GENERATORS["ZSY"] = _gen_zsystem
 def _gen_zsearch(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $ZSEARCH function.
 
-    Spec 021 Phase 14 (T097): $ZSEARCH(pattern) searches for files matching
-    pattern. Subsequent calls with "" return next match.
+    $ZSEARCH(pattern) searches for files matching pattern.
+    Subsequent calls with "" return next match.
 
     Returns:
         Python expression that evaluates to matching file path
@@ -2603,8 +2578,7 @@ INTRINSIC_GENERATORS["ZSE"] = _gen_zsearch
 def _gen_zmessage(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $ZMESSAGE function.
 
-    Spec 021 Phase 14 (T097): $ZMESSAGE(code) returns error message text
-    for a YDB error code.
+    $ZMESSAGE(code) returns error message text for a YDB error code.
 
     Returns:
         Python expression that evaluates to error message string
@@ -2622,7 +2596,7 @@ INTRINSIC_GENERATORS["ZM"] = _gen_zmessage
 def _gen_zro(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
     """Generate Python code for $ZRO special variable.
 
-    Spec 021 Phase 14 (T097): $ZRO returns routine search path.
+    $ZRO returns routine search path.
 
     Returns:
         Python expression that evaluates to search path string

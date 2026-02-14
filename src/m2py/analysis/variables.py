@@ -184,16 +184,16 @@ def analyze_variables(routine: MRoutine) -> Dict[str, ScopeVariables]:
         label.input_variables = scope_vars.input_variables
         label.output_variables = scope_vars.output_variables
 
-        # Spec 011: Track whether label contains any NEW statements
+        # Track whether label contains any NEW statements
         # Used by codegen to determine if NewScopeManager context is needed
         label.has_new_statements = _label_has_new_statements(label)
 
-    # Spec 017: Detect argumentless KILL/NEW for runtime scope management
+    # Detect argumentless KILL/NEW for runtime scope management
     # These require special handling in TRAMPOLINE mode (state._locals dict)
     routine.has_argumentless_kill = _routine_has_argumentless_kill(routine)
     routine.has_argumentless_new = _routine_has_argumentless_new(routine)
 
-    # Spec 019 C-06: Detect exclusive KILL/NEW for dynamic locals
+    # Detect exclusive KILL/NEW for dynamic locals
     # Exclusive forms (K (X), N (X)) enumerate all vars at runtime
     routine.has_exclusive_kill = _routine_has_exclusive_kill(routine)
     routine.has_exclusive_new = _routine_has_exclusive_new(routine)
@@ -515,7 +515,7 @@ def _extract_statement_variables(
     elif isinstance(stmt, MNewStatement):
         # NEW X,Y,Z creates new local scope for these variables
         for var in stmt.variables:
-            # T070: var may be a string or MIndirection
+            # var may be a string or MIndirection
             # Only add string names - indirection can't be tracked statically
             if isinstance(var, str):
                 news.add(var)
@@ -1295,11 +1295,11 @@ def compute_all_signatures(
     # the calling routine needs dynamic_locals so state._locals holds MArrays.
     routine.has_byref_calls = _routine_has_byref_calls(routine)
 
-    # Spec 006 (T039a): Compute routine_state_vars - variables needing RoutineState fields
+    # Compute routine_state_vars - variables needing RoutineState fields
     # These are variables that flow between labels (output from one, input to another)
     routine.routine_state_vars = _compute_routine_state_vars(routine, label_vars)
 
-    # Spec 006 (T039b): Compute array_vars - variables with subscripted access
+    # Compute array_vars - variables with subscripted access
     routine.array_vars = _compute_array_vars(routine)
 
     # Compute routine_input_only_vars - variables read but never written in the routine.
@@ -1317,7 +1317,7 @@ def _compute_routine_state_vars(
 ) -> Set[str]:
     """Compute variables that need RoutineState fields for cross-label flow.
 
-    Spec 006 (T039a): Variables that are written in one label and read in
+    Variables that are written in one label and read in
     another label need to be passed through RoutineState for trampoline pattern.
 
     For GOTO flow (cross-label jumps), NEWed variables should also be included
@@ -1382,7 +1382,7 @@ def _routine_has_byref_calls(routine: MRoutine) -> bool:
 def _compute_array_vars(routine: MRoutine) -> Set[str]:
     """Compute variables that have subscripted access (need MArray fields).
 
-    Spec 006 (T039b): Variables accessed with subscripts need MArray fields
+    Variables accessed with subscripts need MArray fields
     in RoutineState to support MUMPS array semantics (value + children at node).
 
     Returns:

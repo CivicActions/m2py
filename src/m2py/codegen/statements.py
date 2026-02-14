@@ -65,7 +65,7 @@ from m2py.asg.statements import (
     MViewStatement,
     MWriteStatement,
     MXecuteStatement,
-    # Z-commands (Phase 19) - Implemented
+    # Z-commands - Implemented
     MZGotoStatement,
     MZHaltStatement,
     MZKillStatement,
@@ -224,12 +224,12 @@ def _emit_goto_external_handler(ctx: "GeneratorContext") -> None:
 
 
 # =============================================================================
-# Limitation Constants (Spec 014)
+# Limitation Constants
 # =============================================================================
 
 
 # =============================================================================
-# Spec 014: Comment Preservation
+# Comment Preservation
 # =============================================================================
 
 
@@ -248,7 +248,7 @@ def _emit_source_comment(stmt: "MStatement", ctx: "GeneratorContext") -> None:
 
 
 # =============================================================================
-# Spec 005: Code Generation Context Helpers
+# Code Generation Context Helpers
 # =============================================================================
 
 
@@ -259,11 +259,9 @@ def _generate_call_arguments(
 
     Handles:
     - BY_VALUE: Expression evaluated and passed
-    - BY_REFERENCE: Variable passed (actual by-ref return tuple handled at call site)
+    - BY_REFERENCE: Variable passed directly; return tuple destructuring
+      handles results at the call site
     - OMITTED: None placeholder
-
-    Note: Full by-reference semantics with return tuple destructuring
-    is implemented in Phase 10 (US8). For now, by-ref passes the variable.
 
     Args:
         arguments: List of MActualParameter from MCall
@@ -339,8 +337,8 @@ class ForGenContext:
     needs_break: bool  # True if has_internal_quit or has_internal_goto
     is_infinite: bool
     loop_type: ForLoopType
-    loop_var_indirect: bool = False  # T068: True if loop_var is @A
-    loop_var_expr: Optional[str] = None  # T068: Expression to get target var name
+    loop_var_indirect: bool = False  # True if loop_var is @A
+    loop_var_expr: Optional[str] = None  # Expression to get target var name
     loop_id: int = 0  # Unique ID for this loop (for generating unique var names)
 
     @classmethod
@@ -365,7 +363,7 @@ class ForGenContext:
         from m2py.asg.expressions import MIndirection as MIndirectionType
         from m2py.codegen.expressions import generate_expr
 
-        # T068: Check for indirection loop variable (F @A=1:1:3)
+        # Check for indirection loop variable (F @A=1:1:3)
         loop_var_indirect = False
         loop_var_expr: Optional[str] = None
         loop_var_subscripts: List[str] = []
@@ -375,7 +373,6 @@ class ForGenContext:
             # Also handles multi-level: F @@A=1:1:5, F @@@A=1:1:5
             loop_var_indirect = True
             # Generate expression to get target variable name at runtime
-            # Feature: 018-unified-variable-system (T089, T134)
             # Use generate_name_indirection_for which uses IndirectionResolver
             if ctx is not None and stmt.loop_var.expression is not None:
                 from m2py.codegen.indirection import (
@@ -392,7 +389,7 @@ class ForGenContext:
         elif isinstance(stmt.loop_var, MVariable):
             var_name = stmt.loop_var.name
             loop_var = translate_name(var_name)
-            # T032: Extract subscripts for subscripted loop variables (F I(1)=1:1:3)
+            # Extract subscripts for subscripted loop variables (F I(1)=1:1:3)
             if stmt.loop_var.subscripts and ctx is not None:
                 loop_var_subscripts = [
                     generate_expr(sub, ctx) for sub in stmt.loop_var.subscripts
@@ -401,13 +398,13 @@ class ForGenContext:
             var_name = "_"
             loop_var = "_"  # Fallback for complex expressions
 
-        # T075n: When inside inline XECUTE, prefix loop var to avoid shadowing
+        # When inside inline XECUTE, prefix loop var to avoid shadowing
         # module-level label functions. E.g. "F I=1:1:3 G I" - the FOR loop
         # variable I would shadow def I() if we use bare "I".
         if ctx and ctx.in_inline_xecute and loop_var not in ("_", "_for_val"):
             loop_var = f"_xec_{loop_var}"
 
-        # Spec 006: Check if loop var should use state for trampoline
+        # Check if loop var should use state for trampoline
         if (
             ctx
             and ctx.strategy == GotoStrategy.TRAMPOLINE
@@ -421,14 +418,13 @@ class ForGenContext:
         needs_break = stmt.has_internal_quit or stmt.has_internal_goto
         is_infinite = stmt.is_infinite or not stmt.parameters
 
-        # T095: loop_type is now always set by analysis - no fallback needed
         loop_type = stmt.loop_type
         if loop_type is None:
             raise ValueError(
                 "MForStatement.loop_type not set - ensure analyze_for_loops() was called"
             )
 
-        # Spec 017 Phase 11: Get unique loop ID from context for variable naming
+        # Get unique loop ID from context for variable naming
         loop_id = ctx.next_for_loop_id() if ctx else 0
 
         return cls(
@@ -444,13 +440,6 @@ class ForGenContext:
             loop_var_expr=loop_var_expr,
             loop_id=loop_id,
         )
-
-
-# T092-T094: Removed _for_needs_loop_exit_wrapper(), _for_has_cross_label_exit(),
-# and _get_multi_loop_exit_target() - now using pre-computed ASG fields:
-# - MForStatement.needs_exception_wrapper
-# - MForStatement.has_cross_label_exit
-# - MForStatement.exit_target
 
 
 @dataclass
@@ -504,7 +493,6 @@ class GotoGenContext:
             target = stmt.targets[0]
             target_label = translate_name(target.name) if target.name else ""
 
-        # T101: Read pre-computed codegen_pattern from analysis instead of recomputing
         # Map GotoCodegenPattern enum to string pattern for backward compatibility
         from m2py.asg.enums import GotoCodegenPattern
 
@@ -529,10 +517,6 @@ class GotoGenContext:
             target_label=target_label,
             pattern=pattern,
         )
-
-
-# T100: Removed _is_restructurable_goto() - now using pre-computed
-# MGotoStatement.is_restructurable field populated by classify_gotos()
 
 
 def _find_forward_goto_in_if(if_stmt: MIfStatement) -> "MGotoStatement | None":
@@ -692,7 +676,7 @@ def generate_offset_guarded_statements(
 ) -> None:
     """Generate statements with offset guards for computed offset support.
 
-    Spec 007 (T021): Each statement is wrapped with an offset guard that
+    Each statement is wrapped with an offset guard that
     checks if the statement should be skipped based on _start_offset.
 
     The guard is: if _start_offset <= offset:
@@ -730,10 +714,10 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     - MElseStatement → if not _test block
     - MForStatement → for loop
 
-    Spec 011 (T032-T033): If stmt.postcondition is set, wrap the statement
-    in a conditional: if m_truth(cond): <statement>
+    If stmt.postcondition is set, wraps the statement in a conditional:
+    if m_truth(cond): <statement>
 
-    Spec 014 (T067): Preserves MUMPS comments as Python comments.
+    Preserves MUMPS comments as Python comments.
     If the source line has an inline comment (;...), it is emitted
     as a Python comment before the statement.
 
@@ -744,10 +728,10 @@ def generate_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     Raises:
         NotImplementedError: For unsupported statement types
     """
-    # Spec 014 (T067): Emit MUMPS comment as Python comment if present
+    # Emit MUMPS comment as Python comment if present
     _emit_source_comment(stmt, ctx)
 
-    # Spec 011 (T032): Check for postcondition
+    # Check for postcondition
     if stmt.postcondition is not None:
         cond_expr = generate_expr(stmt.postcondition, ctx)
         ctx.emitter.line(f"if m_truth({cond_expr}):")
@@ -821,7 +805,7 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_view(stmt, ctx)
     elif isinstance(stmt, MBreakStatement):
         _generate_break(stmt, ctx)
-    # Z-commands (Phase 19)
+    # Z-commands
     elif isinstance(stmt, MZWriteStatement):
         _generate_zwrite(stmt, ctx)
     elif isinstance(stmt, (MZKillStatement, MZWithdrawStatement)):
@@ -834,7 +818,7 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_zgoto(stmt, ctx)
     elif isinstance(stmt, MZHaltStatement):
         _generate_zhalt(stmt, ctx)
-    # Z-commands - Unimplemented (LIM-015)
+    # Unimplemented Z-commands
     elif isinstance(stmt, MZAllocateStatement):
         raise NotImplementedError("LIM-015: ZALLOCATE command not supported")
     elif isinstance(stmt, MZDeallocateStatement):
@@ -859,7 +843,7 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_zsystem(stmt, ctx)
     elif isinstance(stmt, MZTriggerStatement):
         raise NotImplementedError("LIM-015: ZTRIGGER command not supported")
-    # ANSI commands not supported by YDB (LIM-016)
+    # ANSI commands not supported by YDB
     elif isinstance(stmt, MKSubscriptsStatement):
         raise NotImplementedError(
             "LIM-016: KSUBSCRIPTS command not supported (not implemented in YDB)"
@@ -875,22 +859,22 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
 def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
     """Generate Python assignment from MSetStatement.
 
-    Spec 006: When using TRAMPOLINE strategy and the variable is in state_vars,
-    assign to `state.VAR` instead of just `VAR`.
+    When using TRAMPOLINE strategy and the variable is in state_vars,
+    assigns to `state.VAR` instead of just `VAR`.
 
-    Spec 006 (T075): Handle subscripted assignments for MArray-backed variables.
-    For array variables, generate: state.A[subscripts] = value
+    Handles subscripted assignments for MArray-backed variables.
+    For array variables, generates: state.A[subscripts] = value
 
-    Spec 008 (T084): For SIMPLE_FUNCTIONS strategy, store variables in _scope
-    dictionary for cross-routine visibility: _scope['VAR'] = value
+    For SIMPLE_FUNCTIONS strategy, stores variables in _scope dictionary
+    for cross-routine visibility: _scope['VAR'] = value
 
-    Spec 012 (T017): Handle name indirection targets (@VAR).
-    For indirection targets, generate: _rt.set_var(name_expr, value, _scope)
+    Handles name indirection targets (@VAR) by generating:
+    _rt.set_var(name_expr, value, _scope)
 
-    Spec 012 (T056): Handle argument indirections (S @A where A="X=1").
-    For argument indirection, generate: _rt.execute_mumps("S " + value, _scope)
+    Handles argument indirections (S @A where A="X=1") by generating:
+    _rt.execute_mumps("S " + value, _scope)
 
-    Spec 017: Uses ordered_items to maintain left-to-right evaluation order
+    Uses ordered_items to maintain left-to-right evaluation order
     when SET has interleaved argument indirections (S X=1,@A,Y=2).
 
     Args:
@@ -904,7 +888,7 @@ def _generate_set(stmt: MSetStatement, ctx: "GeneratorContext") -> None:
         generate_set_argument_indirection,
     )
 
-    # Spec 017: Use ordered_items for correct left-to-right evaluation
+    # Use ordered_items for correct left-to-right evaluation
     # ordered_items is always populated by the semantic analyzer
 
     # Detect tuple SETs: consecutive assignments sharing the same value object
@@ -1093,7 +1077,7 @@ def _generate_single_assignment(
     if assignment.target is None or assignment.value is None:
         return
 
-    # Spec 012 (T017) + 018 (T041): Handle indirection targets (@VAR, @@VAR, @NAME@(1,2))
+    # Handle indirection targets (@VAR, @@VAR, @NAME@(1,2))
     # Uses unified set_indirected() which internally uses IndirectionResolver
     if isinstance(assignment.target, MIndirectionType):
         # Generate value expression first
@@ -1103,8 +1087,8 @@ def _generate_single_assignment(
         ctx.emitter.line(set_stmt)
         return
 
-    # Spec 013 Phase 12: Handle special variable assignments ($ETRAP, $ECODE, $ZERROR)
-    # Spec 021 Phase 5: Add $ZTRAP, $ZSTATUS, $ZPOSITION
+    # Handle special variable assignments ($ETRAP, $ECODE, $ZERROR)
+    # Also handles $ZTRAP, $ZSTATUS, $ZPOSITION
     if isinstance(assignment.target, MSpecialVariable):
         value_expr = generate_expr(assignment.value, ctx)
         svar_name = assignment.target.name.upper()
@@ -1130,10 +1114,10 @@ def _generate_single_assignment(
         target_name = translate_name(assignment.target.name)
         var_name = assignment.target.name
 
-        # Spec 006 (T075): Handle subscripted array assignments
+        # Handle subscripted array assignments
         if assignment.target.subscripts:
             # Generate subscript expressions
-            # T087: Pass subscript_context=True so indirection in subscripts
+            # Pass subscript_context=True so indirection in subscripts
             # returns VALUE instead of validating as NAME
             subscript_exprs = [
                 generate_expr(sub, ctx, subscript_context=True)
@@ -1148,7 +1132,7 @@ def _generate_single_assignment(
                 contains_naked_global(sub) for sub in assignment.target.subscripts
             )
 
-            # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+            # Dynamic locals for argumentless KILL/NEW support
             if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
                 # Access MArray from _locals dict, auto-vivify if needed
                 base = f"state._locals.setdefault({target_name!r}, MArray())"
@@ -1156,7 +1140,7 @@ def _generate_single_assignment(
                 # MArray in RoutineState: state.A[subscripts] = value
                 base = f"state.{target_name}"
             elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-                # Spec 009 (T021): Auto-vivify MArray for subscripted locals
+                # Auto-vivify MArray for subscripted locals
                 # _scope.setdefault('A', MArray())[subscripts] = value
                 base = f"_scope.setdefault({target_name!r}, MArray())"
             else:
@@ -1192,39 +1176,39 @@ def _generate_single_assignment(
                 ctx.emitter.line(f"{target_expr} = {value_expr}")
             return
 
-        # Spec 017 (T014): Dynamic locals for argumentless KILL/NEW support
+        # Dynamic locals for argumentless KILL/NEW support
         if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             # Store in _locals dict as MArray for consistency with subscripted access
             target_name = f"state._locals.setdefault({target_name!r}, MArray()).value"
-        # Spec 006: Check if variable should be accessed via state (TRAMPOLINE)
+        # Check if variable should be accessed via state (TRAMPOLINE)
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
             target_name = f"state.{target_name}"
         elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Spec 009 (T021): Store variables in _scope using MArray for consistency
+            # Store variables in _scope using MArray for consistency
             # This allows later subscripted access: S X=1 S X(1)=2 both work
             target_name = f"_scope.setdefault({target_name!r}, MArray()).value"
         # else: use plain Python local variable (TRAMPOLINE without state_vars)
 
     elif isinstance(assignment.target, GlobalVariable):
-        # Spec 009 (T026): Handle global variable SET targets
+        # Handle global variable SET targets
         # Generate: _rt.globals.set("NAME", (subscripts,), value)
         _generate_global_set(assignment, ctx)
         return
 
     elif isinstance(assignment.target, (ExtendedGlobalBracket, ExtendedGlobalPipe)):
-        # Spec 021 Phase 15: Handle extended global reference SET targets
+        # Handle extended global reference SET targets
         # Pass namespace through to _rt.globals.set_ns()
         _generate_extended_global_set(assignment, ctx)
         return
 
     elif isinstance(assignment.target, NakedGlobal):
-        # Spec 009 (T031): Handle naked global reference SET targets
+        # Handle naked global reference SET targets
         # Generate: resolve_naked then set
         _generate_naked_global_set(assignment, ctx)
         return
 
     elif isinstance(assignment.target, MIntrinsicFunction):
-        # Spec 009 (T012-T013): Handle LHS function targets ($PIECE, $EXTRACT)
+        # Handle LHS function targets ($PIECE, $EXTRACT)
         func_name = assignment.target.name.upper()
 
         if func_name in ("P", "PIECE"):
@@ -1279,7 +1263,7 @@ def _build_lhs_getter_setter(
         getter = f'lambda: _rt.globals.get("{global_name}", {subscripts_tuple}) or ""'
         setter = f'lambda v: _rt.globals.set("{global_name}", {subscripts_tuple}, v)'
     elif isinstance(target, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
-        # Spec 021 Phase 15: Extended global LHS with namespace prefix
+        # Extended global LHS with namespace prefix
         global_name = target.name
         ns = getattr(target.environment, "value", "") if target.environment else ""
         ns_name = f"{ns}:{global_name}" if ns else global_name
@@ -1389,7 +1373,7 @@ def _build_lhs_getter_setter(
 def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> None:
     """Generate m_set_piece() call for LHS $PIECE assignment.
 
-    Spec 009 (T013): Generate code for S $P(var,"^",pos)=value
+    Generate code for S $P(var,"^",pos)=value
 
     Args:
         assignment: MAssignment with IntrinsicFunction target
@@ -1456,7 +1440,7 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
 def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> None:
     """Generate m_set_extract() call for LHS $EXTRACT assignment.
 
-    Spec 009 (T017-T018): Generate code for S $E(var,from,to)=value
+    Generates code for S $E(var,from,to)=value
 
     Args:
         assignment: MAssignment with IntrinsicFunction target
@@ -1513,7 +1497,7 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
 def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> None:
     """Generate _rt.globals.set() call for global variable SET.
 
-    Spec 009 (T026): Generate code for S ^NAME(subscripts)=value
+    Generates code for S ^NAME(subscripts)=value
 
     Args:
         assignment: MAssignment with GlobalVariable target
@@ -1523,7 +1507,7 @@ def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> No
         _rt.globals.set("NAME", (sub1, sub2), "value")
         _rt.globals.set("NAME", (), "value")  # No subscripts
 
-    Note: Subscripts are NOT wrapped in str() - the runtime's _canonicalize_subscript
+    Subscripts are NOT wrapped in str() - the runtime's _canonicalize_subscript
     handles type-aware canonicalization. Numeric literals canonicalize differently
     than string literals (e.g., Decimal("1.0") → "1", but "1.0" → "1.0").
     """
@@ -1536,7 +1520,7 @@ def _generate_global_set(assignment: MAssignment, ctx: "GeneratorContext") -> No
 
     # Generate subscript expressions
     # DO NOT wrap in str() - let runtime handle canonicalization
-    # T087: Pass subscript_context=True so indirection in subscripts
+    # Pass subscript_context=True so indirection in subscripts
     # returns VALUE instead of validating as NAME
     subscripts_tuple = gen_subscripts_tuple(
         global_var.subscripts or [], ctx, subscript_context=True
@@ -1558,7 +1542,7 @@ def _generate_extended_global_set(
 ) -> None:
     """Generate _rt.globals.set_ns() call for extended global reference SET.
 
-    Spec 021 Phase 15: Generate code for S ^["env"]NAME(subscripts)=value
+    Generates code for S ^["env"]NAME(subscripts)=value
     and S ^|"env"|NAME(subscripts)=value.
 
     The namespace is passed to the runtime's set_ns() method which prefixes
@@ -1580,7 +1564,7 @@ def _generate_extended_global_set(
 
     # Generate subscript expressions
     # DO NOT wrap in str() - let runtime handle canonicalization
-    # T087: Pass subscript_context=True so indirection in subscripts
+    # Pass subscript_context=True so indirection in subscripts
     # returns VALUE instead of validating as NAME
     subscripts_tuple = gen_subscripts_tuple(
         ext_global.subscripts or [], ctx, subscript_context=True
@@ -1603,7 +1587,7 @@ def _generate_naked_global_set(
 ) -> None:
     """Generate resolve_naked + set for naked global reference SET.
 
-    Spec 009 (T031): Generate code for S ^(subscripts)=value
+    Generates code for S ^(subscripts)=value
 
     Args:
         assignment: MAssignment with NakedGlobal target
@@ -1624,7 +1608,7 @@ def _generate_naked_global_set(
 
     # Generate subscript expressions
     # DO NOT wrap in str() - let runtime handle canonicalization
-    # T087: Pass subscript_context=True so indirection in subscripts
+    # Pass subscript_context=True so indirection in subscripts
     # returns VALUE instead of validating as NAME
     subscripts_tuple = gen_subscripts_tuple(
         naked_global.subscripts or [], ctx, subscript_context=True
@@ -1666,8 +1650,6 @@ def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:
     - W @B(1),@@C → each indirection expands to WRITE args independently
     - W !,@@@B,@C → explicit !, then @@@B and @C as WRITE arg indirections
 
-    Spec 011 (T025-T029): Format control support.
-
     Args:
         stmt: MWriteStatement node
         ctx: Generator context
@@ -1677,7 +1659,7 @@ def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:
 
     for arg in stmt.arguments:
         if isinstance(arg, MFormatControl):
-            # Spec 011 (T025): Handle format control nodes
+            # Handle format control nodes
             _generate_format_control(arg, ctx)
         elif (
             isinstance(arg, MIndirection)
@@ -1706,19 +1688,17 @@ def _generate_format_control(fc: MFormatControl, ctx: "GeneratorContext") -> Non
     - ?n (TAB): Tab to column n
     - *n (CHARCODE): Output character with ASCII code n
 
-    Spec 011 (T026-T029): Format control code generation.
-
     Args:
         fc: MFormatControl node
         ctx: Generator context
     """
     if fc.control_type == FormatControlType.NEWLINE:
-        # Spec 011 (T026): NEWLINE format control
+        # NEWLINE format control
         # Use write_newline() to properly reset $X and increment $Y
         ctx.emitter.line("_rt.write_newline()")
 
     elif fc.control_type == FormatControlType.FORMFEED:
-        # Spec 011 (T027): FORMFEED format control
+        # FORMFEED format control
         # YDB: conditional newline before form feed only if $X > 0
         # (iorm_cond_wteol in YDB source code)
         # Form feed outputs \x0c and resets $Y to 0, NO trailing newline
@@ -1727,7 +1707,7 @@ def _generate_format_control(fc: MFormatControl, ctx: "GeneratorContext") -> Non
         ctx.emitter.line("_rt.write_formfeed()")
 
     elif fc.control_type == FormatControlType.CHARCODE:
-        # Spec 011 (T028): CHARCODE format control (*n)
+        # CHARCODE format control (*n)
         if fc.expression is not None:
             expr = generate_expr(fc.expression, ctx)
             # Apply MUMPS numeric coercion before int() for *intexpr
@@ -1737,7 +1717,7 @@ def _generate_format_control(fc: MFormatControl, ctx: "GeneratorContext") -> Non
             pass
 
     elif fc.control_type == FormatControlType.TAB:
-        # Spec 011 (T029): TAB format control (?n)
+        # TAB format control (?n)
         if fc.expression is not None:
             expr = generate_expr(fc.expression, ctx)
             # Apply MUMPS numeric coercion before int() for ?intexpr
@@ -1840,8 +1820,8 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         stmt: MQuitStatement node
         ctx: Generator context
     """
-    # T045: QUIT with return value (extrinsic function return)
-    # Spec 010 (T020): If label has by-ref outputs, return tuple (value, *byref_outputs)
+    # QUIT with return value (extrinsic function return)
+    # If label has by-ref outputs, return tuple (value, *byref_outputs)
     if stmt.return_value is not None:
         value_expr = generate_expr(stmt.return_value, ctx)
 
@@ -1863,7 +1843,7 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
             # Include ALL formal params so tuple positions align with
             # the _byref list at the call site (which has entries for all
             # actual params, with None for by-value positions).
-            # Spec 009 (T021): Use MArray.value for consistency
+            # Use MArray.value for consistency
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
                 byref_exprs = [
                     f"_scope.get({p!r}, MArray()).value" for p in formal_params
@@ -1879,24 +1859,24 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f"return {value_expr}")
         return
 
-    # T108: exits_for is set by analyze_quit_context() for QUITs inside FOR loops
+    # exits_for is set by analyze_quit_context() for QUITs inside FOR loops
     if stmt.exits_for is not None:
         # Inside a FOR loop - QUIT exits the innermost FOR
         ctx.emitter.line("break")
         return
 
-    # T109: exits_do_block is set by analyze_quit_context() for QUITs inside DO blocks
+    # exits_do_block is set by analyze_quit_context() for QUITs inside DO blocks
     if stmt.exits_do_block is not None:
         # Inside a DO block - QUIT exits only the block (break from while True)
         ctx.emitter.line("break")
         return
 
-    # Spec 006 (T069a): Self-loop pattern - QUIT exits the while True: loop
+    # Self-loop pattern - QUIT exits the while True: loop
     if ctx.current_label and ctx.current_label.has_self_loop:
         ctx.emitter.line("break")
         return
 
-    # T059: Plain QUIT with by-ref outputs - return modified params as tuple
+    # Plain QUIT with by-ref outputs - return modified params as tuple
     # Check if current label has byref_outputs that need to be returned
     if (
         ctx.current_label
@@ -1914,9 +1894,9 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
                 ctx.emitter.line(f"return {', '.join(return_exprs)}")
                 return
 
-    # Spec 006: Trampoline pattern - return (None, state) to signal exit
+    # Trampoline pattern - return (None, state) to signal exit
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
-        # T075m: Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
+        # Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
         if ctx.in_inline_xecute:
             ctx.emitter.line("raise _XecuteExit()")
         else:
@@ -1924,7 +1904,7 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         return
 
     # Plain QUIT outside FOR/DO block - return from function/routine
-    # T075m: Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
+    # Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
     if ctx.in_inline_xecute:
         ctx.emitter.line("raise _XecuteExit()")
     else:
@@ -1937,8 +1917,8 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
     MUMPS IF evaluates condition, sets $TEST, and conditionally executes body.
     Generated code: _test = m_truth(cond); if _test: ...
 
-    T052: For IF indirection (I @A where A=""), empty string is TRUE.
-    We pass if_condition=True to generate_expr() so indirection codegen
+    For IF indirection (I @A where A=""), empty string is TRUE.
+    Passes if_condition=True to generate_expr() so indirection codegen
     adds treat_empty_as_truthy=True to the runtime call.
 
     Args:
@@ -1946,7 +1926,7 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
         ctx: Generator context
     """
     # Get condition(s) - always use conditions list
-    # T052: Pass if_condition=True for indirection empty string handling
+    # Pass if_condition=True for indirection empty string handling
     if len(stmt.conditions) == 1:
         cond_expr = generate_expr(stmt.conditions[0], ctx, if_condition=True)
     elif stmt.conditions:
@@ -2023,35 +2003,33 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     - STRING_LIST: for loop with list
     - MIXED: for loop with itertools.chain()
 
-    T038: If this FOR is the outermost target of a MULTI_LOOP_EXIT GOTO,
-    wrap the entire loop in try/except _LoopExit.
+    If this FOR is the outermost target of a MULTI_LOOP_EXIT GOTO,
+    wraps the entire loop in try/except _LoopExit.
 
-    FR-018: Cross-label loop exits must call the target label after exiting.
+    Cross-label loop exits call the target label after exiting.
 
     Args:
         stmt: MForStatement node
         ctx: Generator context
     """
-    # T038: Check if this FOR needs try/except wrapper for multi-loop exit
-    # T091: Use pre-computed field from analysis instead of helper function
+    # Check if this FOR needs try/except wrapper for multi-loop exit
     needs_wrapper = stmt.needs_exception_wrapper
 
-    # FR-018: Check if this FOR has cross-label single-loop exits
-    # T091: Use pre-computed field from analysis instead of helper function
+    # Check if this FOR has cross-label single-loop exits
     has_cross_label_exit = stmt.has_cross_label_exit
 
-    # V1FORC2/I-377: Check if this FOR has same-label single-loop exits
+    # Check if this FOR has same-label single-loop exits
     # These need to break the FOR and continue the outer while True self-loop
     has_same_label_exit = stmt.has_same_label_exit
 
-    # FR-018: Initialize goto tracking before loop if needed
+    # Initialize goto tracking before loop if needed
     if has_cross_label_exit and not needs_wrapper:
         if ctx.strategy == GotoStrategy.TRAMPOLINE:
             ctx.emitter.line("_goto_label = None")
         else:
             ctx.emitter.line("_goto_target = None")
 
-    # V1FORC2/I-377: Initialize same-label exit flag before loop if needed
+    # Initialize same-label exit flag before loop if needed
     if has_same_label_exit and not needs_wrapper:
         ctx.emitter.line("_restart_self_loop = False")
 
@@ -2066,7 +2044,7 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     if for_ctx.loop_type == ForLoopType.ARGUMENTLESS:
         _generate_for_argumentless(stmt, for_ctx, ctx)
     elif for_ctx.loop_type == ForLoopType.OPEN_ENDED:
-        # T096: Open-ended loops with body modification need while loop pattern
+        # Open-ended loops with body modification need while loop pattern
         if for_ctx.use_while:
             _generate_for_while(stmt, for_ctx, ctx)
         else:
@@ -2092,7 +2070,7 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.dedent()
         ctx.emitter.line("except _LoopExit as _e:")
         with ctx.emitter.indented():
-            # FR-018: Call/return to target label if provided
+            # Call/return to target label if provided
             ctx.emitter.line("if _e.target is not None:")
             with ctx.emitter.indented():
                 if ctx.strategy == GotoStrategy.TRAMPOLINE:
@@ -2106,7 +2084,7 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
                 with ctx.emitter.indented():
                     ctx.emitter.line("continue")
 
-    # FR-018: Handle target after single-loop exit if set
+    # Handle target after single-loop exit if set
     if has_cross_label_exit and not needs_wrapper:
         if ctx.strategy == GotoStrategy.TRAMPOLINE:
             ctx.emitter.line("if _goto_label is not None:")
@@ -2139,10 +2117,10 @@ def _generate_for_body(
     work correctly. This is NOT needed for while loops (when loop_var_modified_in_body
     is True) because while loops already use _scope directly.
 
-    T032: Handle subscripted loop variables (F I(1)=1:1:3) by using .set() instead
+    Handles subscripted loop variables (F I(1)=1:1:3) by using .set() instead
     of .value assignment.
 
-    T075n: When for_ctx is provided, use for_ctx.loop_var instead of translate_name()
+    When for_ctx is provided, uses for_ctx.loop_var instead of translate_name()
     to handle inline XECUTE prefixing (e.g. _xec_I instead of I).
 
     Args:
@@ -2152,13 +2130,13 @@ def _generate_for_body(
     """
     from m2py.codegen.expressions import generate_expr
 
-    # T084: Sync for-loop variable to _scope for SIMPLE_FUNCTIONS strategy
-    # T089h: Also sync for TRAMPOLINE with dynamic_locals (state._locals)
+    # Sync for-loop variable to _scope for SIMPLE_FUNCTIONS strategy
+    # Also sync for TRAMPOLINE with dynamic_locals (state._locals)
     # Only needed when using Python's `for` loop (not while loop)
     # When loop_var_modified_in_body is True, we use while loop with _scope directly
-    # Spec 009 (T021): Use MArray.value for consistency with subscripted variables
+    # Use MArray.value for consistency with subscripted variables
     #
-    # NOTE: For subscripted loop vars (F A(B)=1:1:3), the sync is handled in
+    # For subscripted loop vars (F A(B)=1:1:3), the sync is handled in
     # _generate_for_bounded which re-evaluates subscripts at each access.
     # Skip the sync here to avoid double-syncing with potentially stale subscripts.
     needs_scope_sync = (
@@ -2167,7 +2145,7 @@ def _generate_for_body(
         and not stmt.loop_var_modified_in_body
         and not (for_ctx and for_ctx.loop_var_subscripts)  # Skip for subscripted vars
     )
-    # T089h: TRAMPOLINE with dynamic_locals also needs sync (state._locals)
+    # TRAMPOLINE with dynamic_locals also needs sync (state._locals)
     needs_locals_sync = (
         ctx.strategy == GotoStrategy.TRAMPOLINE
         and ctx.uses_dynamic_locals
@@ -2181,17 +2159,17 @@ def _generate_for_body(
             subscripts = []
         elif isinstance(stmt.loop_var, MVariable):
             var_name = stmt.loop_var.name
-            # T032: Extract subscripts for subscripted loop variables
+            # Extract subscripts for subscripted loop variables
             subscripts = [generate_expr(sub, ctx) for sub in stmt.loop_var.subscripts]
         else:
             var_name = None  # Complex case (indirection) - skip sync
             subscripts = []
         if var_name:
-            # T075n: Use for_ctx.loop_var if provided (handles _xec_ prefix in inline XECUTE)
+            # Use for_ctx.loop_var if provided (handles _xec_ prefix in inline XECUTE)
             python_name = for_ctx.loop_var if for_ctx else translate_name(var_name)
             # Use translated name for scope key to match SET statement behavior
             translated_var_name = translate_name(var_name)
-            # T089h: Choose sync target based on strategy
+            # Choose sync target based on strategy
             if needs_locals_sync:
                 sync_target = (
                     f"state._locals.setdefault({translated_var_name!r}, MArray())"
@@ -2199,7 +2177,7 @@ def _generate_for_body(
             else:
                 sync_target = f"_scope.setdefault({translated_var_name!r}, MArray())"
             if subscripts:
-                # T032: Subscripted loop var - use .set(sub1, sub2, ..., value=val)
+                # Subscripted loop var - use .set(sub1, sub2, ..., value=val)
                 subs_str = ", ".join(subscripts)
                 ctx.emitter.line(f"{sync_target}.set({subs_str}, value={python_name})")
             else:
@@ -2221,15 +2199,15 @@ def _generate_for_bounded(
     Uses while loop to support non-integer step values (MUMPS allows fractional steps).
     Python's range() only works with integers, but MUMPS FOR i=.001:.01:1 is valid.
 
-    Spec 017: MUMPS FOR always sets the loop variable to the start value,
+    MUMPS FOR always sets the loop variable to the start value,
     even when the loop body doesn't execute (e.g., F I=2:-1:3 sets I=2).
-    We must set the loop variable before the loop.
+    The loop variable must be set before the loop.
 
-    Spec 017 Phase 11: Use unique variable names (_for_start_N, etc.) to prevent
+    Uses unique variable names (_for_start_N, etc.) to prevent
     nested FOR loops from clobbering each other's loop control variables.
 
-    T068: For indirect loop variables (F @A=1:1:3), resolve the target
-    variable name at runtime and update via _rt.set_var().
+    For indirect loop variables (F @A=1:1:3), resolves the target
+    variable name at runtime and updates via _rt.set_var().
 
     Args:
         stmt: MForStatement node
@@ -2245,7 +2223,7 @@ def _generate_for_bounded(
     if param.start is None or param.step is None or param.end is None:
         raise NotImplementedError("Incomplete FOR range parameters")
 
-    # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
+    # Use unique variable names to prevent nested loop collisions
     lid = for_ctx.loop_id
     start_var = f"_for_start_{lid}"
     step_var = f"_for_step_{lid}"
@@ -2268,7 +2246,7 @@ def _generate_for_bounded(
     step_expr = generate_expr(param.step, ctx)
     end_expr = generate_expr(param.end, ctx)
 
-    # Spec 017: Set loop variable to start value before the loop
+    # Set loop variable to start value before the loop
     # This ensures the variable is set even when the loop doesn't execute
     ctx.emitter.line(f"{start_var} = m_num({start_expr})")
     ctx.emitter.line(f"{step_var} = m_num({step_expr})")
@@ -2281,7 +2259,7 @@ def _generate_for_bounded(
     # 3. Simple loop var (F I=1:1:3) - direct Python variable
 
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
-        # T068: Handle indirect loop variable (F @A=1:1:3)
+        # Handle indirect loop variable (F @A=1:1:3)
         # Resolve the target variable name once before the loop
         ctx.emitter.line(f"_for_indirect_var_{lid} = {for_ctx.loop_var_expr}")
         # Set loop var to start value (MUMPS semantics)
@@ -2327,7 +2305,7 @@ def _generate_for_bounded(
         # Choose correct variable storage based on code generation strategy
         # Must match the pattern used for variable access (expressions.py line 267)
         if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            # T014: Dynamic locals - use state._locals for consistency with read access
+            # Dynamic locals - use state._locals for consistency with read access
             base = f"state._locals.setdefault({var_name!r}, MArray())"
         elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             # Use _scope for SIMPLE_FUNCTIONS
@@ -2392,7 +2370,7 @@ def _generate_for_bounded(
             and ctx.uses_dynamic_locals
             and for_ctx.loop_var_name
         ):
-            # T089: Sync to state._locals for TRAMPOLINE with dynamic locals
+            # Sync to state._locals for TRAMPOLINE with dynamic locals
             translated_name = translate_name(for_ctx.loop_var_name)
             ctx.emitter.line(
                 f"state._locals.setdefault({translated_name!r}, MArray()).value = {start_var}"
@@ -2424,8 +2402,8 @@ def _generate_for_string_list(
     When value_params_reference_loop_var is True, we generate sequential
     assignments instead of Python's for...in[...] which evaluates upfront.
 
-    T068: For indirect loop variables (F @A="X","Y","Z"), resolve the target
-    variable name at runtime and update via _rt.set_var().
+    For indirect loop variables (F @A="X","Y","Z"), resolves the target
+    variable name at runtime and updates via _rt.set_var().
 
     Args:
         stmt: MForStatement node
@@ -2447,7 +2425,7 @@ def _generate_for_string_list(
 
     values_str = ", ".join(values)
 
-    # T068: Handle indirect loop variable (F @A="X","Y","Z")
+    # Handle indirect loop variable (F @A="X","Y","Z")
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
         # Resolve the target variable name once before the loop
         ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
@@ -2546,8 +2524,8 @@ def _generate_for_open_ended(
     Python's count() doesn't support step 3 reading from a modified I,
     so when loop_var_modified_in_body is True, we use while True + manual stepping.
 
-    T068: For indirect loop variables (F @A=1:1), resolve the target
-    variable name at runtime and update via _rt.set_var().
+    For indirect loop variables (F @A=1:1), resolves the target
+    variable name at runtime and updates via _rt.set_var().
 
     Args:
         stmt: MForStatement node
@@ -2573,7 +2551,7 @@ def _generate_for_open_ended(
         _generate_for_open_ended_while(stmt, for_ctx, ctx, start_expr, step_expr)
         return
 
-    # T068: Handle indirect loop variable (F @A=1:1)
+    # Handle indirect loop variable (F @A=1:1)
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
         # Resolve the target variable name once before the loop
         ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
@@ -2635,7 +2613,7 @@ def _generate_for_open_ended_while(
     # Set initial value
     ctx.emitter.line(f"{for_ctx.loop_var} = m_num({start_expr})")
 
-    # T068: Handle indirect loop variable
+    # Handle indirect loop variable
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
         ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
         ctx.emitter.line(f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)")
@@ -2694,8 +2672,8 @@ def _generate_for_mixed(
     NOT upfront. When value_params_reference_loop_var is True, we generate
     sequential code blocks instead of chain().
 
-    T068: For indirect loop variables (F @A=1:1:3,"X"), resolve the target
-    variable name at runtime and update via _rt.set_var().
+    For indirect loop variables (F @A=1:1:3,"X"), resolves the target
+    variable name at runtime and updates via _rt.set_var().
 
     Args:
         stmt: MForStatement node
@@ -2736,7 +2714,7 @@ def _generate_for_mixed(
 
     chain_args = ", ".join(iterables)
 
-    # T068: Handle indirect loop variable (F @A=1:1:3,"X",10:2:14)
+    # Handle indirect loop variable (F @A=1:1:3,"X",10:2:14)
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
         # Resolve the target variable name once before the loop
         ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
@@ -2852,9 +2830,9 @@ def _generate_for_while(
     For SIMPLE_FUNCTIONS: Use _scope['VAR'] directly so that modifications
     inside the body are visible to the loop condition and stepping.
 
-    T068: For indirect loop variables (F @A=1:1:3 with body modifying A),
-    resolve the target variable name once at the start. When the resolved
-    name might be a subscripted variable (like "A(22)"), use _rt.get_var
+    For indirect loop variables (F @A=1:1:3 with body modifying A),
+    resolves the target variable name once at the start. When the resolved
+    name might be a subscripted variable (like "A(22)"), uses _rt.get_var
     and _rt.set_var for proper subscript handling.
 
     MUMPS FOR semantics: After the loop exits, the loop variable retains
@@ -2872,7 +2850,7 @@ def _generate_for_while(
     if not stmt.parameters:
         raise NotImplementedError("While loop requires FOR parameters")
 
-    # T068: Handle indirect loop variable setup
+    # Handle indirect loop variable setup
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
         # Resolve the target variable name once before the loop
         # The resolved name might be subscripted (e.g., "A(22)"), so we use
@@ -2883,7 +2861,7 @@ def _generate_for_while(
         if param.param_type == ForParamType.RANGE:
             _generate_for_while_range_indirect(stmt, for_ctx, ctx, param)
         elif param.param_type == ForParamType.OPEN_RANGE:
-            # T096: Open-ended FOR with indirect loop var and body modification
+            # Open-ended FOR with indirect loop var and body modification
             _generate_for_while_open_range_indirect(stmt, for_ctx, ctx, param)
         elif for_ctx.loop_type == ForLoopType.STRING_LIST:
             _generate_for_while_string_list_indirect(stmt, for_ctx, ctx)
@@ -2892,7 +2870,7 @@ def _generate_for_while(
                 f"While loop for indirect var doesn't support {for_ctx.loop_type}"
             )
         return
-    # T084: For SIMPLE_FUNCTIONS or TRAMPOLINE with dynamic_locals,
+    # For SIMPLE_FUNCTIONS or TRAMPOLINE with dynamic_locals,
     # use _scope/_locals directly so body modifications are visible to loop
     elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS or (
         ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals
@@ -2922,7 +2900,7 @@ def _generate_for_while(
     if param.param_type == ForParamType.RANGE:
         _generate_for_while_range(stmt, for_ctx, ctx, loop_ref, param)
     elif param.param_type == ForParamType.OPEN_RANGE:
-        # T096: Open-ended FOR with body modification
+        # Open-ended FOR with body modification
         _generate_for_while_open_range(stmt, for_ctx, ctx, loop_ref, param)
     elif for_ctx.loop_type == ForLoopType.STRING_LIST:
         _generate_for_while_string_list(stmt, for_ctx, ctx, loop_ref)
@@ -2941,7 +2919,7 @@ def _generate_for_while_range(
 ) -> None:
     """Generate while loop for RANGE FOR with modified loop variable.
 
-    Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions.
+    Uses unique variable names to prevent nested loop collisions.
     """
     if param.start is None or param.step is None or param.end is None:
         raise NotImplementedError("Incomplete FOR range parameters for while loop")
@@ -2950,7 +2928,7 @@ def _generate_for_while_range(
     step_expr = generate_expr(param.step, ctx)
     end_expr = generate_expr(param.end, ctx)
 
-    # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
+    # Use unique variable names to prevent nested loop collisions
     lid = for_ctx.loop_id
     step_var = f"_for_step_{lid}"
     end_var = f"_for_end_{lid}"
@@ -2996,11 +2974,11 @@ def _generate_for_while_open_range(
 ) -> None:
     """Generate while loop for open-ended FOR with modified loop variable.
 
-    T096: When the loop variable is modified inside the body, we can't use
-    Python's for loop with count() because it would overwrite the modification.
-    Instead we use a while True loop with explicit stepping.
+    When the loop variable is modified inside the body, Python's for loop
+    with count() can't be used because it would overwrite the modification.
+    Instead uses a while True loop with explicit stepping.
 
-    CRITICAL: MUMPS evaluates both start and step BEFORE assigning to the loop
+    MUMPS evaluates both start and step BEFORE assigning to the loop
     variable. So for F I=$D(I):$D(I), both $D(I) expressions are evaluated
     when $D(I)=10 (before I gets a value), not after I is assigned.
 
@@ -3024,7 +3002,7 @@ def _generate_for_while_open_range(
     start_expr = generate_expr(param.start, ctx)
     step_expr = generate_expr(param.step, ctx)
 
-    # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
+    # Use unique variable names to prevent nested loop collisions
     lid = for_ctx.loop_id
     start_var = f"_for_start_{lid}"
     step_var = f"_for_step_{lid}"
@@ -3069,7 +3047,7 @@ def _generate_for_while_range_indirect(
     step_expr = generate_expr(param.step, ctx)
     end_expr = generate_expr(param.end, ctx)
 
-    # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
+    # Use unique variable names to prevent nested loop collisions
     lid = for_ctx.loop_id
     step_var = f"_for_step_{lid}"
     end_var = f"_for_end_{lid}"
@@ -3115,11 +3093,11 @@ def _generate_for_while_open_range_indirect(
 ) -> None:
     """Generate while loop for open-ended FOR with indirect loop variable.
 
-    T096: When the loop variable is indirect (F @A=1:1) and the resolved name
-    might be subscripted, we need to use _rt.get_var and _rt.set_var for
+    When the loop variable is indirect (F @A=1:1) and the resolved name
+    might be subscripted, uses _rt.get_var and _rt.set_var for
     proper subscript handling at runtime.
 
-    CRITICAL: MUMPS evaluates both start and step BEFORE assigning to the loop
+    MUMPS evaluates both start and step BEFORE assigning to the loop
     variable. So for F I=$D(I):$D(I), both $D(I) expressions are evaluated
     when $D(I)=10 (before I gets a value), not after I is assigned.
 
@@ -3135,7 +3113,7 @@ def _generate_for_while_open_range_indirect(
     start_expr = generate_expr(param.start, ctx)
     step_expr = generate_expr(param.step, ctx)
 
-    # Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions
+    # Use unique variable names to prevent nested loop collisions
     lid = for_ctx.loop_id
     start_var = f"_for_start_{lid}"
     step_var = f"_for_step_{lid}"
@@ -3180,7 +3158,7 @@ def _generate_for_while_string_list_indirect(
     if not values:
         raise NotImplementedError("Empty string list FOR")
 
-    # Spec 017 Phase 11: Use unique variable names
+    # Use unique variable names
     lid = for_ctx.loop_id
     idx_var = f"_for_idx_{lid}"
 
@@ -3213,13 +3191,13 @@ def _generate_for_while_string_list(
 ) -> None:
     """Generate while loop for STRING_LIST FOR with modified loop variable.
 
-    For indirect loop variables like F @A="X","Y","Z", we need to:
+    For indirect loop variables like F @A="X","Y","Z":
     1. Build the list of values
     2. Use an index-based while loop
     3. Assign the current value to the indirect variable on each iteration
 
-    Spec 017 Phase 11: Use unique variable names to prevent nested loop collisions.
-    Also, evaluate each list value LAZILY at iteration time, not upfront, since
+    Uses unique variable names to prevent nested loop collisions.
+    Also, evaluates each list value lazily at iteration time, not upfront, since
     MUMPS FOR list semantics require evaluating k_"b" when k already contains
     the modified value from previous iteration.
     """
@@ -3232,11 +3210,11 @@ def _generate_for_while_string_list(
     if not values:
         raise NotImplementedError("Empty string list FOR")
 
-    # Spec 017 Phase 11: Use unique variable names
+    # Use unique variable names to prevent nested loop collisions
     lid = for_ctx.loop_id
     idx_var = f"_for_idx_{lid}"
 
-    # MUMPS FOR list semantics: evaluate each value LAZILY at iteration time
+    # MUMPS FOR list semantics: evaluate each value lazily at iteration time
     # This is needed because F K="a",K_"b",K_"c" should evaluate K_"b" after
     # K has been modified by the first iteration's body
     ctx.emitter.line(f"{idx_var} = 0")
@@ -3267,7 +3245,7 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
     - Cross-label jump (SIMPLE_FUNCTIONS): generate function call + return
     - Cross-label jump (TRAMPOLINE): generate return (label_name, state)
 
-    Multiple targets (Phase 11):
+    Multiple targets:
     - Targets evaluated left-to-right
     - If target has postcondition and it's false, try next target
     - If postcondition is true or no postcondition, go to that target
@@ -3292,12 +3270,12 @@ def _generate_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
 
     Raises:
         NotImplementedError: For unsupported GOTO patterns
-        UnsupportedFeatureError: For backward intra-label GOTO (requires Spec 006)
+        UnsupportedFeatureError: For backward intra-label GOTO
     """
     if not stmt.targets:
         raise NotImplementedError("Argumentless GOTO not supported")
 
-    # Phase 11 (T098-T100): Handle multiple targets
+    # Handle multiple targets
     if len(stmt.targets) > 1:
         _generate_multi_target_goto(stmt, ctx)
         return
@@ -3312,15 +3290,15 @@ def _generate_single_target_goto(
     """Generate GOTO code for a single target.
 
     This handles all single-target cases including loop exits and cross-label jumps.
-    T086: Same-routine GOTOs (G LABEL^ROUTINE where ROUTINE is current routine)
-          are now treated as local GOTOs instead of external.
+    Same-routine GOTOs (G LABEL^ROUTINE where ROUTINE is current routine)
+    are treated as local GOTOs instead of external.
 
     Args:
         target: The MCall target to jump to
         stmt: The parent MGotoStatement (for classification info)
         ctx: Generator context
     """
-    # Spec 012 Phase 8 (T049-T052): Check for indirection first
+    # Check for indirection first
     # Must check before same-routine logic since indirection may also have routine set
     if target.label_is_indirect or target.routine_is_indirect:
         from m2py.codegen.indirection import generate_indirect_goto
@@ -3335,11 +3313,11 @@ def _generate_single_target_goto(
             generate_indirect_goto(target, ctx)
         return
 
-    # T086: Check for same-routine GOTO (G LABEL^ROUTINE where ROUTINE matches current)
+    # Check for same-routine GOTO (G LABEL^ROUTINE where ROUTINE matches current)
     # Only treat as external if it's a DIFFERENT routine
     is_external = False
     if target.routine:
-        # T086: Use fallback to first label name (same logic as routine.py line 352-355)
+        # Use fallback to first label name (same logic as routine.py)
         current_routine_name = ctx.routine.name or (
             ctx.routine.labels[0].name if ctx.routine.labels else ""
         )
@@ -3350,9 +3328,9 @@ def _generate_single_target_goto(
         ):
             is_external = True
 
-    # Spec 008 Phase 6 (T034-T038): Handle external routine GOTO
+    # Handle external routine GOTO
     if is_external:
-        # T085-ext: Handle postcondition on external GOTO (e.g., G E1^V1OVE:A=1)
+        # Handle postcondition on external GOTO (e.g., G E1^V1OVE:A=1)
         if target.postcondition is not None:
             cond_expr = generate_expr(target.postcondition, ctx)
             ctx.emitter.line(f"if m_truth({cond_expr}):")
@@ -3363,17 +3341,17 @@ def _generate_single_target_goto(
         return
 
     # Check for backward intra-label GOTO (creates implicit loops)
-    # These cannot be restructured to simple if/else and require Spec 006
+    # These cannot be restructured to simple control flow structures
     # ASG fields populated by classify_gotos() analysis
     goto_type = stmt.goto_type
     is_cross_label = stmt.is_cross_label
     exits_loops = stmt.exits_loops
 
-    # Spec 006 (T069a): Self-loop pattern - backward intra-label GOTO
+    # Self-loop pattern - backward intra-label GOTO
     # When label has has_self_loop=True, body is wrapped in while True:
     # and this GOTO becomes continue to restart the loop
     if goto_type == GotoType.BACKWARD_JUMP and not is_cross_label:
-        # T093 fix: Handle postcondition on self-loop target (e.g., G loop:q<3)
+        # Handle postcondition on self-loop target (e.g., G loop:q<3)
         # The continue should only execute if the postcondition is true
         if target.postcondition is not None:
             cond_expr = generate_expr(target.postcondition, ctx)
@@ -3385,16 +3363,16 @@ def _generate_single_target_goto(
             ctx.emitter.line("continue")
         return
 
-    # Phase 7 (US5): Loop exit patterns
-    # Note: There is no "continue" pattern - GOTO cannot create continue semantics.
+    # Loop exit patterns
+    # There is no "continue" pattern — GOTO cannot create continue semantics.
     # Per MUMPS spec (MDC 3.6.5): "Execution of GOTO effects the immediate
     # termination of all FORs in the line containing the GOTO."
     # exits_loops is populated by classify_gotos() analysis
     in_for_loop = bool(exits_loops)
 
-    # T035/T037: exits_loops determines break vs raise _LoopExit()
+    # exits_loops determines break vs raise _LoopExit()
     if exits_loops and in_for_loop:
-        # V1FORC2 fix: Handle postcondition on target (e.g., G G379:X=1)
+        # Handle postcondition on target (e.g., G G379:X=1)
         # The target postcondition must be checked before the loop exit
         postcond_ctx = None
         if target.postcondition is not None:
@@ -3405,7 +3383,7 @@ def _generate_single_target_goto(
 
         if len(exits_loops) == 1:
             # Single loop exit - generate break
-            # FR-018: For cross-label exits, track target so it can be called after loop
+            # For cross-label exits, track target so it can be called after loop
             if is_cross_label and target is not None:
                 if ctx.strategy == GotoStrategy.TRAMPOLINE:
                     # Trampoline: store label name as string
@@ -3414,14 +3392,14 @@ def _generate_single_target_goto(
                     # Simple functions: store function reference
                     label_name = translate_name(target.name)
                     ctx.emitter.line(f"_goto_target = {label_name}")
-            # V1FORC2/I-377: For same-label exits, set flag to continue outer while True
+            # For same-label exits, set flag to continue outer while True
             elif not is_cross_label:
                 ctx.emitter.line("_restart_self_loop = True")
             ctx.emitter.line("break")
         else:
             # Multi-loop exit - generate raise _LoopExit()
             # The exception will be caught by the outermost FOR loop
-            # FR-018: Pass target label name so it can be called in except block
+            # Pass target label name so it can be called in except block
             if is_cross_label and target is not None:
                 if ctx.strategy == GotoStrategy.TRAMPOLINE:
                     # Trampoline: pass label name as string
@@ -3439,9 +3417,9 @@ def _generate_single_target_goto(
         return
 
     # Cross-label GOTO: pattern depends on strategy
-    # Spec 006 (T055): Check strategy and generate appropriate pattern
+    # Cross-label GOTO: pattern depends on strategy
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
-        # T091a: Inside inline XECUTE, call the label directly instead of returning
+        # Inside inline XECUTE, call the label directly instead of returning
         # The label's QUIT will return normally, then we raise _XecuteExit to exit
         # the XECUTE block and continue the enclosing FOR loop
         if ctx.in_inline_xecute:
@@ -3460,7 +3438,7 @@ def _generate_single_target_goto(
             ctx.emitter.line("raise _XecuteExit()")
             return
 
-        # Spec 007 (T015-T017): Check for offset and emit line-based dispatch
+        # Check for offset and emit line-based dispatch
         if target.offset is not None:
             # Offset GOTO: compute target line = label_line + offset
             # The dispatcher will look up (label, offset) in _line_map
@@ -3470,9 +3448,9 @@ def _generate_single_target_goto(
                 )
             label_line = target.target.line_number
             offset_code = generate_expr(target.offset, ctx)
-            # Spec 007 Phase 7 (T035-T037): Validate offset and raise descriptive error
-            # Spec 007 Phase 9 (T045-T046): Skip non-executable lines (comments/blanks)
-            # Spec 007: Check for negative offset (must resolve to non-negative integer)
+            # Validate offset and raise descriptive error
+            # Skip non-executable lines (comments/blanks)
+            # Check for negative offset (must resolve to non-negative integer)
             # Use m_num() to apply MUMPS numeric coercion (string→number) before int()
             ctx.emitter.line(f"_offset_val = int(m_num({offset_code}))")
             ctx.emitter.line("if _offset_val < 0:")
@@ -3484,10 +3462,10 @@ def _generate_single_target_goto(
             ctx.emitter.line(f"_target = {label_line} + _offset_val")
             ctx.emitter.line("if _target not in _line_map:")
             with ctx.emitter.indented():
-                # Spec 007: Find next executable line after target (inline)
+                # Find next executable line after target (inline)
                 # When offset lands on comment/blank line, continue to next executable.
-                # This inline logic is equivalent to find_next_executable() but simpler
-                # to generate and performs better (no function call overhead).
+                # This inline logic is equivalent to find_next_executable() but avoids
+                # function call overhead.
                 ctx.emitter.line(
                     "_next = min((ln for ln in _line_map if ln > _target), default=None)"
                 )
@@ -3517,10 +3495,10 @@ def _generate_single_target_goto(
             )
         # No offset - simple function call
         # Generate: label(_rt, _scope=_scope); exit_statement
-        # T075l: Pass _rt and _scope so XECUTE inline GOTO works correctly
-        # T118: Use _globals[] lookup to avoid parameter shadowing label names
+        # Pass _rt and _scope so XECUTE inline GOTO works correctly
+        # Use _globals[] lookup to avoid parameter shadowing label names
         ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
-        # T075m: Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
+        # Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
         # Outside inline XECUTE, return exits the entire function
         if ctx.in_inline_xecute:
             ctx.emitter.line("raise _XecuteExit()")
@@ -3529,7 +3507,7 @@ def _generate_single_target_goto(
 
 
 def _generate_multi_target_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
-    """Generate GOTO code for multiple targets (Phase 11 + T085).
+    """Generate GOTO code for multiple targets.
 
     Multiple targets are evaluated left-to-right:
     - If target has no postcondition, jump to it unconditionally
@@ -3537,7 +3515,7 @@ def _generate_multi_target_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -
     - If postcondition is false, try next target
     - If all postconditions are false, no jump (fall through)
 
-    T085: Now supports external routines and indirect targets in multi-target GOTO.
+    Supports external routines and indirect targets in multi-target GOTO.
 
     Generated pattern (for G A:cond1,B^ROUTINE:cond2,C):
         if m_truth(cond1):
@@ -3560,8 +3538,6 @@ def _generate_multi_target_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -
         ctx: Generator context
     """
     targets = stmt.targets
-
-    # T085: No longer check for unsupported patterns - all target types are now supported
 
     # Check if any targets are indirect (postconditions may be embedded in indirection)
     has_indirect_targets = any(
@@ -3834,26 +3810,25 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
     - External targets: raise GotoExternal exception
     - Indirect targets: runtime resolution with potential external handling
 
-    T085: Extended to support external and indirect targets in multi-target GOTO.
-    T086: Same-routine GOTOs (G LABEL^ROUTINE where ROUTINE is current routine)
-          are now treated as local GOTOs instead of external.
+    Same-routine GOTOs (G LABEL^ROUTINE where ROUTINE is current routine)
+    are treated as local GOTOs instead of external.
 
     Args:
         target: The MCall target to jump to
         ctx: Generator context
     """
-    # T085: Handle indirect targets (G @VAR) first since they may also have routine set
+    # Handle indirect targets (G @VAR) first since they may also have routine set
     if target.label_is_indirect or target.routine_is_indirect:
         from m2py.codegen.indirection import generate_indirect_goto
 
         generate_indirect_goto(target, ctx)
         return
 
-    # T086: Check if this is a "same-routine" GOTO (G LABEL^ROUTINE where ROUTINE is current)
+    # Check if this is a "same-routine" GOTO (G LABEL^ROUTINE where ROUTINE is current)
     # MUMPS allows explicit routine specification even for local labels.
     # When the target routine matches the current routine, treat as local GOTO.
     if target.routine:
-        # T086: Use fallback to first label name (same logic as routine.py line 352-355)
+        # Use fallback to first label name (same logic as routine.py)
         current_routine_name = ctx.routine.name or (
             ctx.routine.labels[0].name if ctx.routine.labels else ""
         )
@@ -3872,7 +3847,7 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
 
     # Local target - original behavior
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
-        # T091: Inside inline XECUTE, call the label directly instead of returning
+        # Inside inline XECUTE, call the label directly instead of returning
         # The label's QUIT will return normally, then we raise _XecuteExit to exit
         # the XECUTE block and continue the enclosing FOR loop
         if ctx.in_inline_xecute:
@@ -3891,7 +3866,7 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
             ctx.emitter.line("raise _XecuteExit()")
             return
 
-        # T087: Handle local GOTO with offset (G LABEL+N)
+        # Handle local GOTO with offset (G LABEL+N)
         # Convert to absolute line number for _line_map dispatch
         # _label_lines stores 0-indexed line numbers, so we add 1 for 1-indexed source lines
         if target.offset is not None:
@@ -3904,10 +3879,10 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
 
     else:
         label_name = translate_name(target.name)
-        # T075l: Pass _rt and _scope so XECUTE inline GOTO works correctly
-        # T118: Use _globals[] lookup to avoid parameter shadowing label names
+        # Pass _rt and _scope so XECUTE inline GOTO works correctly
+        # Use _globals[] lookup to avoid parameter shadowing label names
         ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
-        # T075m: Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
+        # Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
         # Outside inline XECUTE, return exits the entire function
         if ctx.in_inline_xecute:
             ctx.emitter.line("raise _XecuteExit()")
@@ -3918,9 +3893,9 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
 def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
     """Generate code for external GOTO (G ^ROUTINE, G LABEL^ROUTINE).
 
-    Spec 008 Phase 6 (T034-T038): External GOTO transfers control permanently
-    to another routine by raising GotoExternal exception. The exception is
-    caught by run_with_goto_support() which handles the transfer.
+    External GOTO transfers control permanently to another routine by raising
+    GotoExternal exception. The exception is caught by run_with_goto_support()
+    which handles the transfer.
 
     Patterns:
     - G ^ROUTINE: raise GotoExternal(module, None) - entry label
@@ -3964,7 +3939,7 @@ def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
     # Handle offset patterns (G LABEL+N^ROUTINE, G +N^ROUTINE)
     if target.offset is not None:
         offset_code = generate_expr(target.offset, ctx)
-        # T037-T038: Pass offset to GotoExternal
+        # Pass offset to GotoExternal
         if target.name:
             # G LABEL+N^ROUTINE
             label_name = target.name
@@ -3979,11 +3954,11 @@ def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
                 f"offset=int(m_num({offset_code})), _rt=_rt)"
             )
     elif target.name:
-        # T035: G LABEL^ROUTINE - specific label
+        # G LABEL^ROUTINE - specific label
         label_name = target.name
         ctx.emitter.line(f"raise GotoExternal({routine_name}, {label_name!r}, _rt=_rt)")
     else:
-        # T034: G ^ROUTINE - entry label (same name as routine)
+        # G ^ROUTINE - entry label (same name as routine)
         ctx.emitter.line(f"raise GotoExternal({routine_name}, None, _rt=_rt)")
 
 
@@ -4024,7 +3999,7 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line("_rt._in_extrinsic = False")
 
         # Increment execution level (spec §6.3) - $STACK increases inside DO blocks
-        # T006: Pass routine/label metadata for $STACK introspection
+        # Pass routine/label metadata for $STACK introspection
         _routine_name = ctx.routine.name or ""
         _label_name_str = ctx.current_label.name if ctx.current_label else ""
         ctx.emitter.line(
@@ -4065,7 +4040,7 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
 
     # Label calls - NO $TEST save/restore
     # Handle each target (multiple targets allowed: D A,B,C)
-    # Spec 014 (T076-T078): Each target's postcondition is evaluated independently
+    # Each target's postcondition is evaluated independently
     # D L1:0,L2:1 → only L2 executes (L1's postcondition is false)
     # D L1:1,L2:1 → both execute (both postconditions are true)
     for target in stmt.targets:
@@ -4091,14 +4066,14 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         target: MCall target to generate code for
         ctx: Generator context
     """
-    # Spec 012 Phase 7 (T042-T045): Check for indirection
+    # Check for indirection
     if target.label_is_indirect or target.routine_is_indirect:
         from m2py.codegen.indirection import generate_indirect_do
 
         generate_indirect_do(target, ctx)
         return
 
-    # Spec 008 (T018-T029): Handle external routine reference D ^ROUTINE
+    # Handle external routine reference D ^ROUTINE
     if target.routine:
         # Translate routine name to valid Python module name (%FOO → _pct_FOO)
         # Note: target.routine is guaranteed non-None by the if check above
@@ -4108,18 +4083,18 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # Generate import statement
         ctx.emitter.line(f"import {routine_name}")
 
-        # T075f: Save runtime context before external call for $TEXT support
+        # Save runtime context before external call for $TEXT support
         # This ensures $TEXT(+N) in the caller still works after the callee returns
         ctx.emitter.line("_saved_routine = _rt._current_routine")
         ctx.emitter.line("_saved_source_lines = _rt._current_source_lines")
         ctx.emitter.line("_saved_label_lines = _rt._current_label_lines")
 
-        # T075b: For TRAMPOLINE with dynamic locals, sync state._locals to _scope
+        # For TRAMPOLINE with dynamic locals, sync state._locals to _scope
         # before calling external routine so callee can see caller's variables
         emit_state_to_scope_sync(ctx)
 
-        # T007: Push DO stack frame for external subroutine call
-        # T006: Pass routine/label metadata for $STACK introspection
+        # Push DO stack frame for external subroutine call
+        # Pass routine/label metadata for $STACK introspection
         _ext_label = repr(target.name) if target.name else "''"
         _ext_routine = repr(target.routine) if target.routine else "''"
         ctx.emitter.line(
@@ -4132,7 +4107,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             offset_code = generate_expr(target.offset, ctx)
 
             if target.name:
-                # T024: D LABEL+N^ROUTINE - label + offset
+                # D LABEL+N^ROUTINE - label + offset
                 # Check label exists in _label_lines
                 ctx.emitter.line(
                     f"if {target.name!r} not in {routine_name}._label_lines:"
@@ -4146,27 +4121,27 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 # Calculate target line from label's line + offset
                 # _label_lines stores 0-indexed line numbers, _line_map uses 1-indexed
                 # So we add 1 to convert to 1-indexed before adding offset
-                # T075a: Offset must be truncated to integer per MUMPS spec
+                # Offset must be truncated to integer per MUMPS spec
                 # Use m_num() for MUMPS-style numeric conversion (extracts leading numeric)
                 ctx.emitter.line(
                     f"_target_line = {routine_name}._label_lines[{target.name!r}] + 1 + int(m_num({offset_code}))"
                 )
             else:
-                # T025: D +N^ROUTINE - absolute line offset (already 1-indexed, use directly)
-                # T075a: Offset must be truncated to integer per MUMPS spec
+                # D +N^ROUTINE - absolute line offset (already 1-indexed, use directly)
+                # Offset must be truncated to integer per MUMPS spec
                 # Use m_num() for MUMPS-style numeric conversion (extracts leading numeric)
                 ctx.emitter.line(f"_target_line = int(m_num({offset_code}))")
 
-            # T079: Call via line dispatch map, passing _rt and _scope
+            # Call via line dispatch map, passing _rt and _scope
             # _line_map returns (label_name, offset) tuple - extract and call
             ctx.emitter.line(
                 f"_label_name, _line_offset = {routine_name}._line_map[_target_line]"
             )
-            # T075e: Wrap in run_with_goto_support to handle GotoExternal from subroutine
+            # Wrap in run_with_goto_support to handle GotoExternal from subroutine
             # When subroutine does external GOTO, we catch it and transfer control,
             # then return to caller when target QUITs
             #
-            # T100: For label+offset calls, we need to handle both TRAMPOLINE and
+            # For label+offset calls, we need to handle both TRAMPOLINE and
             # SIMPLE_FUNCTIONS strategies. TRAMPOLINE has _-prefixed internal functions
             # that accept _start_offset. SIMPLE_FUNCTIONS has public functions that
             # either accept _start_offset (if they have fall-through lines) or don't.
@@ -4189,9 +4164,9 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                     f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset), _rt, _scope)"
                 )
         elif target.name:
-            # T022-T023: D LABEL^ROUTINE - call specific label
+            # D LABEL^ROUTINE - call specific label
             label_name = translate_name(target.name)
-            # T026: Generate LabelNotFoundError check
+            # Generate LabelNotFoundError check
             ctx.emitter.line(f"if not hasattr({routine_name}, {label_name!r}):")
             with ctx.emitter.indented():
                 ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
@@ -4199,8 +4174,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                     f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
                     f"list({routine_name}._label_lines.keys()))"
                 )
-            # T079: Pass _rt and _scope for cross-routine variable visibility
-            # T075e: Wrap in run_with_goto_support to handle GotoExternal from subroutine
+            # Pass _rt and _scope for cross-routine variable visibility
+            # Wrap in run_with_goto_support to handle GotoExternal from subroutine
             ctx.emitter.line("from m2py.runtime import run_with_goto_support")
             args = _generate_call_arguments(target.arguments, ctx)
             if args:
@@ -4216,8 +4191,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             # D ^ROUTINE - call entry function (may be _preamble for labelless first lines)
             # Use the module's _entry_function attribute which is set correctly at codegen time
             entry_func = f"{routine_name}._entry_function"
-            # T079: Pass _rt and _scope for cross-routine variable visibility
-            # T075e: Wrap in run_with_goto_support to handle GotoExternal from subroutine
+            # Pass _rt and _scope for cross-routine variable visibility
+            # Wrap in run_with_goto_support to handle GotoExternal from subroutine
             ctx.emitter.line("from m2py.runtime import run_with_goto_support")
             args = _generate_call_arguments(target.arguments, ctx)
             if args:
@@ -4228,16 +4203,16 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             else:
                 ctx.emitter.line(f"run_with_goto_support({entry_func}, _rt, _scope)")
 
-        # T075b: For TRAMPOLINE with dynamic locals, sync _scope back to state._locals
+        # For TRAMPOLINE with dynamic locals, sync _scope back to state._locals
         # after returning from external routine so caller can see callee's modifications
-        # T075k: Wrap plain values in MArray when syncing back (callee may use static state)
+        # Wrap plain values in MArray when syncing back (callee may use static state)
         emit_scope_to_state_sync(ctx)
 
-        # T075f: Restore runtime context after external call returns
+        # Restore runtime context after external call returns
         ctx.emitter.line("_rt._current_routine = _saved_routine")
         ctx.emitter.line("_rt._current_source_lines = _saved_source_lines")
         ctx.emitter.line("_rt._current_label_lines = _saved_label_lines")
-        # T007: Pop DO stack frame after external subroutine returns
+        # Pop DO stack frame after external subroutine returns
         ctx.emitter.line("_rt.pop_stack_frame()")
         # Sync $TEST from runtime after cross-module call
         # DO calls don't stack $TEST - callee's changes must be visible to caller
@@ -4250,20 +4225,20 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
     # Generate arguments if any
     args = _generate_call_arguments(target.arguments, ctx)
 
-    # Phase 21: Save/restore _in_extrinsic for $QUIT tracking
+    # Save/restore _in_extrinsic for $QUIT tracking
     # Internal DO calls are subroutine invocations, so $QUIT=0 inside them
     ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
     ctx.emitter.line("_rt._in_extrinsic = False")
 
-    # T007: Push DO stack frame for internal subroutine call
-    # T006: Pass routine/label metadata for $STACK introspection
+    # Push DO stack frame for internal subroutine call
+    # Pass routine/label metadata for $STACK introspection
     _int_routine = repr(ctx.routine.name) if ctx.routine.name else "''"
     _int_label = repr(target.name) if target.name else "''"
     ctx.emitter.line(
         f'_rt.push_stack_frame("DO", routine={_int_routine}, label={_int_label})'
     )
 
-    # Spec 007 (T025-T028c): Handle DO with offset
+    # Handle DO with offset
     # In TRAMPOLINE strategy, call the internal function with _start_offset
     if target.offset is not None and ctx.strategy == GotoStrategy.TRAMPOLINE:
         # Prefix with _ for internal trampoline function
@@ -4271,12 +4246,12 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # Generate offset expression code
         offset_code = generate_expr(target.offset, ctx)
 
-        # Spec 007 Phase 7 (T035-T037): Validate offset for DO as well
-        # Spec 007 Phase 9 (T045-T046): Skip non-executable lines (comments/blanks)
+        # Validate offset for DO as well
+        # Skip non-executable lines (comments/blanks)
         # Get the label's line number for validation
         if target.target is not None and target.target.line_number is not None:
             label_line = target.target.line_number
-            # Spec 007: Check for negative offset (must resolve to non-negative integer)
+            # Check for negative offset (must resolve to non-negative integer)
             # Use m_num() to apply MUMPS numeric coercion (string→number) before int()
             ctx.emitter.line(f"_offset_val = int(m_num({offset_code}))")
             ctx.emitter.line("if _offset_val < 0:")
@@ -4288,9 +4263,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             ctx.emitter.line(f"_target = {label_line} + _offset_val")
             ctx.emitter.line("if _target not in _line_map:")
             with ctx.emitter.indented():
-                # Spec 007: Find next executable line after target (inline)
+                # Find next executable line after target (inline)
                 # When offset lands on comment/blank line, continue to next executable.
-                # This inline logic is equivalent to find_next_executable() but simpler.
                 ctx.emitter.line(
                     "_next = min((ln for ln in _line_map if ln > _target), "
                     "default=None)"
@@ -4308,8 +4282,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 "_offset_val else _offset_val"
             )
 
-        # T079: Build call with _rt, state, _scope, and _start_offset
-        # T075i: Capture return value and follow trampoline loop
+        # Build call with _rt, state, _scope, and _start_offset
+        # Capture return value and follow trampoline loop
         # The internal function may return a label transition (e.g., when offset
         # lands at end of label block and execution should continue to next label)
         # Wrap in try/except to handle GotoExternal from subroutine
@@ -4329,8 +4303,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             _emit_goto_external_handler(ctx)
             ctx.emitter.line("_do_target = None")
 
-        # T075i: Follow trampoline loop if internal function returned a label
-        # T087: Handle both string targets (label names) and int targets (line numbers)
+        # Follow trampoline loop if internal function returned a label
+        # Handle both string targets (label names) and int targets (line numbers)
         ctx.emitter.line("while _do_target is not None:")
         with ctx.emitter.indented():
             ctx.emitter.line("try:")
@@ -4352,13 +4326,13 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             with ctx.emitter.indented():
                 _emit_goto_external_handler(ctx)
                 ctx.emitter.line("_do_target = None")
-        # T007: Pop DO stack frame
+        # Pop DO stack frame
         ctx.emitter.line("_rt.pop_stack_frame()")
-        # Phase 21: Restore _in_extrinsic for $QUIT tracking
+        # Restore _in_extrinsic for $QUIT tracking
         ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
         return
 
-    # Phase 21: Check if any argument is passed by-reference (.VAR syntax).
+    # Check if any argument is passed by-reference (.VAR syntax).
     # If so, pass MArray objects directly for true call-by-reference aliasing.
     # This doesn't require callee signature analysis — the caller just needs
     # to pass MArray objects, and the callee detects isinstance(param, MArray).
@@ -4417,9 +4391,9 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             call_expr = f"{label_name}(_rt, _scope=_scope)"
         ctx.emitter.line(call_expr)
     else:
-        # T079: No by-ref params at call site - just call with _rt
-        # T084: Pass _scope for cross-routine variable visibility
-        # T075b: For TRAMPOLINE with state_vars, sync state to _scope before call
+        # No by-ref params at call site - just call with _rt
+        # Pass _scope for cross-routine variable visibility
+        # For TRAMPOLINE with state_vars, sync state to _scope before call
         # and sync _scope back to state after call for intra-routine DO
         if (
             ctx.strategy == GotoStrategy.TRAMPOLINE
@@ -4430,16 +4404,16 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             for var_name in sorted(ctx.state_vars):
                 py_name = translate_name(var_name)
                 ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
-        # T075h: For TRAMPOLINE with dynamic_locals, sync state._locals to _scope
+        # For TRAMPOLINE with dynamic_locals, sync state._locals to _scope
         # before internal DO calls so subroutine sees current variable values
-        # Phase 21: Must remove stale keys too (e.g., after KILL clears _locals
+        # Must remove stale keys too (e.g., after KILL clears _locals
         # but _scope retains old entries)
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             ctx.emitter.line("for _k in list(_scope.keys()):")
             with ctx.emitter.indented():
                 ctx.emitter.line("if _k not in state._locals: del _scope[_k]")
             ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
-        # T118: Use globals() lookup for SIMPLE_FUNCTIONS to avoid parameter
+        # Use globals() lookup for SIMPLE_FUNCTIONS to avoid parameter
         # shadowing label names (e.g., A(A,B) where param A shadows label A)
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             if args:
@@ -4452,7 +4426,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
         else:
             ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
-        # T075b: Sync _scope back to state after call
+        # Sync _scope back to state after call
         if (
             ctx.strategy == GotoStrategy.TRAMPOLINE
             and ctx.state_vars
@@ -4463,20 +4437,20 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 ctx.emitter.line(
                     f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
                 )
-        # T075h: For TRAMPOLINE with dynamic_locals, sync _scope back to state._locals
-        # T075k: Wrap plain values in MArray when syncing back (callee may use static state)
+        # For TRAMPOLINE with dynamic_locals, sync _scope back to state._locals
+        # Wrap plain values in MArray when syncing back (callee may use static state)
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             emit_scope_to_state_sync(ctx)
-    # T007: Pop DO stack frame
+    # Pop DO stack frame
     ctx.emitter.line("_rt.pop_stack_frame()")
-    # Phase 21: Restore _in_extrinsic for $QUIT tracking
+    # Restore _in_extrinsic for $QUIT tracking
     ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
 
 
 def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for KILL command.
 
-    Spec 009 (Phase 10): KILL deletes a variable node and all its descendants.
+    KILL deletes a variable node and all its descendants.
 
     Supports:
     - K X → MArray.kill() on local variable X
@@ -4484,7 +4458,7 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
     - K ^G → _rt.globals.kill("G", ()) on global
     - K ^G(1,2) → _rt.globals.kill("G", ("1", "2")) on subscripted global
     - K ^(1,2) → resolve_naked then kill (naked global reference)
-    - K (X,Y) → Exclusive KILL: kill all locals except X,Y (Spec 011 T073)
+    - K (X,Y) → Exclusive KILL: kill all locals except X,Y
 
     NOT yet implemented:
     - K (argumentless) - kill all locals
@@ -4499,7 +4473,7 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
         keep_vars_repr = repr({translate_name(v) for v in stmt.except_list})
 
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Phase 21: Kill MArray content for non-kept variables,
+            # Kill MArray content for non-kept variables,
             # but keep entries in _scope to preserve call-by-reference aliasing.
             ctx.emitter.line("for _var_name in list(_scope.keys()):")
             with ctx.emitter.indented():
@@ -4508,7 +4482,7 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                     ctx.emitter.line("_arr = _scope.get(_var_name)")
                     ctx.emitter.line("if isinstance(_arr, MArray): _arr.kill()")
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            # Spec 017 (T011): Iterate over _locals and remove non-kept variables
+            # Iterate over _locals and remove non-kept variables
             ctx.emitter.line("for _var_name in list(state._locals.keys()):")
             with ctx.emitter.indented():
                 ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
@@ -4524,14 +4498,14 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
     # Handle argumentless KILL (kill all locals)
     if stmt.is_kill_all:
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Phase 21: Kill MArray content but keep entries in _scope.
+            # Kill MArray content but keep entries in _scope.
             # Preserves call-by-reference aliasing: shared MArrays remain
             # linked, so subsequent SET on one name affects the other.
             ctx.emitter.line("for _v in _scope.values():")
             with ctx.emitter.indented():
                 ctx.emitter.line("if isinstance(_v, MArray): _v.kill()")
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            # Spec 017 (T011): Clear _locals dict for dynamic locals mode
+            # Clear _locals dict for dynamic locals mode
             ctx.emitter.line("state._locals.clear()")
         else:
             # TRAMPOLINE strategy without dynamic locals - not supported
@@ -4566,7 +4540,7 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
             ctx.emitter.line("_rt.globals.kill(_naked_name, _naked_subs)")
 
         elif isinstance(target, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
-            # Spec 021 Phase 15: Extended global KILL with namespace
+            # Extended global KILL with namespace
             global_name = target.name
             ns = getattr(target.environment, "value", "") if target.environment else ""
             subscripts_tuple = gen_subscripts_tuple(
@@ -4599,7 +4573,7 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                     )
                 else:
                     # Kill entire variable - clear MArray content but keep in scope.
-                    # Phase 21: NOT removing from scope preserves call-by-reference
+                    # Not removing from scope preserves call-by-reference
                     # aliasing. If this variable shares an MArray with another name,
                     # clearing makes $DATA return 0 for both names. The killed MArray
                     # stays in _scope so subsequent SET re-uses it (maintaining alias).
@@ -4622,7 +4596,7 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                     ctx.emitter.line(f"{translated} = MArray()")
 
         elif isinstance(target, MIndirection):
-            # T086, T133: Indirection target: K @A or K @A@(subs) using unified components
+            # Indirection target: K @A or K @A@(subs) using unified components
             # Uses _rt.kill_indirected() which handles multi-level indirection and
             # per-level subscripts via IndirectionResolver
             from m2py.codegen.indirection import generate_name_indirection_kill
@@ -4643,14 +4617,14 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
 def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for NEW command.
 
-    Spec 011 (T060-T061): NEW creates a new local scope for specified variables.
+    NEW creates a new local scope for specified variables.
     The old values are shadowed until the routine/label exits.
 
     Supports:
     - N → NEW all (argumentless - save and remove all locals until function exit)
     - N X → NEW X (save and remove from _scope until function exit)
     - N X,Y,Z → NEW multiple variables
-    - N (X,Y) → Exclusive NEW: NEW all locals except X,Y (Spec 011 T072)
+    - N (X,Y) → Exclusive NEW: NEW all locals except X,Y
 
     Note: N () (empty exclusive NEW) is invalid MUMPS syntax - YDB rejects it.
     Our parser silently skips it, which is acceptable.
@@ -4708,7 +4682,7 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
 
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             if ctx.new_scope_manager_var:
-                # Phase 21: Use NewScopeManager.new_exclusive() for proper
+                # Use NewScopeManager.new_exclusive() for proper
                 # scope snapshot/restore (handles nested NEW with formal params)
                 ctx.emitter.line(
                     f"{ctx.new_scope_manager_var}.new_exclusive({keep_vars_repr})"
@@ -4721,7 +4695,7 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
                     with ctx.emitter.indented():
                         ctx.emitter.line("_scope.pop(_var_name, None)")
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            # Phase 21: Push tagged exclusive NEW entry to _new_stack
+            # Push tagged exclusive NEW entry to _new_stack
             # Format: ('excl', keep_vars_set, saved_non_kept_dict)
             ctx.emitter.line(
                 f"state._new_stack.append(('excl', {keep_vars_repr}, {{k: v.copy() if hasattr(v, 'copy') else v for k, v in state._locals.items() if k not in {keep_vars_repr}}}))"
@@ -4745,14 +4719,14 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     if not stmt.variables and not stmt.exclusive:
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             if ctx.new_scope_manager_var:
-                # Phase 21: Use NewScopeManager.new_all() for proper scope
+                # Use NewScopeManager.new_all() for proper scope
                 # snapshot/restore (handles nested NEW with formal params)
                 ctx.emitter.line(f"{ctx.new_scope_manager_var}.new_all()")
             else:
                 # Simple clear of all local variables
                 ctx.emitter.line("_scope.clear()")
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            # Phase 21: Push tagged argumentless NEW entry to _new_stack
+            # Push tagged argumentless NEW entry to _new_stack
             # Format: ('all', saved_full_dict)
             ctx.emitter.line(
                 "state._new_stack.append(('all', {k: v.copy() if hasattr(v, 'copy') else v for k, v in state._locals.items()}))"
@@ -4777,7 +4751,7 @@ def _generate_new(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
 def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -> None:
     """Generate code for selective NEW variables (the for-loop over stmt.variables)."""
     for var in stmt.variables:
-        # T070: Handle indirection in NEW (N @A where A contains variable name)
+        # Handle indirection in NEW (N @A where A contains variable name)
         if isinstance(var, MIndirection):
             from m2py.codegen.expressions import generate_expr
 
@@ -4812,7 +4786,7 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                     "NEW indirection not supported in TRAMPOLINE strategy"
                 )
         elif isinstance(var, MSpecialVariable):
-            # Spec 013 Phase 12: Handle NEW for special variables ($ETRAP, $ECODE, $ZERROR)
+            # Handle NEW for special variables ($ETRAP, $ECODE, $ZERROR, etc.)
             # VistA uses patterns like: N $ETRAP,$ESTACK S $ETRAP="..."
             # This saves current value and initializes to empty on scope exit
             svar_name = var.name.upper()
@@ -4839,7 +4813,7 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                 else:
                     ctx.emitter.line("_rt.set_zerror('')")
             elif svar_name in ("ESTACK", "ES"):
-                # Spec 021 (T022): NEW $ESTACK resets the error stack tracking
+                # NEW $ESTACK resets the error stack tracking
                 # Sets a marker so that QUIT from this level ignores $ECODE errors
                 # This allows routines to establish a "clean" error handling frame
                 if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
@@ -4861,7 +4835,7 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                 else:
                     ctx.emitter.line("_rt._etrap_set_level = len(_rt._stack_frames)")
             elif svar_name in ("ZTRAP", "ZT"):
-                # Spec 021 (T033): NEW $ZTRAP saves/restores on scope exit
+                # NEW $ZTRAP saves/restores on scope exit
                 if ctx.new_scope_manager_var:
                     ctx.emitter.line(
                         f"{ctx.new_scope_manager_var}.new_special_var('ztrap', _rt.ztrap(), _rt.set_ztrap)"
@@ -4869,7 +4843,7 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                 else:
                     ctx.emitter.line("_rt.set_ztrap('')")
             elif svar_name in ("ZSTATUS", "ZS"):
-                # Spec 021 (T033): NEW $ZSTATUS saves/restores on scope exit
+                # NEW $ZSTATUS saves/restores on scope exit
                 if ctx.new_scope_manager_var:
                     ctx.emitter.line(
                         f"{ctx.new_scope_manager_var}.new_special_var('zstatus', _rt.zstatus(), _rt.set_zstatus)"
@@ -4877,7 +4851,7 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                 else:
                     ctx.emitter.line("_rt.set_zstatus('')")
             elif svar_name in ("ZPOSITION", "ZP"):
-                # Spec 021 (T033): NEW $ZPOSITION saves/restores on scope exit
+                # NEW $ZPOSITION saves/restores on scope exit
                 if ctx.new_scope_manager_var:
                     ctx.emitter.line(
                         f"{ctx.new_scope_manager_var}.new_special_var('zposition', _rt.zposition(), _rt.set_zposition)"
@@ -4906,7 +4880,7 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                 # TRAMPOLINE strategy - save and remove from _locals
                 translated = translate_name(var_name)
                 if ctx.uses_dynamic_locals:
-                    # Phase 21: Push tagged selective NEW entry to _new_stack
+                    # Push tagged selective NEW entry to _new_stack
                     # Format: ('var', name, saved_value_or_None)
                     ctx.emitter.line(
                         f"state._new_stack.append(('var', {translated!r}, state._locals.pop({translated!r}, None)))"
@@ -4918,7 +4892,7 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
 def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for MERGE command.
 
-    Spec 011 Phase 16: MERGE copies entire variable subtrees.
+    MERGE copies entire variable subtrees.
 
     Supports:
     - M B=A → Copy local A tree to local B
@@ -4983,7 +4957,7 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
 
         elif isinstance(src, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
             # Source is extended global: ^|"env"|name or ^["gld"]name
-            # Spec 021 Phase 15: Use namespace-qualified key for isolation
+            # Use namespace-qualified key for isolation
             src_name = src.name
             src_ns = getattr(src.environment, "value", "") if src.environment else ""
             src_subs = gen_subscripts_tuple(src.subscripts, ctx, str_wrap=True)
@@ -4993,7 +4967,6 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
 
         elif isinstance(src, MIndirection):
             # Source is indirection: @VAR or @VAR@(subs)
-            # Feature: 018-unified-variable-system (T143e)
             # Use unified resolve_for_target API to resolve variable name
             from m2py.codegen.indirection import generate_merge_indirection_name
 
@@ -5008,7 +4981,6 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
         # Generate destination merge code
         if isinstance(dest, GlobalVariable):
             # Destination is global: ^G or ^G(subs)
-            # Spec 014 Task C1: MERGE local→global and global→global
             dest_name = dest.name
             dest_subs = gen_subscripts_tuple(dest.subscripts, ctx, str_wrap=True)
 
@@ -5086,7 +5058,6 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
 
         elif isinstance(dest, MIndirection):
             # Destination is indirection: @VAR or @VAR@(subs)
-            # Feature: 018-unified-variable-system (T143e)
             # Use unified resolve_for_target API to resolve variable name
             from m2py.codegen.indirection import generate_merge_indirection_name
 
@@ -5100,7 +5071,7 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
 
         elif isinstance(dest, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
             # Extended global: ^|"env"|name or ^["gld"]name
-            # Spec 021 Phase 15: Use namespace-qualified key for isolation
+            # Use namespace-qualified key for isolation
             dest_name = dest.name
             dest_ns = getattr(dest.environment, "value", "") if dest.environment else ""
             dest_subs = gen_subscripts_tuple(dest.subscripts, ctx, str_wrap=True)
@@ -5203,8 +5174,8 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
     This ensures that after USE "file", READ X reads from the file device,
     not from stdin directly.
 
-    Spec 022 Phase 9 Gap 1 (T102): Updated to emit _rt.read_* calls instead
-    of bare input() / standalone helper functions.
+    Updated to emit _rt.read_* calls instead of bare input() / standalone
+    helper functions.
 
     Args:
         target: MReadTarget with variable and optional timeout
@@ -5220,7 +5191,7 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
     is_indirection = isinstance(target.variable, MIndirectionType)
 
     if is_indirection:
-        # Spec 018 (T041): Indirection target: R @A - uses unified set_indirected
+        # Indirection target: R @A - uses unified set_indirected
         # Type narrowing: we know target.variable is MIndirection from is_indirection check
         ind_var = cast(MIndirectionType, target.variable)
         if target.fixed_length is not None and target.timeout is not None:
@@ -5270,7 +5241,7 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         var_name = translate_name(target.variable.name)
         # Determine how to store the variable based on strategy
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Spec 011 Phase 20: Store in _scope dictionary like SET does
+            # Store in _scope dictionary like SET does
             storage_target = f"_scope.setdefault({var_name!r}, MArray()).value"
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
             storage_target = f"state.{var_name}"
@@ -5338,15 +5309,15 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
 
 
 # =============================================================================
-# Transaction Statement Generation (Spec 013 Phase 8)
+# Transaction Statement Generation
 # =============================================================================
 
 
 def _generate_tstart(stmt: MTStartStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for TSTART command.
 
-    Spec 013 FR-015: Begin transaction via database abstraction.
-    Spec 021 Phase 8: TSTART restart variable snapshots.
+    Begin transaction via database abstraction.
+    TSTART restart variable snapshots.
 
     MUMPS: TS, TSTART, TS (), TS (A,B), TS *
 
@@ -5380,7 +5351,7 @@ def _generate_tstart(stmt: MTStartStatement, ctx: "GeneratorContext") -> None:
 def _generate_tcommit(stmt: MTCommitStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for TCOMMIT command.
 
-    Spec 013 FR-015: Commit transaction via database abstraction.
+    Commit transaction via database abstraction.
 
     MUMPS: TC, TCOMMIT
 
@@ -5402,7 +5373,7 @@ def _generate_tcommit(stmt: MTCommitStatement, ctx: "GeneratorContext") -> None:
 def _generate_trollback(stmt: MTRollbackStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for TROLLBACK command.
 
-    Spec 013 FR-015: Rollback transaction via database abstraction.
+    Rollback transaction via database abstraction.
 
     MUMPS: TRO, TROLLBACK, TRO 1
 
@@ -5433,14 +5404,14 @@ def _generate_trollback(stmt: MTRollbackStatement, ctx: "GeneratorContext") -> N
 
 
 # =============================================================================
-# LOCK Statement Generation (Spec 013 Phase 9)
+# LOCK Statement Generation
 # =============================================================================
 
 
 def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for LOCK command.
 
-    Spec 013 FR-019: LOCK command via database abstraction.
+    LOCK command via database abstraction.
 
     MUMPS Forms:
     - L              ; Release all locks (argumentless)
@@ -5493,7 +5464,6 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
 
         # Handle indirection
         if lock_target.is_indirect:
-            # Spec 021-correctness-features Phase 6 (T040):
             # Generate code for LOCK indirection using lock_indirected()
             _generate_lock_indirection_call(lock_target, stmt, effective_lockop, ctx)
             continue
@@ -5554,7 +5524,6 @@ def _generate_lock_indirection_call(
 ) -> None:
     """Generate code for LOCK indirection target.
 
-    Spec 021-correctness-features Phase 6 (T040):
     Emits _rt.lock_indirected() call for @NAME lock targets.
 
     Args:
@@ -5645,14 +5614,14 @@ def _generate_lock_indirection_call(
 
 
 # =============================================================================
-# I/O Statement Generation (Spec 013 Phase 10)
+# I/O Statement Generation
 # =============================================================================
 
 
 def _generate_open(stmt: MOpenStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for OPEN command.
 
-    Spec 013 Phase 10 (T091, T093): Opens devices/files for I/O.
+    Opens devices/files for I/O.
 
     MUMPS Forms:
     - O "file"                ; Open file
@@ -5755,7 +5724,7 @@ def _generate_open(stmt: MOpenStatement, ctx: "GeneratorContext") -> None:
 def _generate_close(stmt: MCloseStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for CLOSE command.
 
-    Spec 013 Phase 10 (T092): Closes devices/files.
+    Closes devices/files.
 
     MUMPS Forms:
     - C "file"         ; Close file
@@ -5802,7 +5771,7 @@ def _generate_close(stmt: MCloseStatement, ctx: "GeneratorContext") -> None:
 def _generate_use(stmt: MUseStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for USE command.
 
-    Spec 013 Phase 10 (T089-T090): Switches current I/O device.
+    Switches current I/O device.
 
     MUMPS Forms:
     - U "file"          ; Use file as current device
@@ -5851,11 +5820,9 @@ def _generate_use(stmt: MUseStatement, ctx: "GeneratorContext") -> None:
 def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for XECUTE command.
 
-    Spec 012 Phase 4 (T024-T027): Handle XECUTE with constant strings.
     For constant string XECUTE, inline the generated Python code at transpile
     time for better performance and debuggability.
 
-    Spec 012 Phase 5 (T032-T037): Handle XECUTE with dynamic code via runtime.
     For dynamic XECUTE (variables/expressions), generate runtime.execute_mumps()
     calls that parse and execute at runtime with shared scope.
 
@@ -5905,7 +5872,7 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         """
         result = compile_mumps_line(mumps_code)
         if isinstance(result, MParseError):
-            # T067: Include original code in error message for context
+            # Include original code in error message for context
             escaped_code = mumps_code.replace('"', '\\"')
             ctx.emitter.line(
                 f"raise SyntaxError(\"XECUTE parse error in '{escaped_code}': {result.message}\")"
@@ -5919,16 +5886,16 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
     def generate_inline_with_control_flow(code_strings: list) -> None:
         """Generate inline XECUTE code that contains GOTO/DO.
 
-        T075m: GOTO/DO inside inline XECUTE needs special handling.
+        GOTO/DO inside inline XECUTE needs special handling.
         We wrap the inline code in a try/except block and use _XecuteExit
         exception to exit just the XECUTE context without returning from
         the enclosing function.
 
-        T075s: Each XECUTE argument has its own control flow scope.
+        Each XECUTE argument has its own control flow scope.
         QUIT in one argument should not skip subsequent arguments.
         Generate a separate try/except for each code string.
 
-        T091b: Also handle GotoExternal from called labels. When an XECUTE'd
+        Also handles GotoExternal from called labels. When an XECUTE'd
         GOTO calls an internal label that raises GotoExternal (external GOTO),
         we need to run the external routine to completion and continue.
         Only applies in TRAMPOLINE mode where state._locals exists.
@@ -5942,18 +5909,18 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         # Check if we're in TRAMPOLINE mode (where state._locals exists)
         is_trampoline = ctx.strategy == GotoStrategy.TRAMPOLINE
 
-        # T091c-xec: Also handle external GOTOs in non-TRAMPOLINE mode
+        # Also handle external GOTOs in non-TRAMPOLINE mode
         # Check if the routine has external GOTOs detected in analysis
         has_external_gotos = ctx.routine.has_external_gotos
 
-        # T075s: Each code string gets its own try/except
+        # Each code string gets its own try/except
         for code_str in code_strings:
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
                 generate_inline_code(code_str)
-            # T091b: Generate GotoExternal handler in TRAMPOLINE mode
+            # Generate GotoExternal handler in TRAMPOLINE mode
             # where state._locals exists and cross-routine GOTOs are possible
-            # T091c-xec: Also generate handler in SIMPLE_FUNCTIONS mode
+            # Also generate handler in SIMPLE_FUNCTIONS mode
             # when routine has external GOTOs (uses _scope directly)
             if is_trampoline or has_external_gotos:
                 ctx.emitter.line("except GotoExternal as _goto:")
@@ -5968,17 +5935,14 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
     def generate_dynamic_xecute() -> None:
         """Generate runtime calls for dynamic XECUTE expressions.
 
-        Spec 012 Phase 5 (T032-T034): Each code expression is evaluated
-        at runtime and executed via _rt.execute_mumps() with shared _scope.
+        Each code expression is evaluated at runtime and executed via
+        _rt.execute_mumps() with shared _scope.
 
-        Spec 012 Phase 6 (T038): XECUTE does NOT stack $TEST.
-        After execute_mumps(), sync _test from _rt._test so mutations
-        made by XECUTEd code are visible to caller.
+        XECUTE does NOT stack $TEST. After execute_mumps(), sync _test from
+        _rt._test so mutations made by XECUTEd code are visible to caller.
 
-        T075p: Pass globals() to execute_mumps so it can access module labels
+        Pass globals() to execute_mumps so it can access module labels
         for DO/GOTO commands in dynamic XECUTE.
-
-        T075q: Handle per-argument postconditions.
 
         XECUTE argument indirection: X @X where X="Y,Z" should:
         1. Resolve @X → "Y,Z"
@@ -5997,7 +5961,7 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         # are put directly since SIMPLE_FUNCTIONS code handles them natively.
         emit_state_to_scope_sync(ctx)
 
-        # T075q: Use arguments structure (always populated by semantic analyzer)
+        # Use arguments structure (always populated by semantic analyzer)
         for xecute_arg in stmt.arguments:
             expr = xecute_arg.expression
 
@@ -6084,7 +6048,7 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
                 # Regular expression (variable, string, function call, etc.)
                 expr_code = generate_expr(xecute_arg.expression, ctx)
                 if xecute_arg.postcondition is not None:
-                    # T075q: Wrap in postcondition check
+                    # Wrap in postcondition check
                     cond_code = generate_expr(xecute_arg.postcondition, ctx)
                     ctx.emitter.line(f"if m_truth({cond_code}):")
                     with ctx.emitter.indented():
@@ -6106,7 +6070,7 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
                 has_control_flow = True
                 break
 
-    # T075r: Check if any argument has a postcondition (per-argument postcond)
+    # Check if any argument has a postcondition (per-argument postcond)
     has_arg_postconditions = False
     if stmt.arguments:
         for xarg in stmt.arguments:
@@ -6120,7 +6084,7 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f"if m_truth({cond_expr}):")
         with ctx.emitter.indented():
             if has_arg_postconditions:
-                # T075r: Per-argument postconditions - must process each individually
+                # Per-argument postconditions - must process each individually
                 _generate_xecute_args_with_postconds(
                     stmt,
                     ctx,
@@ -6130,19 +6094,19 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
                     contains_control_flow,
                 )
             elif stmt.is_constant:
-                # Phase 4: Inline constant strings
+                # Inline constant strings
                 if has_control_flow:
                     generate_inline_with_control_flow(stmt.constant_values)
                 else:
                     for code_str in stmt.constant_values:
                         generate_inline_code(code_str)
             else:
-                # Phase 5: Dynamic XECUTE - call runtime
+                # Dynamic XECUTE - call runtime
                 generate_dynamic_xecute()
     else:
         # No statement-level postcondition - generate code directly
         if has_arg_postconditions:
-            # T075r: Per-argument postconditions - must process each individually
+            # Per-argument postconditions - must process each individually
             _generate_xecute_args_with_postconds(
                 stmt,
                 ctx,
@@ -6152,14 +6116,14 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
                 contains_control_flow,
             )
         elif stmt.is_constant:
-            # Phase 4: Inline constant strings
+            # Inline constant strings
             if has_control_flow:
                 generate_inline_with_control_flow(stmt.constant_values)
             else:
                 for code_str in stmt.constant_values:
                     generate_inline_code(code_str)
         else:
-            # Phase 5: Dynamic XECUTE - call runtime
+            # Dynamic XECUTE - call runtime
             generate_dynamic_xecute()
 
 
@@ -6173,7 +6137,7 @@ def _generate_xecute_args_with_postconds(
 ) -> None:
     """Generate XECUTE handling arguments with per-argument postconditions.
 
-    T075r: When XECUTE has arguments with postconditions like:
+    When XECUTE has arguments with postconditions like:
       X "code1":postcond1,"code2":postcond2,"code3"
     Each argument must be checked individually.
 
@@ -6274,7 +6238,7 @@ def _generate_job_process_params(
 def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for JOB command.
 
-    Spec 013 Phase 11 (T095-T097): Starts a new process executing a routine.
+    Starts a new process executing a routine.
 
     MUMPS Forms:
     - J label           ; Start job at label in current routine
@@ -6353,7 +6317,7 @@ def _generate_job(stmt: MJobStatement, ctx: "GeneratorContext") -> None:
 def _generate_indirect_job(job_target: "MJobTarget", ctx: "GeneratorContext") -> None:
     """Generate Python code for indirect JOB (J @TARGET).
 
-    Spec 015 Phase 5 (T027-T031): Generate runtime dispatch for indirect JOB.
+    Generate runtime dispatch for indirect JOB.
     Handles various patterns:
     - J @TARGET: Full indirection (label comes from variable)
     - J LABEL^@RTN: Partial indirection (routine from variable)
@@ -6448,7 +6412,7 @@ def _generate_indirect_job(job_target: "MJobTarget", ctx: "GeneratorContext") ->
 def _generate_view(stmt: MViewStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for VIEW command.
 
-    Spec 013 Phase 17 (T123): VIEW is implementation-specific.
+    VIEW is implementation-specific.
 
     Per MUMPS 1995 MDC spec section 8.2.24, VIEW has "arguments unspecified"
     meaning the exact syntax and semantics are implementation-defined.
@@ -6481,7 +6445,7 @@ def _generate_view(stmt: MViewStatement, ctx: "GeneratorContext") -> None:
 def _generate_break(stmt: MBreakStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for BREAK command.
 
-    Spec 013 Phase 17 (T125): BREAK enters debugger.
+    BREAK enters debugger.
 
     Per MUMPS 1995 MDC spec section 8.2.1, BREAK transfers control
     to the MUMPS debugger for interactive debugging.
@@ -6498,7 +6462,7 @@ def _generate_break(stmt: MBreakStatement, ctx: "GeneratorContext") -> None:
 
 
 # =============================================================================
-# Z-Commands (Phase 19)
+# Z-Commands
 # =============================================================================
 
 
@@ -6546,7 +6510,7 @@ def _zwrite_build_call(target: Any, ctx: "GeneratorContext") -> tuple[str, str]:
 def _generate_zwrite(stmt: MZWriteStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for ZWRITE command.
 
-    Spec 013 Phase 19 (T132-T134): ZWRITE displays variables with names.
+    ZWRITE displays variables with names.
 
     ZWRITE outputs variables in a format that can be used with SET @:
     - Variable names are shown
@@ -6603,7 +6567,7 @@ def _generate_zkill(
 ) -> None:
     """Generate Python code for ZKILL/ZWITHDRAW command.
 
-    Spec 013 Phase 19 (T135-T136): ZKILL removes node value but preserves descendants.
+    ZKILL removes node value but preserves descendants.
 
     Unlike KILL which removes the entire subtree, ZKILL only removes the value
     at the specified node, leaving all subscripted descendants intact.
@@ -6652,7 +6616,7 @@ def _generate_zkill(
 def _generate_zlink(stmt: MZLinkStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for ZLINK command.
 
-    Spec 013 Phase 19 (T137-T139): ZLINK dynamically links/loads a routine.
+    ZLINK dynamically links/loads a routine.
 
     In the transpiler context, ZLINK imports a Python module representing
     the routine and registers it in the runtime's routine registry.
@@ -6677,7 +6641,7 @@ def _generate_zlink(stmt: MZLinkStatement, ctx: "GeneratorContext") -> None:
 def _generate_zsystem(stmt: MZSystemStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for ZSYSTEM command.
 
-    Spec 021 Phase 11 (T075): ZSYSTEM executes a shell command.
+    ZSYSTEM executes a shell command.
 
     Example:
         ZSYSTEM "echo hello"
@@ -6699,7 +6663,7 @@ def _generate_zsystem(stmt: MZSystemStatement, ctx: "GeneratorContext") -> None:
 def _generate_zshow(stmt: MZShowStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for ZSHOW command.
 
-    Spec 013 Phase 19 (T140-T142): ZSHOW displays system information.
+    ZSHOW displays system information.
 
     Codes:
     - S: Stack trace
@@ -6738,7 +6702,7 @@ def _generate_zshow(stmt: MZShowStatement, ctx: "GeneratorContext") -> None:
 def _generate_zgoto(stmt: MZGotoStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for ZGOTO command.
 
-    Spec 013 Phase 19 (T143-T145): ZGOTO unwinds stack to specified level.
+    ZGOTO unwinds stack to specified level.
 
     ZGOTO is a powerful control flow mechanism that can:
     - Unwind the call stack to a specific level
@@ -6784,7 +6748,7 @@ def _generate_zgoto(stmt: MZGotoStatement, ctx: "GeneratorContext") -> None:
 def _generate_zhalt(stmt: MZHaltStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for ZHALT command.
 
-    Spec 013 Phase 19 (T146-T147): ZHALT terminates with exit status.
+    ZHALT terminates with exit status.
 
     Similar to HALT but allows specifying an exit code.
 

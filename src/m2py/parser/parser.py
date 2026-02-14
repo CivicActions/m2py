@@ -50,8 +50,7 @@ def _set_line_number_recursive(stmt: MStatement, line_number: int) -> None:
     """
     stmt.line_number = line_number
 
-    # Recursively set on nested scopes
-    # Use getattr to access optional scope attributes
+    # Recursively set on nested scopes (using getattr since scope attributes are optional)
     then_scope = getattr(stmt, "then_scope", None)
     if then_scope is not None:
         for child in then_scope.statements:
@@ -345,13 +344,11 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
 def _mark_unreachable_statements(statements: List[MStatement]) -> None:
     """Mark statements after unconditional QUIT/GOTO as unreachable.
 
-    In MUMPS, statements on subsequent lines after an unconditional
-    QUIT or GOTO cannot be reached. This function sets is_unreachable=True
-    on those statements for downstream analysis.
-
-    Note: This operates on the same physical line as well as subsequent lines.
-    Within a single line, code after QUIT is also unreachable, but the parser
-    already captures those as separate statements.
+    In MUMPS, statements after an unconditional QUIT, GOTO, or HALT cannot
+    be reached. This function sets is_unreachable=True on those statements
+    for downstream analysis. Statements on the same line after an
+    unconditional exit are already separate ASG nodes, so they are marked
+    the same way as cross-line unreachable statements.
 
     Args:
         statements: List of statements to analyze (modified in place)
@@ -426,14 +423,12 @@ class MUMPSParser:
         if not grammar_file.exists():
             raise FileNotFoundError(f"Grammar file not found: {grammar_file}")
 
-        # Create the textX metamodel
-        # IMPORTANT: skipws=False because MUMPS is whitespace-sensitive
-        # (tabs separate labels from commands, spaces separate arguments)
-        #
-        # NOTE: classes=[] is intentional. This parser uses a two-phase approach:
-        # - Phase 1 (here): mumps.tx parses routine structure (labels, lines)
-        # - Phase 2: line_parser.py parses line content with custom classes
-        # See docs/architecture.md "Why Two-Phase Parsing?" for details.
+        # Create the textX metamodel.
+        # skipws=False because MUMPS is whitespace-sensitive (tabs separate
+        # labels from commands, spaces separate arguments).
+        # classes=[] because this parser only handles routine structure
+        # (labels, lines); line content is parsed separately by line_parser.py
+        # with its own custom classes. See docs/architecture.md.
         self._metamodel = metamodel_from_file(
             str(grammar_file),
             classes=[],
@@ -559,9 +554,6 @@ class MUMPSParser:
         routine.source_file = str(filepath)
 
         # Run optional analysis passes after name/source_file are set
-        # resolve_references must be called before analyze_variables with
-        # compute_transitive=True, because transitive closure needs resolved
-        # call targets to build the call graph
         label_vars = None
         if compute_signatures or analyze_variables:
             self.resolve_references(routine)
@@ -572,7 +564,6 @@ class MUMPSParser:
             compute_all_signatures(routine, label_vars)
 
         # Store original source lines for $TEXT function support
-        # Lines are stored 0-indexed, but $TEXT uses 1-indexed line references
         routine.source_lines = source.splitlines()
 
         return routine
@@ -737,7 +728,7 @@ class MUMPSParser:
                 # Strip whitespace from each parameter name
                 label.formal_list = [p.strip() for p in formal_list.params]
 
-        # Store line content for pattern classification methods
+        # Store raw line content for comment extraction
         label._line_rest = getattr(line, "rest", "")
 
         # Parse line content using textX command grammar.
@@ -833,13 +824,12 @@ class MUMPSParser:
     def classify_gotos(self, routine: MRoutine) -> None:
         """Classify all GOTO statements in a routine.
 
-        This method analyzes each MGotoStatement and:
+        Analyzes each MGotoStatement using its resolved MCall.target
+        (requires resolve_references() to have been called first) and:
         1. Sets goto_type based on target and context
         2. Populates exits_loops with enclosing FOR loops exited
         3. Sets has_internal_goto=True on enclosing FOR loops
         4. Populates exit_points on FOR loops (bidirectional link)
-
-        Must be called AFTER resolve_references() so MCall.target is populated.
 
         Args:
             routine: The MRoutine to classify GOTOs in
