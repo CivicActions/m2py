@@ -15,8 +15,6 @@ until integration specs implement them.
 
 from __future__ import annotations
 
-import threading
-import time
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 # Spec 010: Import collation key and query helper for $ORDER/$QUERY
@@ -325,6 +323,17 @@ class GlobalStorageBackend(Protocol):
         """
         ...
 
+    def get_locks(self) -> list[tuple[str, str, int]]:
+        """Return all locks held by the current process/thread.
+
+        Spec 022 Phase 9 (T137): Protocol for ZSHOW "L" support.
+        Returns list of (lock_name, json_subscripts, lock_count) tuples.
+
+        Returns:
+            List of (name, subscripts_json, count) for current owner
+        """
+        ...
+
     # =========================================================================
     # Transaction Operations (Spec 013 FR-015)
     # =========================================================================
@@ -448,11 +457,10 @@ class InMemoryGlobalStorage:
     Spec 009 (T006-T007): Implements GlobalStorageBackend protocol using
     MArray structures for hierarchical storage.
 
-    Thread-safety: Lock table uses threading.Condition for concurrent JOB
-    support. Naked indicator is per-thread via threading.local(). Global
-    data operations use a threading.RLock for atomicity ($INCREMENT etc.).
-
     Spec 013: Extended with lock table, transaction support, and SSVNs.
+
+    Lock operations are simple single-process dict operations. For cross-process
+    lock semantics (blocking, timeout, process isolation), use SQLiteGlobalStorage.
 
     The naked indicator tracks the base for naked references:
     - After ^G(1,2,3): indicator = ("G", ("1", "2")) -> ^(4) = ^G(1,2,4)
@@ -462,18 +470,12 @@ class InMemoryGlobalStorage:
 
     def __init__(self) -> None:
         """Initialize empty global storage."""
-
         self._globals: dict[str, MArray] = {}
-        # Naked indicator is per-thread (MUMPS naked refs are per-process)
-        self._thread_local = threading.local()
+        # Naked indicator (single-process, no threading needed)
+        self._naked_indicator_value: tuple[str, tuple[str, ...]] | None = None
 
-        # RLock for protecting compound operations ($INCREMENT)
-        self._data_lock = threading.RLock()
-
-        # Spec 013: Lock table - maps (name, subscripts) to (owner_thread_id, count)
-        # Thread-safe: protected by _lock_condition for concurrent JOB support
-        self._lock_mutex = threading.Lock()
-        self._lock_condition = threading.Condition(self._lock_mutex)
+        # Spec 013: Lock table - maps (name, subscripts) to (owner_pid, count)
+        # Simple dict — no blocking, no threading. Single-process only.
         self._lock_table: dict[tuple[str, tuple[str, ...]], tuple[int, int]] = {}
 
         # Spec 013: Transaction support
@@ -482,12 +484,12 @@ class InMemoryGlobalStorage:
 
     @property
     def _naked_indicator(self) -> tuple[str, tuple[str, ...]] | None:
-        """Per-thread naked indicator."""
-        return getattr(self._thread_local, "naked_indicator", None)
+        """Naked indicator for global reference resolution."""
+        return self._naked_indicator_value
 
     @_naked_indicator.setter
     def _naked_indicator(self, value: tuple[str, tuple[str, ...]] | None) -> None:
-        self._thread_local.naked_indicator = value
+        self._naked_indicator_value = value
 
     def _canonicalize_subscript(self, subscript: str | int | float) -> str:
         """Convert subscript to MUMPS canonical string form.
@@ -902,8 +904,8 @@ class InMemoryGlobalStorage:
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
         """Atomically increment value at ^NAME(subscripts).
 
-        Spec 009 T064: Thread-safe $INCREMENT implementation.
-        Uses _data_lock to ensure get+compute+set is atomic.
+        Spec 009 T064: $INCREMENT implementation.
+        Single-process: no locking needed.
 
         Args:
             name: Global name without caret
@@ -921,24 +923,23 @@ class InMemoryGlobalStorage:
 
         subscripts = self._canonicalize_subscripts(subscripts)
 
-        with self._data_lock:
-            # Get current value (default to "0" if undefined)
-            current = self.get(name, subscripts)
-            if current is None:
-                current = "0"
+        # Get current value (default to "0" if undefined)
+        current = self.get(name, subscripts)
+        if current is None:
+            current = "0"
 
-            # MUMPS numeric coercion + addition
-            current_num = m_num(current)
-            incr_num = m_num(increment)
-            result = current_num + incr_num  # type: ignore[operator]
+        # MUMPS numeric coercion + addition
+        current_num = m_num(current)
+        incr_num = m_num(increment)
+        result = current_num + incr_num  # type: ignore[operator]
 
-            # Normalize: integer if whole number
-            if isinstance(result, float) and result == int(result):
-                result = int(result)
+        # Normalize: integer if whole number
+        if isinstance(result, float) and result == int(result):
+            result = int(result)
 
-            result_str = m_str(result)
-            self.set(name, subscripts, result_str)
-            return result_str
+        result_str = m_str(result)
+        self.set(name, subscripts, result_str)
+        return result_str
 
     def kill_all(self) -> None:
         """Kill all globals. Used for testing/reset.
@@ -963,69 +964,30 @@ class InMemoryGlobalStorage:
     ) -> bool:
         """Acquire or release a lock on ^NAME(subscripts).
 
-        Spec 013 FR-019: Thread-safe lock implementation supporting
-        concurrent JOB'd processes. Locks are owned by the calling
-        thread and block if held by another thread.
+        Spec 013 FR-019: Simple single-process lock implementation.
+        Locks are owned by os.getpid(). No blocking — in a single-process
+        environment, all locks are owned by the same PID and always succeed.
+
+        For cross-process lock semantics with blocking and timeout,
+        use SQLiteGlobalStorage instead.
 
         Args:
             name: Global/lock name without caret
             subscripts: Tuple of string subscript values
-            timeout: Seconds to wait for lock (None = wait forever)
+            timeout: Seconds to wait for lock (ignored in single-process mode)
             lock_type: "+" for increment (acquire), "-" for decrement (release)
 
         Returns:
             True if lock acquired/released, False on timeout
         """
+        import os
+
         subscripts = self._canonicalize_subscripts(subscripts)
         key = (name, subscripts)
-        owner = threading.get_ident()
+        owner = os.getpid()
 
         if lock_type == "-":
             # Decrement lock count (release)
-            with self._lock_condition:
-                current = self._lock_table.get(key)
-                if current is not None and current[0] == owner:
-                    new_count = current[1] - 1
-                    if new_count <= 0:
-                        del self._lock_table[key]
-                    else:
-                        self._lock_table[key] = (owner, new_count)
-                    self._lock_condition.notify_all()
-            return True
-
-        # Acquire (increment)
-        with self._lock_condition:
-            deadline = None
-            if timeout is not None:
-                deadline = time.monotonic() + timeout
-
-            while True:
-                current = self._lock_table.get(key)
-                if current is None or current[0] == owner:
-                    # Not locked or we own it - acquire/increment
-                    count = (current[1] if current else 0) + 1
-                    self._lock_table[key] = (owner, count)
-                    return True
-
-                # Locked by another thread - wait
-                if deadline is not None:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        return False  # Timeout
-                    self._lock_condition.wait(remaining)
-                else:
-                    self._lock_condition.wait()
-
-    def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Release a lock on ^NAME(subscripts).
-
-        Spec 013 FR-019: Only releases locks owned by the calling thread.
-        """
-        subscripts = self._canonicalize_subscripts(subscripts)
-        key = (name, subscripts)
-        owner = threading.get_ident()
-
-        with self._lock_condition:
             current = self._lock_table.get(key)
             if current is not None and current[0] == owner:
                 new_count = current[1] - 1
@@ -1033,21 +995,68 @@ class InMemoryGlobalStorage:
                     del self._lock_table[key]
                 else:
                     self._lock_table[key] = (owner, new_count)
-                self._lock_condition.notify_all()
+            return True
+
+        # Acquire (increment)
+        current = self._lock_table.get(key)
+        if current is None or current[0] == owner:
+            # Lock is free or already owned by us — acquire
+            count = (current[1] if current else 0) + 1
+            self._lock_table[key] = (owner, count)
+            return True
+
+        # Held by another PID (shouldn't happen in single-process mode)
+        return False
+
+    def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Release a lock on ^NAME(subscripts).
+
+        Spec 013 FR-019: Only releases locks owned by the current process.
+        """
+        import os
+
+        subscripts = self._canonicalize_subscripts(subscripts)
+        key = (name, subscripts)
+        owner = os.getpid()
+
+        current = self._lock_table.get(key)
+        if current is not None and current[0] == owner:
+            new_count = current[1] - 1
+            if new_count <= 0:
+                del self._lock_table[key]
+            else:
+                self._lock_table[key] = (owner, new_count)
 
     def unlock_all(self) -> None:
-        """Release all locks held by the calling thread.
+        """Release all locks held by the current process.
 
-        Spec 013 FR-019: Argumentless LOCK releases all locks owned
-        by the current thread/process. Other threads' locks are unaffected.
+        Spec 013 FR-019: Argumentless LOCK releases all locks.
         """
-        owner = threading.get_ident()
-        with self._lock_condition:
-            keys_to_remove = [k for k, v in self._lock_table.items() if v[0] == owner]
-            for k in keys_to_remove:
-                del self._lock_table[k]
-            if keys_to_remove:
-                self._lock_condition.notify_all()
+        import os
+
+        owner = os.getpid()
+        keys_to_remove = [k for k, v in self._lock_table.items() if v[0] == owner]
+        for k in keys_to_remove:
+            del self._lock_table[k]
+
+    def get_locks(self) -> list[tuple[str, str, int]]:
+        """Return all locks held by the current process.
+
+        Spec 022 Phase 9 (T137): Used by ZSHOW "L".
+
+        Returns:
+            List of (lock_name, subscripts_json, lock_count) tuples
+        """
+        import json
+        import os
+
+        owner = os.getpid()
+        rows: list[tuple[str, str, int]] = []
+        for (name, subs), (own, count) in self._lock_table.items():
+            if own == owner:
+                rows.append((name, json.dumps(list(subs)), count))
+        rows.sort(key=lambda r: (r[0], r[1]))
+        return rows
 
     # =========================================================================
     # Transaction Operations Implementation (Spec 013)
@@ -1158,9 +1167,8 @@ class InMemoryGlobalStorage:
         # Parse subscript as (name, subscripts) key
         # For simplicity, treat subscript as global name with no subscripts
         key = (subscript, ())
-        with self._lock_condition:
-            entry = self._lock_table.get(key)
-            count = entry[1] if entry else 0
+        entry = self._lock_table.get(key)
+        count = entry[1] if entry else 0
         return str(count) if count > 0 else ""
 
     def ssvn_routine(self, subscript: str) -> str:

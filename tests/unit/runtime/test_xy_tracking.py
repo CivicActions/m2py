@@ -24,7 +24,7 @@ class TestXTracking:
     def test_x_starts_at_zero(self):
         """$X starts at 0 for new runtime."""
         rt = MUMPSRuntime()
-        assert rt._x == 0
+        assert rt.x() == 0
 
     def test_x_increments_per_character(self):
         """$X increments by 1 for each character written."""
@@ -32,13 +32,13 @@ class TestXTracking:
         rt._capture_output = True
 
         rt.write("A")
-        assert rt._x == 1
+        assert rt.x() == 1
 
         rt.write("BC")
-        assert rt._x == 3
+        assert rt.x() == 3
 
         rt.write("DEFGH")
-        assert rt._x == 8
+        assert rt.x() == 8
 
     def test_x_resets_on_newline(self):
         """$X resets to 0 when newline format control is used.
@@ -50,10 +50,10 @@ class TestXTracking:
         rt._capture_output = True
 
         rt.write("ABC")
-        assert rt._x == 3
+        assert rt.x() == 3
 
         rt.write_newline()  # W ! format control
-        assert rt._x == 0
+        assert rt.x() == 0
 
     def test_x_resets_on_formfeed(self):
         """$X resets to 0 when form feed is written."""
@@ -61,10 +61,10 @@ class TestXTracking:
         rt._capture_output = True
 
         rt.write("ABC")
-        assert rt._x == 3
+        assert rt.x() == 3
 
         rt.write_formfeed()
-        assert rt._x == 0
+        assert rt.x() == 0
 
 
 @pytest.mark.runtime
@@ -74,7 +74,7 @@ class TestYTracking:
     def test_y_starts_at_zero(self):
         """$Y starts at 0 for new runtime."""
         rt = MUMPSRuntime()
-        assert rt._y == 0
+        assert rt.y() == 0
 
     def test_y_increments_on_newline(self):
         """$Y increments by 1 for each newline format control.
@@ -86,15 +86,15 @@ class TestYTracking:
         rt._capture_output = True
 
         rt.write_newline()  # W !
-        assert rt._y == 1
+        assert rt.y() == 1
 
         rt.write_newline()  # W !
-        assert rt._y == 2
+        assert rt.y() == 2
 
         rt.write_newline()  # W !
         rt.write_newline()  # W !
         rt.write_newline()  # W !
-        assert rt._y == 5
+        assert rt.y() == 5
 
     def test_y_unchanged_by_regular_chars(self):
         """$Y is not affected by writing regular characters."""
@@ -102,7 +102,7 @@ class TestYTracking:
         rt._capture_output = True
 
         rt.write("Hello World")
-        assert rt._y == 0
+        assert rt.y() == 0
 
     def test_y_after_formfeed(self):
         """$Y is reset to 0 after form feed.
@@ -115,7 +115,7 @@ class TestYTracking:
 
         rt.write_formfeed()
         # Form feed resets $Y to 0
-        assert rt._y == 0
+        assert rt.y() == 0
 
 
 @pytest.mark.runtime
@@ -206,10 +206,10 @@ class TestConditionalFormFeed:
             rt.write("Line")
             rt.write_newline()  # W ! format control
 
-        assert rt._y == 10
+        assert rt.y() == 10
 
         # Conditional check: should NOT trigger form feed
-        if rt._y > 55:
+        if rt.y() > 55:
             rt.write_formfeed()
 
         output = rt.get_output()
@@ -228,10 +228,10 @@ class TestConditionalFormFeed:
             rt.write("Line")
             rt.write_newline()  # W ! format control
 
-        assert rt._y == 56
+        assert rt.y() == 56
 
         # Conditional check: should trigger form feed
-        if rt._y > 55:
+        if rt.y() > 55:
             rt.write_formfeed()
 
         output = rt.get_output()
@@ -250,18 +250,18 @@ class TestConditionalFormFeed:
             rt.write("Line")
             rt.write_newline()  # W ! format control
 
-        assert rt._y == 56
+        assert rt.y() == 56
 
         # Trigger form feed
         rt.write_formfeed()
 
         # $Y should reset to 0 (YDB verified)
-        assert rt._y == 0
+        assert rt.y() == 0
 
         # More lines should increment from there
         rt.write("Next page line 1")
         rt.write_newline()  # W ! format control
-        assert rt._y == 1
+        assert rt.y() == 1
 
 
 @pytest.mark.runtime
@@ -276,7 +276,7 @@ class TestTabColumnTracking:
         rt.write("AB")  # $X = 2
         rt.write_tab(10)  # Tab to column 10
 
-        assert rt._x == 10
+        assert rt.x() == 10
 
     def test_tab_no_effect_past_column(self):
         """Tab has no effect when already past target column."""
@@ -287,7 +287,7 @@ class TestTabColumnTracking:
         rt.write_tab(3)  # Tab to column 3 (already past)
 
         # $X unchanged
-        assert rt._x == 5
+        assert rt.x() == 5
 
     def test_tab_output_spaces(self):
         """Tab outputs correct number of spaces."""
@@ -316,25 +316,25 @@ class TestIntegratedWriteTracking:
         rt._capture_output = True
 
         rt.write("Line1")
-        assert rt._x == 5
-        assert rt._y == 0
+        assert rt.x() == 5
+        assert rt.y() == 0
 
         rt.write_newline()  # W !
-        assert rt._x == 0
-        assert rt._y == 1
+        assert rt.x() == 0
+        assert rt.y() == 1
 
         rt.write("Line2")
-        assert rt._x == 5
-        assert rt._y == 1
+        assert rt.x() == 5
+        assert rt.y() == 1
 
         rt.write_newline()  # W !
         rt.write_newline()  # W ! (blank line)
-        assert rt._x == 0
-        assert rt._y == 3
+        assert rt.x() == 0
+        assert rt.y() == 3
 
         rt.write("After blank")
-        assert rt._x == 11
-        assert rt._y == 3
+        assert rt.x() == 11
+        assert rt.y() == 3
 
     def test_formfeed_mid_output(self):
         """Form feed in middle of output stream.
@@ -350,14 +350,14 @@ class TestIntegratedWriteTracking:
         rt.write_newline()  # W !
         rt.write("More content")
         rt.write_newline()  # W !
-        assert rt._y == 2
+        assert rt.y() == 2
 
         # Page break
         rt.write_formfeed()
-        assert rt._y == 0  # Reset after form feed (YDB verified)
-        assert rt._x == 0
+        assert rt.y() == 0  # Reset after form feed (YDB verified)
+        assert rt.x() == 0
 
         # Second page content
         rt.write("Page 2 content")
         rt.write_newline()  # W !
-        assert rt._y == 1
+        assert rt.y() == 1

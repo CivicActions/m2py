@@ -60,8 +60,8 @@ class TestCommandGeneralRulesCodegen:
         source = "TEST R X:3 W X Q"
         code = generate_python(source)
 
-        # Should use m_read_timeout with timeout value
-        assert "m_read_timeout" in code
+        # Should use _rt.read_line_timeout with timeout value
+        assert "_rt.read_line_timeout" in code
         assert "3" in code  # timeout value present
 
         # LOCK with timeout is also working

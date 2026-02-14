@@ -24,8 +24,10 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import re
 import sys
+import tempfile
 import types
 from dataclasses import dataclass
 
@@ -54,6 +56,9 @@ MVTS_DIR = FUNCTIONAL_BASE / "mvts"
 MVTS_INREF = MVTS_DIR / "inref"
 MVTS_OUTREF = MVTS_DIR / "outref" / "mvts.txt"
 MVTS_DRIVER = MVTS_DIR / "u_inref" / "mvts.csh"
+
+# Workspace tmp/ directory for cache files (not system /tmp)
+_WORKSPACE_TMP = FUNCTIONAL_BASE.parent.parent / "tmp"
 
 
 # =============================================================================
@@ -181,21 +186,28 @@ def validate_mvts_output(
 
 
 def _load_all_mvts_routines() -> tuple[
-    dict[str, types.ModuleType | None], dict[str, str]
+    dict[str, types.ModuleType | None], dict[str, str], str
 ]:
     """Load and transpile ALL MVTS routines from inref/.
 
     This matches the MUGJ pattern - loading all routines upfront so that
     inter-routine calls (D ^V1WR1, etc.) can resolve properly.
 
+    Transpiled Python files are written to a cache directory on disk so that
+    subprocess-based JOB can import them via PYTHONPATH.
+
     Note: Files starting with _ (like _.m, _1A.m) are registered with _pct_
     prefix module names since they represent MUMPS % routines and codegen
     generates imports like `import _pct_` for `D ^%`.
 
     Returns:
-        Tuple of (routine_modules dict, transpile_errors dict)
+        Tuple of (routine_modules dict, transpile_errors dict, cache_dir path)
     """
     from m2py.codegen import generate_python
+
+    # Create cache directory for transpiled .py files (subprocess needs disk access)
+    _WORKSPACE_TMP.mkdir(exist_ok=True)
+    cache_dir = tempfile.mkdtemp(prefix="m2py_mvts_", dir=str(_WORKSPACE_TMP))
 
     all_routine_files = list(MVTS_INREF.glob("*.m"))
     routine_modules: dict[str, types.ModuleType | None] = {}
@@ -208,6 +220,12 @@ def _load_all_mvts_routines() -> tuple[
 
         try:
             python_code = generate_python(source)
+
+            # Write to disk so subprocess JOB can import via PYTHONPATH
+            py_path = os.path.join(cache_dir, f"{module_name}.py")
+            with open(py_path, "w") as f:
+                f.write(python_code)
+
             module = types.ModuleType(module_name)
             sys.modules[module_name] = module
             exec(python_code, module.__dict__)
@@ -217,7 +235,11 @@ def _load_all_mvts_routines() -> tuple[
             routine_modules[module_name] = None
             transpile_errors[module_name] = str(e)
 
-    return routine_modules, transpile_errors
+    # Add cache dir to sys.path so subprocess can find routines
+    if cache_dir not in sys.path:
+        sys.path.insert(0, cache_dir)
+
+    return routine_modules, transpile_errors, cache_dir
 
 
 # =============================================================================
@@ -230,13 +252,19 @@ def make_test_id(routine_def: RoutineDefinition) -> str:
     return routine_def.routine
 
 
+# Routines that require subprocess-based JOB/LOCK and take 60-90s to run.
+_SLOW_ROUTINES = frozenset({"V3JOB", "V3LOCK"})
+
+
 def get_routine_params() -> list[pytest.param]:
     """Generate pytest parameters for MVTS routines, excluding skipped ones."""
-    return [
-        pytest.param(routine, id=make_test_id(routine))
-        for routine in MVTS_ROUTINES
-        if not routine.skip_reason
-    ]
+    params = []
+    for routine in MVTS_ROUTINES:
+        if routine.skip_reason:
+            continue
+        marks = [pytest.mark.slow] if routine.routine in _SLOW_ROUTINES else []
+        params.append(pytest.param(routine, id=make_test_id(routine), marks=marks))
+    return params
 
 
 # =============================================================================
@@ -244,10 +272,14 @@ def get_routine_params() -> list[pytest.param]:
 # =============================================================================
 
 # Cache for loaded routine modules (populated once for all tests)
-_CACHED_MODULES: tuple[dict[str, types.ModuleType | None], dict[str, str]] | None = None
+_CACHED_MODULES: (
+    tuple[dict[str, types.ModuleType | None], dict[str, str], str] | None
+) = None
 
 
-def _get_cached_modules() -> tuple[dict[str, types.ModuleType | None], dict[str, str]]:
+def _get_cached_modules() -> tuple[
+    dict[str, types.ModuleType | None], dict[str, str], str
+]:
     """Get cached routine modules, loading if needed."""
     global _CACHED_MODULES
     if _CACHED_MODULES is None:
@@ -270,6 +302,10 @@ class TestMvtsSuite:
     - *FAILO* count matches expected (operator tests)
     """
 
+    # Routines that use JOB/LOCK and need SQLiteGlobalStorage for
+    # cross-process global sharing via subprocess.
+    _SQLITE_ROUTINES = frozenset({"V3JOB", "V3LOCK", "V4JOB", "V4PRIN", "V4SYSTEM"})
+
     @pytest.mark.parametrize("routine_def", get_routine_params())
     def test_routine(self, routine_def: RoutineDefinition) -> None:
         """Test a single MVTS sub-driver routine.
@@ -281,7 +317,7 @@ class TestMvtsSuite:
         from m2py.runtime import MUMPSRuntime, run_with_goto_support
 
         # Get pre-loaded modules
-        routine_modules, transpile_errors = _get_cached_modules()
+        routine_modules, transpile_errors, cache_dir = _get_cached_modules()
 
         routine_name = routine_def.routine
 
@@ -293,28 +329,58 @@ class TestMvtsSuite:
         if module is None:
             pytest.xfail(f"Routine {routine_name} not available")
 
-        # Create runtime
-        runtime = MUMPSRuntime()
-        runtime._capture_output = True
-        runtime.clear()
+        # Backend selection:
+        # - External backends (yottadb, iris): MUMPSRuntime() picks up the
+        #   backend from M2PY_GLOBAL_BACKEND env var (set by --backend).
+        #   External DBs handle cross-process globals natively, so no
+        #   SQLite escalation needed.
+        # - inmemory (default): use SQLiteGlobalStorage for JOB/LOCK routines
+        #   that need cross-process global sharing, InMemory for the rest.
+        storage = None
+        db_path = None
+        active_backend = os.environ.get("M2PY_GLOBAL_BACKEND", "inmemory")
+        if active_backend == "inmemory" and routine_name in self._SQLITE_ROUTINES:
+            from m2py.runtime.sqlite_storage import SQLiteGlobalStorage
 
-        # Set up runtime context
-        runtime._current_routine = getattr(module, "_routine_name", routine_name)
-        runtime._current_source_lines = getattr(module, "_source_lines", [])
-        runtime._current_label_lines = getattr(module, "_label_lines", {})
-
-        # Get entry function
-        entry_func = getattr(module, routine_name, None)
-        if not entry_func or not callable(entry_func):
-            pytest.xfail(f"No entry point for {routine_name}")
+            fd, db_path = tempfile.mkstemp(suffix=".db", dir=cache_dir)
+            os.close(fd)
+            storage = SQLiteGlobalStorage(db_path)
 
         try:
-            run_with_goto_support(entry_func, runtime, {})
-            output = runtime.get_output()
-        except Exception:
-            # Capture partial output even on crash — allows tests that crash
-            # mid-execution to still validate passes collected before the crash
-            output = runtime.get_output()
+            if storage is not None:
+                runtime = MUMPSRuntime(global_storage=storage)
+            else:
+                runtime = MUMPSRuntime()
+            runtime._capture_output = True
+            runtime.clear()
+
+            # Set up runtime context
+            runtime._current_routine = getattr(module, "_routine_name", routine_name)
+            runtime._current_source_lines = getattr(module, "_source_lines", [])
+            runtime._current_label_lines = getattr(module, "_label_lines", {})
+
+            # Get entry function
+            entry_func = getattr(module, routine_name, None)
+            if not entry_func or not callable(entry_func):
+                pytest.xfail(f"No entry point for {routine_name}")
+
+            try:
+                run_with_goto_support(entry_func, runtime, {})
+                output = runtime.get_output()
+            except Exception:
+                # Capture partial output even on crash — allows tests that crash
+                # mid-execution to still validate passes collected before the crash
+                output = runtime.get_output()
+        finally:
+            # Kill any orphaned JOB child processes before closing storage
+            runtime.kill_job_processes()
+            if storage is not None:
+                storage.close()
+            if db_path is not None:
+                try:
+                    os.unlink(db_path)
+                except OSError:
+                    pass
 
         # Pattern-based validation using counts from RoutineDefinition
         result = validate_mvts_output(

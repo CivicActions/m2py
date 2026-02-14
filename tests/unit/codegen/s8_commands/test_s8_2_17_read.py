@@ -29,8 +29,8 @@ TEST
  Q
 """
         python_code = generate_python(source)
-        # Should generate input() call stored in _scope
-        assert "input()" in python_code
+        # Should generate _rt.read_line() call stored in _scope
+        assert "_rt.read_line()" in python_code
 
     def test_read_with_prompt_generates_print_and_input(self) -> None:
         """R 'Name: ',X generates print then input."""
@@ -46,7 +46,7 @@ TEST
             "print('Enter: ', end=" in python_code
             or 'print("Enter: ", end=' in python_code
         )
-        assert "input()" in python_code
+        assert "_rt.read_line()" in python_code
 
     def test_read_with_format_control_newline(self) -> None:
         """R !,X generates newline then input."""
@@ -67,8 +67,8 @@ TEST
  Q
 """
         python_code = generate_python(source)
-        # Should have two input() calls
-        assert python_code.count("input()") == 2
+        # Should have two read_line() calls
+        assert python_code.count("_rt.read_line()") == 2
 
 
 @pytest.mark.codegen
@@ -132,34 +132,37 @@ TEST
  Q
 """
         python_code = generate_python(source)
-        # Should use m_read_timeout helper and set _test
-        assert "m_read_timeout(5)" in python_code
+        # Should use _rt.read_line_timeout and set _test
+        assert "_rt.read_line_timeout(5)" in python_code
         assert "_test" in python_code
 
-    def test_timeout_helper_returns_tuple(self) -> None:
-        """m_read_timeout returns (value, test_flag) tuple."""
-        from m2py.runtime.helpers import m_read_timeout
-        import select
+    def test_timeout_read_via_device_layer(self) -> None:
+        """READ with timeout uses device-layer read_line_timeout method."""
+        from m2py.runtime import MUMPSRuntime
         from unittest.mock import patch
 
-        # Mock select to indicate data available
+        rt = MUMPSRuntime()
+        rt._output = []
+        # Mock select to indicate data available, mock stdin
+        import select
+
+        mock_stdin = io.StringIO("test_value\n")
         with patch.object(select, "select", return_value=([True], [], [])):
-            # Mock stdin.readline to return test value
-            mock_stdin = io.StringIO("test_value\n")
             with patch.object(sys, "stdin", mock_stdin):
-                value, test_flag = m_read_timeout(1.0)
+                value, test_flag = rt.read_line_timeout(1.0)
                 assert value == "test_value"
                 assert test_flag == 1
 
-    def test_timeout_helper_returns_empty_on_timeout(self) -> None:
-        """m_read_timeout returns empty string and 0 on timeout."""
-        from m2py.runtime.helpers import m_read_timeout
-        import select
+    def test_timeout_returns_empty_on_timeout(self) -> None:
+        """READ timeout returns empty string and $TEST=0 on timeout."""
+        from m2py.runtime import MUMPSRuntime
         from unittest.mock import patch
+        import select
 
-        # Mock select to indicate timeout (empty readable list)
+        rt = MUMPSRuntime()
+        rt._output = []
         with patch.object(select, "select", return_value=([], [], [])):
-            value, test_flag = m_read_timeout(0.1)
+            value, test_flag = rt.read_line_timeout(0.1)
             assert value == ""
             assert test_flag == 0
 
@@ -176,16 +179,19 @@ TEST
  Q
 """
         python_code = generate_python(source)
-        assert "m_read_char()" in python_code
+        assert "_rt.read_char()" in python_code
 
-    def test_char_read_helper_reads_single_char(self) -> None:
-        """m_read_char reads exactly one character."""
-        from m2py.runtime.helpers import m_read_char
+    def test_char_read_via_device_layer(self) -> None:
+        """Device-layer read_char returns ASCII code of character."""
+        from m2py.runtime import MUMPSRuntime
 
+        rt = MUMPSRuntime()
+        rt._output = []
         monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setattr(sys, "stdin", io.StringIO("ABC"))
-        char = m_read_char()
-        assert char == "A"
+        char = rt.read_char()
+        # read_char returns the ASCII code as a string per MUMPS semantics
+        assert char == str(ord("A"))  # "65"
         monkeypatch.undo()
 
 

@@ -44,14 +44,36 @@ class TestJobCommandCodegen:
         # Should generate _rt.start_job('LABEL', 'ROUTINE', ...)
         assert "_rt.start_job('LABEL', 'ROUTINE'" in result
 
-    def test_job_timeout_sets_test_true_on_success(self, execute_mumps):
+    def test_job_timeout_sets_test_true_on_success(self, generate_python, tmp_path):
         """JOB with timeout sets $TEST=1 on success (§8.2.10).
 
         J LABEL::5  ; With timeout, $TEST=1 if job starts successfully
+
+        Uses SQLiteGlobalStorage so the JOB subprocess can import the routine.
         """
-        result = execute_mumps("TEST\n I 0\n J LABEL::5\n W $T\n Q\nLABEL\n Q")
-        # Timeout present + success = $TEST=1
-        assert result.output == "1"
+        import sys
+        from m2py.runtime import MUMPSRuntime
+        from m2py.runtime.sqlite_storage import SQLiteGlobalStorage
+
+        # Generate Python from MUMPS
+        python_code = generate_python("TEST\n I 0\n J LABEL::5\n W $T\n Q\nLABEL\n Q")
+
+        # Write the generated code as a module file on disk
+        routine_dir = tmp_path / "routines"
+        routine_dir.mkdir()
+        (routine_dir / "TEST.py").write_text(python_code)
+        sys.path.insert(0, str(routine_dir))
+
+        try:
+            db_path = str(tmp_path / "test.db")
+            storage = SQLiteGlobalStorage(db_path)
+            runtime = MUMPSRuntime(global_storage=storage)
+            result = runtime.execute(python_code, capture_output=True)
+            # Timeout present + success = $TEST=1
+            assert result.output == "1"
+            storage.close()
+        finally:
+            sys.path.remove(str(routine_dir))
 
     def test_job_no_timeout_preserves_test(self, execute_mumps):
         """JOB without timeout does not affect $TEST (§8.2.10).

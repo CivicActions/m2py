@@ -12,6 +12,18 @@ Provides fixtures for loading MUMPS test files from multiple test suites:
 - triggers: Trigger tests (101 files)
 - longname: Long variable name tests (34 files)
 - unicode: Unicode handling tests (47 files)
+
+Supports pluggable global storage backends via ``--backend``:
+- ``inmemory`` (default): Fast in-process storage
+- ``sqlite``: Cross-process storage for JOB/LOCK tests
+- ``yottadb``: YottaDB database backend (requires ``yottadb`` package)
+- ``iris``: InterSystems IRIS backend (requires ``intersystems-iris`` package)
+
+Usage::
+
+    uv run pytest tests/ -o "addopts="                    # default (inmemory)
+    uv run pytest tests/ -o "addopts=" --backend sqlite   # SQLite everywhere
+    uv run pytest tests/ -o "addopts=" --backend yottadb  # YottaDB backend
 """
 
 import warnings
@@ -22,12 +34,34 @@ import pytest
 
 
 # =============================================================================
+# Smart Defaults (replaces pyproject.toml addopts)
+# =============================================================================
+
+
+def _has_cli_opt(args: tuple, short: str, long: str) -> bool:
+    """Check whether a CLI option was explicitly passed by the user.
+
+    Handles short forms (``-n``, ``-n0``, ``-nauto``), long forms
+    (``--numprocesses``, ``--numprocesses=4``), and the two-arg form
+    (``-n auto``).
+    """
+    for arg in args:
+        # Short flag: exact match or combined value (-n0, -nauto)
+        if arg == short or (arg.startswith(short) and not arg.startswith("--")):
+            return True
+        # Long flag: exact match or with = (--numprocesses=4)
+        if arg == long or arg.startswith(long + "="):
+            return True
+    return False
+
+
+# =============================================================================
 # Pytest Marker Registration (T007)
 # =============================================================================
 
 
 def pytest_configure(config):
-    """Register custom markers for spec-aligned test organization."""
+    """Register custom markers, apply smart defaults, and propagate --backend."""
     config.addinivalue_line("markers", "parser: Tests at textX grammar/parser level")
     config.addinivalue_line("markers", "asg: Tests at ASG semantic analysis level")
     config.addinivalue_line("markers", "codegen: Tests at Python code generation level")
@@ -37,6 +71,51 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "slow: Long-running test, skipped by default")
     config.addinivalue_line("markers", "pre1995: Tests pre-1995 MUMPS syntax")
     config.addinivalue_line("markers", "ydb: YottaDB-specific extension test")
+
+    # ── Smart defaults ────────────────────────────────────────────────
+    # Formerly handled by addopts = "-n auto -m 'not slow'" in
+    # pyproject.toml.  Now applied programmatically so users never need
+    # the awkward -o "addopts=" escape hatch.
+    #
+    # • -n auto   → parallel via pytest-xdist (skip if user passed -n)
+    # • -m 'not slow' → skip slow-marked tests (skip if user passed -m)
+    import os
+
+    user_args = config.invocation_params.args
+
+    if not _has_cli_opt(user_args, "-n", "--numprocesses"):
+        if hasattr(config.option, "numprocesses"):  # xdist installed
+            config.option.numprocesses = os.cpu_count() or 1
+            # xdist also needs dist mode enabled (defaults to "no"
+            # when -n is absent from the CLI)
+            if getattr(config.option, "dist", "no") == "no":
+                config.option.dist = "load"
+
+    if not _has_cli_opt(user_args, "-m", "--markexpr"):
+        config.option.markexpr = "not slow"
+
+    # ── Backend propagation ───────────────────────────────────────────
+    # Propagate --backend to the M2PY_GLOBAL_BACKEND env var so that
+    # MUMPSRuntime() picks up the backend automatically — including in
+    # subprocess workers spawned by run_mumps().
+    backend = config.getoption("--backend", default=None)
+    if backend and backend != "inmemory":
+        os.environ["M2PY_GLOBAL_BACKEND"] = backend
+
+
+def pytest_addoption(parser):
+    """Add --backend CLI option for selecting the global storage backend."""
+    parser.addoption(
+        "--backend",
+        action="store",
+        default="inmemory",
+        choices=["inmemory", "sqlite", "yottadb", "iris"],
+        help=(
+            "Global storage backend for tests. "
+            "Default: inmemory. "
+            "Use 'yottadb' or 'iris' to validate against a real database."
+        ),
+    )
 
 
 # =============================================================================
@@ -75,6 +154,63 @@ def pytest_collection_modifyitems(session, config, items):
                 UserWarning,
                 stacklevel=1,
             )
+
+
+# =============================================================================
+# Global Storage Backend Fixtures
+# =============================================================================
+
+
+@pytest.fixture(scope="session")
+def m2py_backend(request) -> str:
+    """Return the --backend CLI option value (session-scoped).
+
+    Values: 'inmemory', 'sqlite', 'yottadb', 'iris'.
+
+    Usage::
+
+        def test_something(m2py_backend):
+            if m2py_backend == "yottadb":
+                pytest.skip("Not supported on YottaDB")
+    """
+    return request.config.getoption("--backend")
+
+
+def get_test_backend(config) -> str:
+    """Get the --backend value from a pytest config object.
+
+    Useful in module-level functions (like parametrize generators)
+    that don't have access to fixtures.
+    """
+    return config.getoption("--backend", default="inmemory")
+
+
+def make_storage(backend: str, *, db_path: str | None = None):
+    """Create a GlobalStorageBackend for the given backend name.
+
+    Args:
+        backend: One of 'inmemory', 'sqlite', 'yottadb', 'iris'.
+        db_path: Optional database path (used by sqlite backend).
+
+    Returns:
+        A GlobalStorageBackend instance.
+
+    Raises:
+        ImportError: If the requested backend package is not installed.
+        ValueError: If the backend name is not recognized.
+    """
+    from m2py.runtime import get_global_storage
+
+    if backend == "sqlite" and db_path:
+        from m2py.runtime.sqlite_storage import SQLiteGlobalStorage
+
+        return SQLiteGlobalStorage(db_path)
+    return get_global_storage(backend)
+
+
+def is_external_backend(backend: str) -> bool:
+    """Return True if backend is an external database (not inmemory/sqlite)."""
+    return backend not in ("inmemory", "sqlite")
 
 
 # Base path for all functional test suites

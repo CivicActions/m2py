@@ -314,7 +314,8 @@ class TestMugjSuite:
         if module is None:
             pytest.xfail(f"Routine {routine_name} not available")
 
-        # Create runtime
+        # Create runtime — MUMPSRuntime() picks up the backend from
+        # M2PY_GLOBAL_BACKEND env var when --backend is specified.
         runtime = MUMPSRuntime()
         runtime._capture_output = True
         runtime.clear()

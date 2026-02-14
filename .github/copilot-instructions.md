@@ -7,13 +7,17 @@ M2PY is a MUMPS-to-Python transpiler using textX to build an Abstract Semantic G
 **All Python commands MUST use `uv`** for package management, running scripts, and testing:
 
 ```bash
-uv run pytest                    # Run tests
+uv run pytest                    # Run tests (parallel + skip slow by default)
+uv run pytest -n0                # Run tests sequentially (for debugging)
+uv run pytest -m slow            # Run only slow tests
 uv run python <script>           # Run any Python script
 uv add <package>                 # Add dependencies
 uv sync                          # Sync environment
 ```
 
 - Never use bare `python`, `pip`, or `pytest` commands.
+- **Never use `-o "addopts="`** — smart defaults in `tests/conftest.py` auto-inject
+  `-n auto` and `-m 'not slow'` only when the user hasn't passed `-n` or `-m`.
 - Run short Python snippets with pylanceRunCodeSnippet or create a permanent helper script in `/utils`. *Don't* use `uv python -c` or cat to /tmp files.
 - If you need to use a tmp directory for m files, use the one in the workspace - do not use `/tmp`.
 - Avoid `2> /dev/null` and `&> /dev/null` redirection.

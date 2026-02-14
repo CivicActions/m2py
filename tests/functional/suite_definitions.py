@@ -562,8 +562,8 @@ MVTS_VV4_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition(
         "125---V4JOB",
         "V4JOB",
-        expected_passes=0,
-        expected_fails=3,
+        expected_passes=3,
+        expected_fails=0,
     ),
     RoutineDefinition("125.1---V4PAT", "V4PAT", expected_passes=87),
     RoutineDefinition("135---V4NST1", "V4NST1", expected_passes=1),

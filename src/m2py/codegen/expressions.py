@@ -620,6 +620,13 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name in ("KEY", "K"):
         return "_rt.key()"
 
+    # $ZEOF / $ZE(OF) - end-of-file indicator
+    # Spec 022 Phase 4 (US9): Returns 1 if current device is at EOF, 0 otherwise
+    # Note: $ZE is ambiguous ($ZERROR vs $ZEOF). YDB resolves $ZE to $ZERROR,
+    # $ZEOF requires at least 4 chars. We match full name only.
+    if name == "ZEOF":
+        return "_rt.zeof()"
+
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 

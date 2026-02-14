@@ -337,6 +337,6 @@ MReadStatement(
 
 ### READ
 
-- Use `input()` or equivalent
-- Timeout requires asyncio or threading
+- Reads route through device layer (rt.read_line(), rt.read_char(), etc.)
+- Timeout handled by device read methods
 - `$TEST` must be set if timeout present
