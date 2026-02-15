@@ -40,6 +40,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - N/A (in-memory global storage, no persistence changes) (021-correctness-features)
 - Python 3.10+ + textX (parser), sqlite3 (stdlib — shared storage), subprocess (stdlib — JOB) (022-large-architecture)
 - SQLite file-backed database (WAL mode) for cross-process globals and lock table (022-large-architecture)
+- Python 3.10+ (constitution constraint; runtime uses 3.10) + textX 4.0+ (parser), argparse (CLI, stdlib), ruff 0.15+ (lint/format), pyright 1.1.408+ (type check) (023-cli-codegen-quality)
+- File system (`.m` input → `.py` output) (023-cli-codegen-quality)
 
 - (001-textx-semantic-graph)
 
@@ -60,9 +62,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 023-cli-codegen-quality: Added Python 3.10+ (constitution constraint; runtime uses 3.10) + textX 4.0+ (parser), argparse (CLI, stdlib), ruff 0.15+ (lint/format), pyright 1.1.408+ (type check)
 - 022-large-architecture: Added Python 3.10+ + textX (parser), sqlite3 (stdlib — shared storage), subprocess (stdlib — JOB)
 - 021-correctness-features: Added Python 3.10+ + textX ≥ 4.0 (parser), `copy` (stdlib, deepcopy for transactions), `subprocess` (stdlib, ZSYSTEM), `glob`/`pathlib` (stdlib, $ZSEARCH), `importlib` (stdlib, ZLINK — already used), `datetime` (stdlib, $ZDATE)
-- 020-codegen-refactoring: Added Python 3.10+ + textX ≥4.0 (parser), pytest ≥7.0 (testing)
 
 
 <!-- MANUAL ADDITIONS START -->
