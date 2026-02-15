@@ -52,10 +52,10 @@ CALC(A,B,C)
  Q X
 """
         code = generate_python(source)
-        # Should import the module
-        assert "import math" in code
+        # Should import the module ("math" is a Python stdlib name, so it becomes "math_")
+        assert "import math_" in code
         # Should call with module prefix
-        assert "_call_extrinsic(_rt, math.ADD" in code
+        assert "_call_extrinsic(_rt, math_.ADD" in code
 
     def test_return_value_handling(self, generate_python):
         """Extrinsic return value is captured (§7.1.6).
@@ -289,10 +289,10 @@ class TestExternalRoutineCallsCodegen:
         code = generate_python(source)
         # Python's import statement provides module caching via sys.modules
         # We use standard import, not __import__ or importlib
-        assert "import math" in code
+        assert "import math_" in code
         # Module is used with standard attribute access
-        assert "math.ADD" in code
-        assert "math.MULT" in code
+        assert "math_.ADD" in code
+        assert "math_.MULT" in code
         # verify valid Python syntax
         compile(code, "<test>", "exec")
 

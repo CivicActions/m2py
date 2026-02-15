@@ -568,12 +568,13 @@ NEXT W X Q"""
 
         # Label functions should have correct signature (now with _rt and _scope)
         # Phase 13 (T076): _rt is now first parameter
+        # Return type includes int for line-number targets from offset calls/indirection
         assert (
-            "def _TEST(_rt, state, _scope) -> Tuple[Optional[str], RoutineState]:"
+            "def _TEST(_rt, state, _scope) -> Tuple[str | int | None, RoutineState]:"
             in code
         )
         assert (
-            "def _NEXT(_rt, state, _scope) -> Tuple[Optional[str], RoutineState]:"
+            "def _NEXT(_rt, state, _scope) -> Tuple[str | int | None, RoutineState]:"
             in code
         )
         # Should return tuple with None for QUIT

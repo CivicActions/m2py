@@ -6,8 +6,19 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pyright>=1.1.408",
+    "ruff>=0.15.0",
     "textX>=4.0",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/m2py"]
+
+[project.scripts]
+m2py = "m2py.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -45,3 +56,7 @@ markers = [
     "merge: marks merge test suite tests",
     "functional: marks functional tests comparing against YDB outref",
 ]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501", "E741"]

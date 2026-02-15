@@ -416,6 +416,94 @@ def m_mul(left: Any, right: Any) -> Union[int, Decimal]:
         return result
 
 
+def m_int_div(left: Any, right: Any) -> int:
+    """Perform MUMPS integer division (\\ operator).
+
+    MUMPS integer division truncates towards zero (not floor division).
+    Uses Decimal arithmetic to avoid float precision issues and
+    to resolve type incompatibilities between float and Decimal operands.
+
+    Args:
+        left: Dividend (any value, will be coerced via m_num)
+        right: Divisor (any value, will be coerced via m_num)
+
+    Returns:
+        Integer result truncated towards zero
+
+    Examples:
+        >>> m_int_div(7, 2)
+        3
+        >>> m_int_div(-7, 2)
+        -3
+        >>> m_int_div("10", "3")
+        3
+    """
+    from decimal import localcontext
+
+    left_num = m_num(left)
+    right_num = m_num(right)
+
+    with localcontext() as ctx:
+        ctx.prec = 18
+        left_dec = (
+            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
+        )
+        right_dec = (
+            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
+        )
+        return int(left_dec / right_dec)
+
+
+def m_pow(left: Any, right: Any) -> Union[int, Decimal]:
+    """Perform MUMPS exponentiation (** operator).
+
+    Uses Decimal arithmetic to avoid type incompatibilities between
+    float and Decimal operands returned by m_num().
+
+    Special case: 0**0 = 1 in MUMPS (§7.2), but Decimal raises
+    InvalidOperation for this case, so we handle it explicitly.
+
+    Args:
+        left: Base (any value, will be coerced via m_num)
+        right: Exponent (any value, will be coerced via m_num)
+
+    Returns:
+        Result of exponentiation - integer if whole number, otherwise Decimal
+
+    Examples:
+        >>> m_pow(2, 3)
+        8
+        >>> m_pow("2", "10")
+        1024
+        >>> m_pow(0, 0)
+        1
+    """
+    from decimal import InvalidOperation, localcontext
+
+    left_num = m_num(left)
+    right_num = m_num(right)
+
+    with localcontext() as ctx:
+        ctx.prec = 18
+        left_dec = (
+            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
+        )
+        right_dec = (
+            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
+        )
+        try:
+            result = left_dec**right_dec
+        except InvalidOperation:
+            # 0**0 is defined as 1 in MUMPS (§7.2)
+            if left_dec == 0 and right_dec == 0:
+                return 1
+            raise
+        # Normalize: return int for whole numbers
+        if result == int(result):
+            return int(result)
+        return result
+
+
 def m_mod(left: Any, right: Any) -> Union[int, float, Decimal]:
     """Perform MUMPS modulo operation (# operator).
 

@@ -383,7 +383,7 @@ def m_set_extract(
     var_setter(result)
 
 
-def m_data(array: MArray | None, subscripts: tuple[str, ...] = ()) -> int:
+def m_data(array: MArray | None, subscripts: tuple[Any, ...] = ()) -> int:
     """Return $DATA value for local array variable.
 
     Args:
@@ -418,7 +418,7 @@ def m_data(array: MArray | None, subscripts: tuple[str, ...] = ()) -> int:
 def m_data_global(
     backend: GlobalStorageBackend,
     name: str,
-    subscripts: tuple[str, ...],
+    subscripts: tuple[Any, ...],
 ) -> int:
     """Return $DATA value for global variable.
 
@@ -441,8 +441,8 @@ def m_data_global(
 
 def m_order(
     array: MArray | None,
-    subscripts: tuple[str, ...],
-    direction: int = 1,
+    subscripts: tuple[Any, ...],
+    direction: Any = 1,
 ) -> str:
     """Return next subscript in MUMPS collation order ($ORDER).
 
@@ -538,8 +538,8 @@ def m_order(
 def m_order_global(
     backend: GlobalStorageBackend,
     name: str,
-    subscripts: tuple[str, ...],
-    direction: int = 1,
+    subscripts: tuple[Any, ...],
+    direction: Any = 1,
     update_naked: bool = True,
 ) -> str:
     """Return next subscript in MUMPS collation order for global variable.
@@ -687,7 +687,7 @@ def m_query(
 def m_query_global(
     backend: GlobalStorageBackend,
     name: str,
-    subscripts: tuple[str, ...],
+    subscripts: tuple[Any, ...],
 ) -> str:
     """Return full reference of next node in depth-first traversal for global variable.
 
@@ -880,7 +880,7 @@ def m_find(string: str, target: str, start: int = 1) -> int:
 
 
 def m_get(
-    array: "MArray | None", subscripts: tuple[str, ...], default: str = ""
+    array: "MArray | None", subscripts: tuple[Any, ...], default: str = ""
 ) -> str:
     """Safe variable retrieval with default value (RHS $GET).
 
@@ -933,7 +933,7 @@ def m_get(
 def m_get_global(
     backend: "GlobalStorageBackend",
     name: str,
-    subscripts: tuple[str, ...],
+    subscripts: tuple[Any, ...],
     default: str = "",
     update_naked: bool = True,
 ) -> str:
@@ -963,7 +963,7 @@ def m_get_global(
 
 def m_increment(
     array: "MArray | None",
-    subscripts: tuple[str, ...],
+    subscripts: tuple[Any, ...],
     increment: str = "1",
     scope: dict | None = None,
     var_name: str = "",
@@ -1022,7 +1022,7 @@ def m_increment(
 def m_increment_global(
     backend: "GlobalStorageBackend",
     name: str,
-    subscripts: tuple[str, ...],
+    subscripts: tuple[Any, ...],
     increment: str = "1",
 ) -> str:
     """$INCREMENT for global variables.
@@ -1299,7 +1299,7 @@ def m_qsubscript(name: str, position: int) -> str:
     return subscripts[position - 1]
 
 
-def m_justify(value: float, width: int, decimals: int) -> str:
+def m_justify(value: int | float | Decimal, width: int, decimals: int) -> str:
     """Right-justify a numeric value with decimal formatting ($JUSTIFY).
 
     Implements 3-argument $JUSTIFY.

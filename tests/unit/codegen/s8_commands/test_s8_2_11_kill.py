@@ -437,7 +437,8 @@ class TestKillAllMArrayKill:
         """
         code = generate_python("TEST\n K  Q")
         assert "for _v in _scope.values():" in code
-        assert "if isinstance(_v, MArray): _v.kill()" in code
+        assert "if isinstance(_v, MArray):" in code
+        assert "_v.kill()" in code
         # Should NOT use _scope.clear()
         assert "_scope.clear()" not in code
 

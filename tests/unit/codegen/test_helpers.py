@@ -13,9 +13,11 @@ from m2py.codegen.helpers import (
     m_add,
     m_compare,
     m_div,
+    m_int_div,
     m_mod,
     m_mul,
     m_num,
+    m_pow,
     m_str,
     m_sub,
     m_truth,
@@ -1134,6 +1136,76 @@ class TestMStrMNumMArray:
 
         arr = MArray("42")
         assert m_num(arr) == 42
+
+
+@pytest.mark.codegen
+class TestMIntDiv:
+    """Tests for m_int_div() - MUMPS integer division (\\ operator)."""
+
+    def test_basic_integer_division(self):
+        """7\\2 = 3 (truncation towards zero)."""
+        assert m_int_div(7, 2) == 3
+
+    def test_exact_division(self):
+        """10\\5 = 2."""
+        assert m_int_div(10, 5) == 2
+
+    def test_negative_truncates_towards_zero(self):
+        """-7\\2 = -3 (not -4 which would be floor division)."""
+        assert m_int_div(-7, 2) == -3
+
+    def test_string_coercion(self):
+        """String operands are coerced via m_num."""
+        assert m_int_div("10", "3") == 3
+
+    def test_decimal_operands(self):
+        """Decimal operands work correctly."""
+        assert m_int_div(Decimal("10"), Decimal("3")) == 3
+
+    def test_returns_int(self):
+        """m_int_div always returns int type."""
+        result = m_int_div(7, 2)
+        assert isinstance(result, int)
+
+    def test_large_numbers(self):
+        """Works with large numbers without float precision loss."""
+        assert m_int_div(10**18, 3) == 333333333333333333
+
+
+@pytest.mark.codegen
+class TestMPow:
+    """Tests for m_pow() - MUMPS exponentiation (** operator)."""
+
+    def test_basic_exponentiation(self):
+        """2**3 = 8."""
+        assert m_pow(2, 3) == 8
+
+    def test_zero_to_zero(self):
+        """0**0 = 1 in MUMPS (§7.2)."""
+        assert m_pow(0, 0) == 1
+
+    def test_string_coercion(self):
+        """String operands are coerced via m_num."""
+        assert m_pow("2", "10") == 1024
+
+    def test_returns_int_for_whole_numbers(self):
+        """Returns int when result is a whole number."""
+        result = m_pow(3, 2)
+        assert result == 9
+        assert isinstance(result, int)
+
+    def test_returns_decimal_for_fractional(self):
+        """Returns Decimal for non-integer results."""
+        result = m_pow(2, -1)
+        assert result == Decimal("0.5")
+
+    def test_decimal_operands(self):
+        """Decimal operands work correctly."""
+        assert m_pow(Decimal("2"), Decimal("3")) == 8
+
+    def test_one_to_any_power(self):
+        """1**N = 1 for any N."""
+        assert m_pow(1, 100) == 1
 
 
 # =============================================================================

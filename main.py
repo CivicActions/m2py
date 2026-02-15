@@ -1,6 +1,6 @@
-def main():
-    print("Hello from m2py!")
+import sys
 
+from m2py.cli import main
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -778,24 +778,41 @@ def _build_indirect_target_expr(target: "MCall", ctx: "GeneratorContext") -> str
 
 
 def _emit_scope_to_state_sync(ctx: "GeneratorContext") -> None:
-    """Emit code to sync _scope dict back into state._locals (MArray wrapping)."""
-    ctx.emitter.line("for _k, _v in _scope.items():")
-    with ctx.emitter.indented():
-        ctx.emitter.line("if isinstance(_v, MArray):")
-        with ctx.emitter.indented():
-            ctx.emitter.line("state._locals[_k] = _v")
-        ctx.emitter.line("else:")
-        with ctx.emitter.indented():
-            ctx.emitter.line("_m = MArray()")
-            ctx.emitter.line("_m.value = _v")
-            ctx.emitter.line("state._locals[_k] = _m")
+    """Emit code to sync _scope dict back into state (MArray wrapping).
+
+    Uses state._locals for dynamic-locals routines, or syncs individual
+    state vars for static-field routines.
+    """
+    from m2py.codegen.statements import emit_scope_to_state_sync
+
+    if ctx.uses_dynamic_locals:
+        emit_scope_to_state_sync(ctx)
+    elif ctx.state_vars:
+        from m2py.codegen.names import translate_name
+
+        for var_name in sorted(ctx.state_vars):
+            py_name = translate_name(var_name)
+            ctx.emitter.line(f"if {var_name!r} in _scope:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    f"state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
+                )
 
 
 def _emit_goto_external_catch(ctx: "GeneratorContext") -> None:
     """Emit 'except GotoExternal' block: sync state→scope, run external, sync back."""
+    from m2py.codegen.statements import emit_state_to_scope_sync
+
     ctx.emitter.line("except GotoExternal as _goto:")
     with ctx.emitter.indented():
-        ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
+        if ctx.uses_dynamic_locals:
+            emit_state_to_scope_sync(ctx)
+        elif ctx.state_vars:
+            from m2py.codegen.names import translate_name
+
+            for var_name in sorted(ctx.state_vars):
+                py_name = translate_name(var_name)
+                ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
         ctx.emitter.line(
             "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)"
         )
@@ -811,6 +828,7 @@ def _emit_fallthrough_loop(ctx: "GeneratorContext") -> None:
         with ctx.emitter.indented():
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
+                ctx.emitter.line("assert isinstance(_do_target, str)")
                 ctx.emitter.line("_do_func = _labels[_do_target]")
                 ctx.emitter.line("_do_target, state = _do_func(_rt, state, _scope)")
             _emit_goto_external_catch(ctx)

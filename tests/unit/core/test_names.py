@@ -54,6 +54,18 @@ class TestToPython:
         assert NameTranslator.to_python("hello") == "hello"
         assert NameTranslator.to_python("HeLLo") == "HeLLo"
 
+    def test_e743_ambiguous_names(self):
+        """Single-char ambiguous names (E743) get _a_ prefix."""
+        assert NameTranslator.to_python("I") == "_a_I"
+        assert NameTranslator.to_python("O") == "_a_O"
+        assert NameTranslator.to_python("l") == "_a_l"
+
+    def test_non_ambiguous_single_chars_unchanged(self):
+        """Other single-char names are NOT prefixed."""
+        assert NameTranslator.to_python("X") == "X"
+        assert NameTranslator.to_python("A") == "A"
+        assert NameTranslator.to_python("J") == "J"
+
 
 class TestFromPython:
     """Tests for NameTranslator.from_python()"""
@@ -85,6 +97,17 @@ class TestFromPython:
     def test_preamble(self):
         """_preamble becomes empty string."""
         assert NameTranslator.from_python("_preamble") == ""
+
+    def test_a_prefix(self):
+        """_a_ prefix is removed (E743 ambiguous name)."""
+        assert NameTranslator.from_python("_a_I") == "I"
+        assert NameTranslator.from_python("_a_O") == "O"
+        assert NameTranslator.from_python("_a_l") == "l"
+
+    def test_a_prefix_non_ambiguous_unchanged(self):
+        """_a_ prefix only reverses for known ambiguous names."""
+        assert NameTranslator.from_python("_a_X") == "_a_X"
+        assert NameTranslator.from_python("_a_FOO") == "_a_FOO"
 
     def test_empty_string(self):
         """Empty string stays empty."""
@@ -136,6 +159,11 @@ class TestRoundTrip:
     def test_roundtrip_empty(self):
         """Round-trip identity for empty string."""
         assert NameTranslator.from_python(NameTranslator.to_python("")) == ""
+
+    def test_roundtrip_e743_ambiguous(self):
+        """Round-trip identity for E743 ambiguous single-char names."""
+        for name in ["I", "O", "l"]:
+            assert NameTranslator.from_python(NameTranslator.to_python(name)) == name
 
 
 class TestConvenienceFunctions:

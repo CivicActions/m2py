@@ -19,7 +19,13 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, List, Optional
 
 from m2py.asg.elements import ASGElement
-from m2py.asg.enums import LiteralType, FormatControlType, IndirectionType, PassingMode
+from m2py.asg.enums import (
+    LiteralType,
+    FormatControlType,
+    IndirectionType,
+    PassingMode,
+    ExprResultType,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from m2py.asg.elements import MCall
@@ -37,7 +43,14 @@ class MExpr(ASGElement):
     Expressions are the fundamental building blocks that produce values
     in MUMPS. They can be literals, variable references, operations,
     function calls, or special forms like pattern matching.
+
+    The result_type field is populated by the type inference analysis pass
+    (infer_expression_types). It is None before inference runs and should
+    be set to an ExprResultType value after. Non-value expressions
+    (MFormatControl, MDeviceControl) retain result_type = None.
     """
+
+    result_type: Optional[ExprResultType] = None
 
 
 # =============================================================================

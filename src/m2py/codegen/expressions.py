@@ -319,16 +319,26 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
 
         # Determine base variable access
         if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.array_vars:
-            # MArray in RoutineState: state.A.get(subscripts)
-            base = f"state.{python_name}"
+            if ctx.uses_dynamic_locals:
+                # Dynamic locals: arrays are in state._locals dict
+                base = f"state._locals.get({python_name!r}, MArray())"
+            else:
+                # MArray in RoutineState: state.A.get(subscripts)
+                base = f"state.{python_name}"
+        elif (
+            ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.input_only_vars
+        ):
+            # Input-only vars come from caller's scope, not RoutineState
+            base = f"_scope.get({python_name!r}, MArray())"
         elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             # Access arrays from _scope using MArray.
             # MArray.get(*subscripts) returns "" for undefined (MUMPS semantics).
             # Uses python_name (translated) to match SET statement key format.
             base = f"_scope.get({python_name!r}, MArray())"
         else:
-            # Plain Python local variable (TRAMPOLINE without state_vars)
-            base = python_name
+            # TRAMPOLINE var not in state_vars — read from _scope for
+            # consistency with SET which stores there
+            base = f"_scope.get({python_name!r}, MArray())"
 
         # Use .get() for reading - returns value or "" if undefined
         return f"{base}.get({', '.join(subscript_exprs)})"
@@ -344,14 +354,9 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
         return f"m_var_value(_scope.get({python_name!r}))"
 
-    # Cross-routine input-only variables: Variables that are read but never written
-    # in this routine must come from the caller's scope via external GOTO.
-    # Read from _scope in TRAMPOLINE mode for these variables.
-    if ctx.strategy == GotoStrategy.TRAMPOLINE and var.name in ctx.input_only_vars:
-        return f"m_var_value(_scope.get({python_name!r}))"
-
-    # Fallback: plain Python variable (TRAMPOLINE without state_vars)
-    return python_name
+    # TRAMPOLINE var not in state_vars (including input-only vars from caller's
+    # scope) — read from _scope for consistency with SET which stores there
+    return f"m_var_value(_scope.get({python_name!r}))"
 
 
 def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
@@ -701,13 +706,13 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
         return f"m_div({left}, {right})"
     elif op.operator == "\\":
         # Integer division in MUMPS - uses truncation towards zero, not floor division
-        return f"(int(m_num({left}) / m_num({right})))"
+        return f"m_int_div({left}, {right})"
     elif op.operator == "#":
         # Modulo in MUMPS - uses floor division semantics (unlike Decimal %)
         return f"m_mod({left}, {right})"
     elif op.operator == "**":
         # Exponentiation in MUMPS - base ** exponent
-        return f"(m_num({left}) ** m_num({right}))"
+        return f"m_pow({left}, {right})"
     elif op.operator in ("=", "<", ">"):
         # Comparison: use m_compare helper
         return f'm_compare({left}, "{op.operator}", {right})'

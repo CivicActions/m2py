@@ -79,9 +79,9 @@ class TestResolveNestedIndirection:
 
     def test_subscript_with_variable_reference(self, rt):
         """@A(I) where I=1 resolves correctly."""
-        scope = {"A": MArray(), "I": MArray()}
+        scope = {"A": MArray(), "_a_I": MArray()}
         scope["A"][1].value = "RESULT"
-        scope["I"].value = 1
+        scope["_a_I"].value = 1
         result = rt.resolve_nested_indirection("@A(I)", scope)
         assert result == "RESULT"
 

@@ -410,7 +410,7 @@ def _evaluate_subscript(
         # Fallback for cases without runtime - simple resolution only
         # Strip the @ and look up the variable
         inner_var = var_name[1:]
-        raw_value = _scope.get(inner_var, "")
+        raw_value = _scope.get(NameTranslator.to_python(inner_var), "")
         if isinstance(raw_value, MArray):
             raw_value = raw_value.value
 
@@ -420,7 +420,7 @@ def _evaluate_subscript(
             # This is nested indirection
             next_var = raw_value[1:]
             base_name, subs = _parse_subscripted_name(next_var)
-            next_raw = _scope.get(base_name, "")
+            next_raw = _scope.get(NameTranslator.to_python(base_name), "")
             if isinstance(next_raw, MArray):
                 if subs:
                     evaluated_subs = _evaluate_subscripts(subs, _scope)
@@ -433,7 +433,7 @@ def _evaluate_subscript(
         # raw_value should now be the final variable name - look it up
         if raw_value:
             base_name, subs = _parse_subscripted_name(str(raw_value))
-            final_raw = _scope.get(base_name, "")
+            final_raw = _scope.get(NameTranslator.to_python(base_name), "")
             if isinstance(final_raw, MArray):
                 if subs:
                     evaluated_subs = _evaluate_subscripts(subs, _scope)
@@ -463,7 +463,7 @@ def _evaluate_subscript(
     # Parse the variable name to extract base name and subscripts
     if "(" in var_name:
         base_name, subs = _parse_subscripted_name(var_name)
-        raw_value = _scope.get(base_name, "")
+        raw_value = _scope.get(NameTranslator.to_python(base_name), "")
         if isinstance(raw_value, MArray):
             if subs:
                 # Recursively evaluate subscripts (they might be variable refs too)
@@ -474,7 +474,7 @@ def _evaluate_subscript(
             return raw_value.value
         return raw_value if raw_value != "" else ""
 
-    raw_value = _scope.get(var_name, "")
+    raw_value = _scope.get(NameTranslator.to_python(var_name), "")
     if isinstance(raw_value, MArray):
         return raw_value.value
     return raw_value

@@ -21,7 +21,9 @@ class NameTranslator:
     2. % prefix: %FOO → _pct_FOO
     3. Pure numeric: 01 → _n_01
     4. Python keyword: if → _m_if
-    5. Otherwise: identity (MUMPS names are usually valid Python)
+    5. Python stdlib module: io → io_ (avoids import collision)
+    6. E743 ambiguous name: I → _a_I (avoids lint E743)
+    7. Otherwise: identity (MUMPS names are usually valid Python)
 
     The prefixes are chosen to be unambiguous:
     - _pct_ can't conflict with MUMPS names (MUMPS doesn't allow underscore prefix)
@@ -33,6 +35,28 @@ class NameTranslator:
 
     # Python keywords that need escaping
     PYTHON_KEYWORDS: ClassVar[Set[str]] = set(keyword.kwlist)
+
+    # Python stdlib module names that conflict when used as import targets.
+    # MUMPS routines with these names must be renamed to avoid importing
+    # Python's stdlib instead of the transpiled routine.
+    PYTHON_STDLIB_CONFLICTS: ClassVar[Set[str]] = {
+        "abc",
+        "ast",
+        "copy",
+        "decimal",
+        "io",
+        "json",
+        "math",
+        "os",
+        "re",
+        "string",
+        "sys",
+        "time",
+        "types",
+    }
+
+    # Names that trigger E743 (ambiguous with digits: I→1, O→0, l→1)
+    E743_AMBIGUOUS: ClassVar[Set[str]] = {"I", "O", "l"}
 
     # Pattern for pure numeric strings (valid MUMPS labels, invalid Python)
     _NUMERIC_PATTERN: ClassVar[re.Pattern[str]] = re.compile(r"^[0-9]+$")
@@ -63,6 +87,8 @@ class NameTranslator:
             %NAME  → _pct_NAME  (percent-prefixed)
             01     → _n_01      (numeric-prefixed)
             if     → _m_if      (Python keyword collision)
+            io     → io_        (Python stdlib module collision)
+            I      → _a_I       (E743 ambiguous name)
             FOO    → FOO        (unchanged)
 
         Invariant: from_python(to_python(x)) == x for all valid MUMPS names
@@ -76,6 +102,10 @@ class NameTranslator:
             '_n_01'
             >>> NameTranslator.to_python("if")
             '_m_if'
+            >>> NameTranslator.to_python("io")
+            'io_'
+            >>> NameTranslator.to_python("I")
+            '_a_I'
             >>> NameTranslator.to_python("")
             '_preamble'
         """
@@ -95,7 +125,15 @@ class NameTranslator:
         if keyword.iskeyword(mumps_name):
             return "_m_" + mumps_name
 
-        # Rule 4: Identity (most MUMPS names are valid Python)
+        # Rule 4: Python stdlib module name collision
+        if mumps_name in NameTranslator.PYTHON_STDLIB_CONFLICTS:
+            return mumps_name + "_"
+
+        # Rule 5: E743 ambiguous names (look like digits: I→1, O→0, l→1)
+        if mumps_name in NameTranslator.E743_AMBIGUOUS:
+            return "_a_" + mumps_name
+
+        # Rule 6: Identity (most MUMPS names are valid Python)
         return mumps_name
 
     @staticmethod
@@ -141,6 +179,20 @@ class NameTranslator:
 
         # Reverse rule 3: _m_ → keyword
         if python_name.startswith("_m_"):
+            return python_name[3:]
+
+        # Reverse rule 4: stdlib suffix → strip trailing _
+        if (
+            python_name.endswith("_")
+            and python_name[:-1] in NameTranslator.PYTHON_STDLIB_CONFLICTS
+        ):
+            return python_name[:-1]
+
+        # Reverse rule 5: _a_ → ambiguous name
+        if (
+            python_name.startswith("_a_")
+            and python_name[3:] in NameTranslator.E743_AMBIGUOUS
+        ):
             return python_name[3:]
 
         # Identity

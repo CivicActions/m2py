@@ -178,6 +178,11 @@ def generate_python(
     parser.analyze_variables(routine, compute_transitive=True)
     parser.compute_signatures(routine)
 
+    # Step 7: Infer expression-level types for type annotations
+    from m2py.analysis.type_inference import infer_expression_types
+
+    infer_expression_types(routine)
+
     # Check for unsupported GOTO patterns
     _check_unsupported_gotos(routine)
 
