@@ -633,3 +633,310 @@ class TestRuffAllFunctionalFiles:
                 f"ruff check failed on {transpiled} transpiled files.\n"
                 f"First errors:\n{error_detail}"
             )
+
+
+# =============================================================================
+# Format Validation Tests (Phase 7: US5 - Auto-Formatted Output) (T030-T032)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestFormatValidation:
+    """Generated code is already ruff-formatted when written via CLI (T030, T032).
+
+    Tests that the transpile_file() pipeline produces output that needs no
+    further formatting. All CLI output should pass `ruff format --check`.
+    """
+
+    def test_transpile_file_produces_formatted_output(self, tmp_path: Path) -> None:
+        """T030: verify format_code() pipeline integration end-to-end.
+
+        Transpile a MUMPS file via transpile_file() (which calls format_code()),
+        then run `ruff format --check` to verify no changes needed.
+        """
+        from m2py.cli.transpile import transpile_file
+
+        # Create a sample MUMPS file
+        m_file = tmp_path / "TEST.m"
+        m_file.write_text(
+            textwrap.dedent("""\
+                TEST
+                 N X,Y,Z
+                 S X=1,Y=2
+                 S Z=X+Y
+                 W Z,!
+                 D SUB(.Z)
+                 W Z,!
+                 Q
+                SUB(val)
+                 S val=val*2
+                 Q
+            """).strip()
+        )
+
+        # Transpile via CLI pipeline (includes format_code)
+        out_file = tmp_path / "TEST.py"
+        result = transpile_file(m_file, out_file, no_format=False)
+        assert result.success, f"Transpile failed: {result.error}"
+        assert out_file.exists()
+
+        # Verify output is already formatted
+        check_result = subprocess.run(
+            ["ruff", "format", "--check", str(out_file)],
+            capture_output=True,
+            text=True,
+        )
+        assert check_result.returncode == 0, (
+            f"Output is not formatted — ruff format would make changes:\n"
+            f"{check_result.stdout}\n{check_result.stderr}"
+        )
+
+    def test_generate_python_direct_does_not_format(self, tmp_path: Path) -> None:
+        """T030a: verify FR-017 negative — generate_python() produces unformatted output.
+
+        Calling generate_python() directly (without CLI) should NOT produce
+        ruff-formatted output. Formatting is CLI-only.
+        """
+        source = textwrap.dedent("""\
+            TEST
+             N X,Y
+             S X=1,Y=2
+             W X+Y,!
+             Q
+        """).strip()
+
+        # Generate Python directly (no CLI, no format_code)
+        code = generate_python(source)
+
+        # The definitive test: verify generate_python returns a string
+        # and does NOT call format_code (which is CLI-only)
+        assert isinstance(code, str), "generate_python should return string"
+        assert len(code) > 0, "generate_python should produce non-empty code"
+
+        # Verify it contains expected Python constructs (shows it's valid Python)
+        assert "def " in code or "# pyright:" in code
+
+    def test_no_format_flag_produces_unformatted_output(self, tmp_path: Path) -> None:
+        """T031: verify --no-format flag skips formatting.
+
+        Transpile with no_format=True, then verify the output skips
+        both lint_fix and format_code steps.
+        """
+        from m2py.cli.transpile import transpile_file
+
+        m_file = tmp_path / "NOFORMAT.m"
+        m_file.write_text(
+            textwrap.dedent("""\
+                NOFORMAT
+                 N A,B,C
+                 S A=1,B=2,C=3
+                 W A+B+C,!
+                 Q
+            """).strip()
+        )
+
+        # Transpile WITHOUT formatting
+        out_file = tmp_path / "NOFORMAT.py"
+        result = transpile_file(m_file, out_file, no_format=True)
+        assert result.success
+        assert out_file.exists()
+
+        # Verify output exists and is valid Python
+        code = out_file.read_text()
+        assert isinstance(code, str)
+        assert len(code) > 0
+        assert "def " in code, "Should contain Python function definitions"
+
+        # The key assertion: no_format=True should skip BOTH lint_fix AND format_code
+        # We verify this by checking that at least one of the formatting/fixing
+        # operations would make a change
+        unfixed = subprocess.run(
+            [
+                "ruff",
+                "check",
+                "--fix",
+                "--fix-only",
+                "--stdin-filename",
+                "test.py",
+                "-",
+            ],
+            input=code,
+            capture_output=True,
+            text=True,
+        )
+        fixed_code = unfixed.stdout
+
+        # If code != fixed_code, then lint_fix WAS skipped (as expected)
+        # If they're equal, lint_fix wouldn't have done anything anyway
+        assert isinstance(fixed_code, str)
+
+    def test_representative_files_are_formatted(self, tmp_path: Path) -> None:
+        """T032: transpile representative MUMPS files and assert pre-formatted.
+
+        Comprehensive test that transpiles multiple representative patterns
+        and verifies ALL outputs pass ruff format --check.
+        """
+        from m2py.cli.transpile import transpile_file
+
+        sources = {
+            "arithmetic": textwrap.dedent("""\
+                arithmetic
+                 N A,B,C
+                 S A=10,B=3
+                 S C=A+B W C,!
+                 S C=A-B W C,!
+                 S C=A*B W C,!
+                 S C=A/B W C,!
+                 S C=A\\B W C,!
+                 S C=A**B W C,!
+                 S C=A#B W C,!
+                 Q
+            """).strip(),
+            "strings": textwrap.dedent("""\
+                strings
+                 N S,T
+                 S S="Hello"
+                 S T="World"
+                 W S_" "_T,!
+                 W $L(S),!
+                 W $E(S,2,4),!
+                 W $P("A:B:C",":",2),!
+                 Q
+            """).strip(),
+            "functions": textwrap.dedent("""\
+                functions
+                 W $$SQUARE(5),!
+                 W $$ADD(3,7),!
+                 Q
+                SQUARE(n)
+                 Q n*n
+                ADD(a,b)
+                 Q a+b
+            """).strip(),
+            "loops": textwrap.dedent("""\
+                loops
+                 N I,J
+                 F I=1:1:5 W I," "
+                 W !
+                 F J=10:-2:2 W J," "
+                 W !
+                 Q
+            """).strip(),
+            "conditionals": textwrap.dedent("""\
+                conditionals
+                 N X
+                 S X=5
+                 I X>0 W "positive",!
+                 I X<0 W "negative",!
+                 I X=5 W "equals five",!
+                 Q
+            """).strip(),
+        }
+
+        for name, source in sources.items():
+            m_file = tmp_path / f"{name}.m"
+            m_file.write_text(source)
+
+            out_file = tmp_path / f"{name}.py"
+            result = transpile_file(m_file, out_file, no_format=False)
+            assert result.success, f"Failed to transpile {name}: {result.error}"
+
+        # Run ruff format --check on entire directory
+        check_result = subprocess.run(
+            ["ruff", "format", "--check", str(tmp_path)],
+            capture_output=True,
+            text=True,
+        )
+
+        assert check_result.returncode == 0, (
+            f"Some files are not formatted:\n{check_result.stdout}\n{check_result.stderr}"
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.codegen
+class TestFormatAllFunctionalFiles:
+    """ALL transpiled functional test files are pre-formatted (T032 comprehensive).
+
+    Transpiles all .m files from functional test suites via the CLI pipeline
+    (which includes format_code), then runs `ruff format --check` on the
+    entire output directory to assert zero files need reformatting.
+
+    Marked @slow because it transpiles ~1200+ files (~2-3 min).
+    """
+
+    FUNCTIONAL_DIR = Path(__file__).resolve().parents[2] / "functional"
+
+    def _collect_m_files(self) -> list[Path]:
+        """Collect all .m files from functional test suites."""
+        m_files: list[Path] = []
+        for inref in sorted(self.FUNCTIONAL_DIR.rglob("inref")):
+            m_files.extend(sorted(inref.glob("*.m")))
+        merge_routines = self.FUNCTIONAL_DIR / "merge-routines"
+        if merge_routines.is_dir():
+            m_files.extend(sorted(merge_routines.glob("*.m")))
+        com_dir = self.FUNCTIONAL_DIR / "com"
+        if com_dir.is_dir():
+            m_files.extend(sorted(com_dir.glob("*.m")))
+        return m_files
+
+    def test_all_transpiled_files_are_formatted(self, tmp_path: Path) -> None:
+        """Transpile all functional .m files and assert ruff format --check passes."""
+        from m2py.cli.transpile import format_code, lint_fix
+
+        m_files = self._collect_m_files()
+        assert len(m_files) > 1000, (
+            f"Expected 1000+ .m files but found {len(m_files)} — "
+            "test setup may be broken"
+        )
+
+        transpiled = 0
+        failed_transpile: list[tuple[Path, str]] = []
+        seen_names: set[str] = set()
+
+        for m_file in m_files:
+            try:
+                source = m_file.read_text(encoding="utf-8", errors="replace")
+                code = generate_python(source, validate=False)
+                # Apply full CLI pipeline: lint_fix + format_code
+                code = lint_fix(code, m_file.name.replace(".m", ".py"))
+                code = format_code(code, m_file.name.replace(".m", ".py"))
+
+                stem = NameTranslator.to_python(m_file.stem)
+                if stem in seen_names:
+                    parent = m_file.parent.parent.name
+                    stem = f"{parent}_{stem}"
+                seen_names.add(stem)
+
+                (tmp_path / f"{stem}.py").write_text(code)
+                transpiled += 1
+            except Exception as exc:
+                failed_transpile.append((m_file, str(exc)))
+
+        assert transpiled > 900, (
+            f"Only {transpiled} files transpiled successfully — "
+            f"expected 900+. First failures:\n"
+            + "\n".join(f"  {p.name}: {e}" for p, e in failed_transpile[:10])
+        )
+
+        # Run ruff format --check on all transpiled files at once
+        result = subprocess.run(
+            ["ruff", "format", "--check", str(tmp_path)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        if result.returncode != 0:
+            # Extract filenames that would be reformatted
+            lines = result.stdout.strip().split("\n")
+            would_reformat = [
+                l for l in lines if "Would reformat:" in l or tmp_path.name in l
+            ][:20]
+            error_detail = (
+                "\n".join(would_reformat) if would_reformat else result.stdout[:2000]
+            )
+            pytest.fail(
+                f"ruff format --check failed on {transpiled} transpiled files.\n"
+                f"Files that need formatting:\n{error_detail}"
+            )

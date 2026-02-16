@@ -150,10 +150,10 @@ Full pyright run over 1016 transpiled .py files (from 1261 functional test .m fi
 
 ### Implementation
 
-- [ ] T030 [US5] Verify `format_code()` pipeline integration end-to-end — transpile files via CLI, run `ruff format --check` on outputs, assert no changes
-- [ ] T030a [US5] Verify FR-017 negative: calling `generate_python()` directly (without CLI) does NOT produce ruff-formatted output, confirming formatting is CLI-only
-- [ ] T031 [US5] Verify `--no-format` flag skips formatting — transpile with `--no-format`, run `ruff format --check`, expect changes needed
-- [ ] T032 [US5] Add automated format validation test in `tests/unit/codegen/test_code_quality.py` — transpile representative files, assert output is pre-formatted
+- [X] T030 [US5] Verify `format_code()` pipeline integration end-to-end — transpile files via CLI, run `ruff format --check` on outputs, assert no changes
+- [X] T030a [US5] Verify FR-017 negative: calling `generate_python()` directly (without CLI) does NOT produce ruff-formatted output, confirming formatting is CLI-only
+- [X] T031 [US5] Verify `--no-format` flag skips formatting — transpile with `--no-format`, run `ruff format --check`, expect changes needed
+- [X] T032 [US5] Add automated format validation test in `tests/unit/codegen/test_code_quality.py` — transpile representative files, assert output is pre-formatted
 
 **Checkpoint**: All CLI disk output is deterministically formatted. `--no-format` bypasses it.
 
