@@ -192,3 +192,8 @@ MyLabel W "FOUND" Q"""
         result = execute_mumps(code)
         assert "MyLabel" in result.output or "FOUND" in result.output
         assert result.success is True
+
+    def test_text_data_lines(self, execute_mumps):
+        """$T(DATA+0) returns data label line (coverage: runtime $TEXT path)."""
+        result = execute_mumps("TEST\n W $T(DATA+0),!\n Q\nDATA\n ;;line one\n")
+        assert "DATA" in result.output

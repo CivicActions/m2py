@@ -1850,6 +1850,41 @@ class TestMultiTargetGoto:
         assert result.output == "C"
 
 
+@pytest.mark.codegen
+class TestForwardGotoIfCodegen:
+    """Forward GOTO restructured as if/else — multi-condition and argumentless IF."""
+
+    def test_forward_goto_multi_condition_true(self, execute_mumps):
+        """I 1,1 G END — multi-condition IF all true, skips intermediate lines."""
+        result = execute_mumps(
+            'TEST\n I 1,1 G END\n W "skipped",!\nEND\n W "done",!\n Q\n'
+        )
+        assert "done" in result.output
+        assert "skipped" not in result.output
+
+    def test_forward_goto_multi_condition_false(self, execute_mumps):
+        """I 0,1 G END — first condition false, runs skipped lines."""
+        result = execute_mumps('TEST\n I 0,1 G END\n W "ran",!\nEND\n W "done",!\n Q\n')
+        assert "ran" in result.output
+        assert "done" in result.output
+
+    def test_forward_goto_argumentless_if_true(self, execute_mumps):
+        """I (argless) with $T=1 then GOTO — uses existing _test."""
+        result = execute_mumps(
+            'TEST\n S X=1\n I X\n I  G END\n W "skipped",!\nEND\n W "done",!\n Q\n'
+        )
+        assert "done" in result.output
+        assert "skipped" not in result.output
+
+    def test_forward_goto_argumentless_if_false(self, execute_mumps):
+        """I (argless) with $T=0 — runs intermediate lines."""
+        result = execute_mumps(
+            'TEST\n S X=0\n I X\n I  G END\n W "ran",!\nEND\n W "done",!\n Q\n'
+        )
+        assert "ran" in result.output
+        assert "done" in result.output
+
+
 # =============================================================================
 # XECUTE with postconditions
 # =============================================================================

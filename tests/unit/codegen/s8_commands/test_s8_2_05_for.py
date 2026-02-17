@@ -549,6 +549,16 @@ class TestIndirectForCodegen:
         assert result.output == "XYZ"
 
 
+@pytest.mark.codegen
+class TestForSubscriptedVar:
+    """FOR with subscripted loop variable (coverage: codegen FOR path)."""
+
+    def test_for_with_subscripted_var(self, execute_mumps):
+        """F A(1)=1:1:3 — loop var with subscripts."""
+        result = execute_mumps("TEST\n F A(1)=1:1:3 W A(1)\n Q\n")
+        assert result.output == "123"
+
+
 # =============================================================================
 # Multi-target GOTO
 # =============================================================================

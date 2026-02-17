@@ -57,3 +57,28 @@ TEST
         assert "_rt.open_device" in python_code
         assert "_test =" in python_code  # Timed OPEN sets $TEST
         assert "5" in python_code  # Timeout value
+
+
+@pytest.mark.codegen
+class TestOpenE2E:
+    """E2E file I/O tests (coverage: codegen L5740-5875, runtime device paths)."""
+
+    def test_open_write_read_close(self, execute_mumps, tmp_path):
+        """Full file I/O cycle: OPEN → USE → WRITE → CLOSE → reopen → READ."""
+        f = tmp_path / "test.txt"
+        result = execute_mumps(
+            "TEST\n"
+            f' S F="{f}"\n'
+            ' O F:("NEWVERSION")\n'
+            " U F\n"
+            ' W "hello from MUMPS",!\n'
+            " C F\n"
+            ' O F:("READONLY")\n'
+            " U F\n"
+            " R X\n"
+            " C F\n"
+            " U 0\n"
+            " W X,!\n"
+            " Q\n"
+        )
+        assert "hello from MUMPS" in result.output

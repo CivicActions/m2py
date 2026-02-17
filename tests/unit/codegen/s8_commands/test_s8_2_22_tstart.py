@@ -89,6 +89,13 @@ class TestTransactionCodegen:
         result = execute_mumps("TEST\n\tS ^X=0\n\tTS\n\tS ^X=1\n\tTRO\n\tW ^X\n\tQ\n")
         assert result.output == "0"
 
+    def test_tstart_with_restart_vars(self, execute_mumps):
+        """TS (X,Y) — transactional restart variables (coverage: analyzer L1895-1980)."""
+        result = execute_mumps(
+            "TEST\n S X=1,Y=2\n TS (X,Y)\n S X=99\n TC\n W X,!\n Q\n"
+        )
+        assert "99" in result.output
+
 
 # =============================================================================
 # READ codegen (generate_python only to verify structure)

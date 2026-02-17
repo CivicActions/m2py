@@ -39,11 +39,11 @@ class TestSimpleFunctions:
         return _make_ctx(GotoStrategy.SIMPLE_FUNCTIONS)
 
     def test_read_simple(self, ctx):
-        assert var_read_expr("X", ctx) == "m_var_value(_scope.get('X'))"
+        assert var_read_expr("X", ctx) == "m_var_value(_scope['X'])"
 
     def test_read_percent_var(self, ctx):
         result = var_read_expr("%FOO", ctx)
-        assert "_scope.get('_pct_FOO')" in result
+        assert "_scope['_pct_FOO']" in result
 
     def test_write_simple(self, ctx):
         result = var_write_stmt("X", "42", ctx)
@@ -74,7 +74,7 @@ class TestTrampolineDynamic:
         return _make_ctx(GotoStrategy.TRAMPOLINE, uses_dynamic_locals=True)
 
     def test_read_simple(self, ctx):
-        assert var_read_expr("X", ctx) == "m_var_value(state._locals.get('X'))"
+        assert var_read_expr("X", ctx) == "m_var_value(state._locals['X'])"
 
     def test_write_simple(self, ctx):
         result = var_write_stmt("X", "42", ctx)
@@ -121,7 +121,7 @@ class TestTrampolineStatic:
 
     def test_unknown_var_falls_through_to_scope(self, ctx):
         """Vars not in state_vars use _scope even in TRAMPOLINE."""
-        assert var_read_expr("Z", ctx) == "m_var_value(_scope.get('Z'))"
+        assert var_read_expr("Z", ctx) == "m_var_value(_scope['Z'])"
 
     def test_scope_dict(self, ctx):
         assert scope_dict_expr(ctx) == "_scope"

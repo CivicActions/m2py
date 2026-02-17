@@ -1580,5 +1580,50 @@ class TestSetArgumentIndirection:
 
 
 # =============================================================================
+# $PIECE with multi-character delimiter (coverage: codegen L1405-1485)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestSetPieceMultiCharDelimiter:
+    """SET $PIECE with multi-character delimiter."""
+
+    def test_set_piece_multichar_delim(self, execute_mumps):
+        """S $P(X,"::",2)="NEW" — multi-character delimiter."""
+        result = execute_mumps(
+            'TEST\n S X="a::b::c"\n S $P(X,"::",2)="NEW"\n W X,!\n Q\n'
+        )
+        assert "a::NEW::c" in result.output
+
+
+@pytest.mark.codegen
+class TestSetPieceNakedGlobalLHS:
+    """SET $PIECE with naked global as LHS target."""
+
+    def test_set_piece_naked_global_lhs(self, execute_mumps):
+        """S $P(^(1),":",2)="Z" — naked global LHS in SET $PIECE."""
+        result = execute_mumps(
+            'TEST\n S ^G(1)="A:B:C"\n S Y=^G(1)\n'
+            ' S $P(^(1),":",2)="Z"\n W ^G(1),!\n Q\n'
+        )
+        assert "A:Z:C" in result.output
+
+
+@pytest.mark.codegen
+class TestSetSpecialVarsCodegen:
+    """SET special variables $ZERROR, $ZSTATUS, $ZPOSITION."""
+
+    def test_set_zerror(self, execute_mumps):
+        """S $ZE="custom" — sets $ZERROR."""
+        result = execute_mumps('TEST\n S $ZE="custom error"\n W $ZE,!\n Q\n')
+        assert "custom error" in result.output
+
+    def test_set_ztrap_string(self, execute_mumps):
+        """S $ZT="" — sets $ZTRAP to empty string (disables trap). YDB-validated."""
+        result = execute_mumps('TEST\n S $ZT=""\n W "ok",!\n Q\n')
+        assert "ok" in result.output
+
+
+# =============================================================================
 # $DATA / $GET with indirection
 # =============================================================================

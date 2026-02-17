@@ -445,3 +445,95 @@ class TestMain:
         import ast
 
         ast.parse((out / "EMPTY.py").read_text())
+
+
+# =============================================================================
+# Edge Case Tests for Coverage (T039)
+# =============================================================================
+
+
+class TestEdgeCases:
+    """Tests for edge cases and error paths to improve coverage."""
+
+    def test_lint_fix_with_syntax_error(self):
+        """lint_fix handles invalid Python gracefully."""
+        # Invalid Python - ruff will still try to process
+        source = "def broken(\n"
+        result = lint_fix(source, "test.py")
+        # Should return something (either fixed or original)
+        assert isinstance(result, str)
+
+    def test_format_code_with_syntax_error(self):
+        """format_code handles invalid Python gracefully."""
+        source = "def broken(\n"
+        result = format_code(source, "test.py")
+        # Should return original on failure
+        assert isinstance(result, str)
+
+    def test_transpile_paths_no_m_files_in_dir(self, tmp_dir: Path):
+        """transpile_paths with directory containing no .m files."""
+        d = tmp_dir / "no_m_files"
+        d.mkdir()
+        (d / "readme.txt").write_text("not a mumps file")
+        (d / "other.py").write_text("# python file")
+
+        summary = transpile_paths([str(d)])
+        assert summary.total == 0
+        assert summary.all_ok  # Empty is considered OK
+
+    def test_compute_output_path_file_outside_base_dir(self, tmp_dir: Path):
+        """Test _compute_output_path when input is not under base_dir."""
+        from m2py.cli.transpile import _compute_output_path
+
+        # Create two separate directories
+        dir_a = tmp_dir / "dir_a"
+        dir_b = tmp_dir / "dir_b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+
+        input_file = dir_a / "TEST.m"
+        input_file.touch()
+
+        # output_dir exists but input_file is not under base_dir (dir_b)
+        output_dir = tmp_dir / "output"
+        output_dir.mkdir()
+
+        result = _compute_output_path(input_file, dir_b, output_dir)
+        # Since input is not under base_dir, it uses flat output
+        assert result == output_dir / "TEST.py"
+
+    def test_transpile_paths_with_verbose(self, tmp_dir: Path, capsys):
+        """transpile_paths verbose output."""
+        # Create a file
+        f = tmp_dir / "VERBOSE.m"
+        f.write_text("VERBOSE\n WRITE 1,!\n QUIT\n")
+
+        # Create output dir
+        out = tmp_dir / "verbose_out"
+
+        # Use main with verbose flag
+        rc = main([str(f), "-o", str(out), "-v"])
+        assert rc == 0
+
+        captured = capsys.readouterr()
+        assert "Transpiling" in captured.err
+
+    def test_transpile_file_write_permission_error(self, tmp_dir: Path, monkeypatch):
+        """transpile_file handles write permission errors."""
+        f = tmp_dir / "WRITERR.m"
+        f.write_text("WRITERR\n QUIT\n")
+        out = tmp_dir / "readonly" / "WRITERR.py"
+
+        # Mock mkdir to raise OSError
+        original_mkdir = Path.mkdir
+
+        def mock_mkdir(self, *args, **kwargs):
+            if "readonly" in str(self):
+                raise OSError("Permission denied")
+            return original_mkdir(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "mkdir", mock_mkdir)
+
+        result = transpile_file(f, out)
+        assert not result.success
+        assert "Cannot write file" in (result.error or "")

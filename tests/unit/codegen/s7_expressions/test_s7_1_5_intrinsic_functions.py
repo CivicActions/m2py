@@ -1317,6 +1317,38 @@ class TestNextFunction:
         assert result.output == "-1"
 
 
+@pytest.mark.codegen
+class TestOrderReverseStep:
+    """$ORDER reverse step (coverage: runtime $ORDER reverse path)."""
+
+    def test_order_reverse_step(self, execute_mumps):
+        """$O(A(5),-1) — previous subscript."""
+        result = execute_mumps(
+            'TEST\n S A(1)="a",A(3)="b",A(5)="c"\n W $O(A(5),-1),!\n Q\n'
+        )
+        assert result.output.strip() == "3"
+
+
+@pytest.mark.codegen
+class TestQueryComposite:
+    """$QUERY composite traversal pattern."""
+
+    def test_query_forward_sequence(self, execute_mumps):
+        """$Q chained calls — composite $QUERY traversal without indirection."""
+        result = execute_mumps(
+            "TEST\n"
+            ' S A(1)="a",A(2)="b",A(3)="c"\n'
+            ' S X=$Q(A("")) W X,!  ; first key\n'
+            " S X=$Q(A(1)) W X,!   ; second\n"
+            " S X=$Q(A(2)) W X,!   ; third\n"
+            " S X=$Q(A(3)) W X,!   ; past end\n"
+            " Q\n"
+        )
+        lines = result.output.strip().splitlines()
+        assert len(lines) >= 3
+        assert "A(1)" in lines[0]
+
+
 # =============================================================================
 # Indirection: pattern match, name kill, name write
 # =============================================================================

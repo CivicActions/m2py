@@ -8,13 +8,18 @@ import pytest
 from m2py.parser.line_parser import parse_commands_from_line
 from m2py.analysis.semantic_analyzer import analyze_command
 from m2py.asg.statements import (
-    MZWriteStatement,
+    MZAllocateStatement,
+    MZBreakStatement,
+    MZDeallocateStatement,
+    MZGotoStatement,
     MZHaltStatement,
-    MZLoadStatement,
     MZLinkStatement,
+    MZLoadStatement,
+    MZPrintStatement,
     MZShowStatement,
-    MZTStartStatement,
     MZTCommitStatement,
+    MZTStartStatement,
+    MZWriteStatement,
 )
 
 
@@ -117,3 +122,83 @@ class TestZCommandsAnalysis:
         # ZTCOMMIT full keyword
         stmt4 = analyze_first_command("ZTCOMMIT")
         assert isinstance(stmt4, MZTCommitStatement)
+
+    def test_zbreak_analysis(self):
+        """ZBREAK command produces MZBreakStatement with args."""
+        stmt = analyze_first_command('ZB TEST:"W 1":3')
+        assert isinstance(stmt, MZBreakStatement)
+        assert len(stmt.args) >= 1
+        arg = stmt.args[0]
+        assert arg.location is not None
+        assert arg.action is not None
+        assert arg.count is not None
+
+    def test_zbreak_simple_label(self):
+        """ZBREAK with bare label."""
+        stmt = analyze_first_command("ZB LABEL")
+        assert isinstance(stmt, MZBreakStatement)
+        assert len(stmt.args) >= 1
+        assert stmt.args[0].location is not None
+
+    def test_zprint_analysis(self):
+        """ZPRINT command produces MZPrintStatement with label/offset/routine."""
+        stmt = analyze_first_command("ZP TEST")
+        assert isinstance(stmt, MZPrintStatement)
+        assert len(stmt.args) >= 1
+        assert stmt.args[0].start_label == "TEST"
+
+    def test_zprint_with_routine(self):
+        """ZPRINT label^routine."""
+        stmt = analyze_first_command("ZP TEST^MYRTN")
+        assert isinstance(stmt, MZPrintStatement)
+        arg = stmt.args[0]
+        assert arg.start_label == "TEST"
+        assert arg.routine == "MYRTN"
+
+    def test_zprint_with_offset(self):
+        """ZPRINT label+offset."""
+        stmt = analyze_first_command("ZP TEST+3")
+        assert isinstance(stmt, MZPrintStatement)
+        arg = stmt.args[0]
+        assert arg.start_label == "TEST"
+        assert arg.start_offset is not None
+
+    def test_zgoto_with_level_and_target(self):
+        """ZGOTO level:target produces MZGotoStatement with level and target."""
+        stmt = analyze_first_command("ZGOTO 1:DONE")
+        assert isinstance(stmt, MZGotoStatement)
+        assert len(stmt.args) >= 1
+        arg = stmt.args[0]
+        assert arg.level is not None
+        assert arg.target is not None
+
+    def test_zgoto_level_only(self):
+        """ZGOTO 0 — unwind to level 0."""
+        stmt = analyze_first_command("ZGOTO 0")
+        assert isinstance(stmt, MZGotoStatement)
+        assert len(stmt.args) >= 1
+        assert stmt.args[0].level is not None
+
+    def test_zallocate_analysis(self):
+        """ZALLOCATE produces MZAllocateStatement with lock targets."""
+        stmt = analyze_first_command("ZA ^A,^B")
+        assert isinstance(stmt, MZAllocateStatement)
+        assert len(stmt.targets) >= 2
+        # ZALLOCATE always forces lockop="+"
+        for t in stmt.targets:
+            assert t.lockop == "+"
+
+    def test_zallocate_with_timeout(self):
+        """ZA ^X:5 — ZALLOCATE with timeout."""
+        stmt = analyze_first_command("ZA ^X:5")
+        assert isinstance(stmt, MZAllocateStatement)
+        assert len(stmt.targets) >= 1
+
+    def test_zdeallocate_analysis(self):
+        """ZDEALLOCATE produces MZDeallocateStatement with lock targets."""
+        stmt = analyze_first_command("ZD ^A,^B")
+        assert isinstance(stmt, MZDeallocateStatement)
+        assert len(stmt.targets) >= 2
+        # ZDEALLOCATE always forces lockop="-"
+        for t in stmt.targets:
+            assert t.lockop == "-"

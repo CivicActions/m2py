@@ -499,3 +499,29 @@ class TestZKillCodegen:
         # After ZKILL, X has no value but X(1) still exists
         # $D(X) should be 10 (descendants only), $D(X(1)) should be 1
         assert result.success is True
+
+    def test_zkill_nonexistent_path(self, execute_mumps):
+        """ZK on non-existent path is a no-op (coverage: runtime ZKILL path)."""
+        result = execute_mumps('TEST\n S A(1)="x"\n ZK A(9,9)\n W $D(A(1)),!\n Q\n')
+        assert result.output.strip() == "1"
+
+    def test_zkill_root_node(self, execute_mumps):
+        """ZK without subscripts clears root value, preserves children."""
+        result = execute_mumps(
+            'TEST\n S A="root",A(1)="child"\n ZK A\n W $D(A),!\n Q\n'
+        )
+        # $D = 10 — no value but has children
+        assert result.output.strip() == "10"
+
+    def test_kill_subscripted_with_data_check(self, execute_mumps):
+        """K A(1) — kills subtree, sibling survives (coverage: codegen L4640-4670)."""
+        result = execute_mumps(
+            'TEST\n S A(1)="x",A(2)="y"\n K A(1)\n W $D(A(1))," ",$D(A(2)),!\n Q\n'
+        )
+        assert "0" in result.output  # A(1) gone
+        assert "1" in result.output  # A(2) still there
+
+    def test_kill_whole_variable_with_data_check(self, execute_mumps):
+        """K A — kills entire variable tree."""
+        result = execute_mumps("TEST\n S A=1,A(1)=2\n K A\n W $D(A),!\n Q\n")
+        assert result.output.strip() == "0"

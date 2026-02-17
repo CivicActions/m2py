@@ -2305,11 +2305,12 @@ class TestZShowLive:
         assert "X=" in output
 
     def test_zshow_s_shows_stack(self):
-        """ZSHOW "S" shows stack trace."""
+        """ZSHOW "S" shows stack trace (MUMPS-style frames)."""
         rt = MUMPSRuntime()
         rt.zshow("S", {})
         output = "".join(rt._output)
-        assert "Stack trace" in output
+        # With no stack frames, a single newline is emitted
+        assert output == "\n"
 
     def test_zshow_d_shows_devices(self):
         """ZSHOW "D" shows device info."""
@@ -2325,6 +2326,10 @@ class TestZShowLive:
         output = "".join(rt._output)
         assert "$HOROLOG=" in output
         assert "$JOB=" in output
+        assert "$ECODE=" in output
+        assert "$ETRAP=" in output
+        assert "$TEST=" in output
+        assert "$TLEVEL=" in output
 
 
 # =============================================================================

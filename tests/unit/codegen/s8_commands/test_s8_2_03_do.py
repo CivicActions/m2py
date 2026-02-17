@@ -883,7 +883,7 @@ class TestPartialIndirection:
         assert "importlib.import_module" in code
 
         # Should evaluate the RTN variable
-        assert "_scope.get('RTN'" in code
+        assert "_scope['RTN']" in code or "_scope.get('RTN'" in code
 
         # Should handle the call target via runtime resolve_do_targets
         assert "resolve_do_targets" in code
@@ -1365,3 +1365,8 @@ class TestTrampolineByRefPass2:
             'TEST\n S X=1,Y=2 D SUB(.X,.Y) W X,",",Y Q\nSUB(A,B)\n S A=A+10,B=B+20 Q\n'
         )
         assert result.output == "11,22"
+
+    def test_do_with_postcondition(self, execute_mumps):
+        """D:cond SUB — postconditioned DO (coverage: codegen DO path)."""
+        result = execute_mumps('TEST\n S X=1\n D:X SUB\n Q\nSUB\n W "called",!\n Q\n')
+        assert "called" in result.output

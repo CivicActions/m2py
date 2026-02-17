@@ -921,9 +921,9 @@ NEXT
  Q"""
         code = generate_python(source)
 
-        # Should use _scope.get for input-only variable X
-        # The pattern is m_var_value(_scope.get("X"))
-        assert '_scope.get("X")' in code or "_scope.get('X')" in code
+        # Should use _scope[] for input-only variable X
+        # The pattern is m_var_value(_scope["X"])
+        assert '_scope["X"]' in code or "_scope['X']" in code
 
     def test_written_var_uses_state_not_scope(self):
         """Variable that is written uses state.VAR, not _scope.get().
