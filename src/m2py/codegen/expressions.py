@@ -7,7 +7,7 @@ extrinsic functions, and intrinsic function dispatch ($LENGTH, $PIECE, etc.).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Dict, List
+from typing import TYPE_CHECKING, Any, Callable, Dict, List
 
 from m2py.asg.enums import LiteralType, PassingMode
 from m2py.asg.expressions import (
@@ -217,7 +217,108 @@ def generate_expr(
     elif isinstance(expr, MStructuredSystemVariable):
         return _generate_ssvn(expr, ctx)
     else:
-        raise NotImplementedError(f"Unsupported expression type: {type(expr).__name__}")
+        # Defensive handlers for textX parser nodes that should have been
+        # unwrapped by the semantic analyzer but survived into codegen.
+        # These are dynamically-typed textX classes, not MExpr subclasses,
+        # so we cast to Any to access their attributes without type errors.
+        expr_type = type(expr).__name__
+        textx_node: Any = expr  # type: ignore[assignment]
+        if expr_type == "ParenExpr":
+            # ParenExpr wraps (expr) — unwrap and recurse
+            return generate_expr(
+                textx_node.expr,
+                ctx,
+                if_condition=if_condition,
+                subscript_context=subscript_context,
+            )
+        elif expr_type in ("UnaryPrefixedExpr", "UnaryExpr"):
+            # UnaryPrefixedExpr / UnaryExpr: has operators list + operand
+            # Build MUnaryOp chain from operators and operand
+            inner = generate_expr(
+                textx_node.operand,
+                ctx,
+                if_condition=if_condition,
+                subscript_context=subscript_context,
+            )
+            # Apply operators right-to-left (innermost first)
+            # Operators may be raw strings or UnaryOp objects with .op attribute
+            for op_item in reversed(textx_node.operators):
+                op = op_item.op if hasattr(op_item, "op") else str(op_item)
+                if op == "'":
+                    inner = f"int(not m_truth({inner}))"
+                elif op == "-":
+                    inner = f"m_sub(0, {inner})"
+                elif op == "+":
+                    inner = f"m_num({inner})"
+                else:
+                    raise NotImplementedError(f"Unsupported unary operator: {op}")
+            return inner
+        elif expr_type == "OffsetParenExpr":
+            # OffsetParenExpr: same as ParenExpr but in offset context
+            return generate_expr(
+                textx_node.expr,
+                ctx,
+                if_condition=if_condition,
+                subscript_context=subscript_context,
+            )
+        elif expr_type == "Expr":
+            # Expr: grammar base rule with left=UnaryExpr and tail=ExprTail*
+            # When no tail, just delegate to left. With tail, run through analyzer.
+            if not (hasattr(textx_node, "tail") and textx_node.tail):
+                return generate_expr(
+                    textx_node.left,
+                    ctx,
+                    if_condition=if_condition,
+                    subscript_context=subscript_context,
+                )
+            # Has tail — run through semantic analyzer to build proper ASG nodes
+            from m2py.analysis.semantic_analyzer import analyze_expression
+
+            analyzed = analyze_expression(textx_node)
+            return generate_expr(
+                analyzed,
+                ctx,
+                if_condition=if_condition,
+                subscript_context=subscript_context,
+            )
+        elif expr_type == "OffsetExpr":
+            # OffsetExpr: offset version of Expr (same structure: left + tail)
+            if not (hasattr(textx_node, "tail") and textx_node.tail):
+                return generate_expr(
+                    textx_node.left,
+                    ctx,
+                    if_condition=if_condition,
+                    subscript_context=subscript_context,
+                )
+            from m2py.analysis.semantic_analyzer import analyze_expression
+
+            analyzed = analyze_expression(textx_node)
+            return generate_expr(
+                analyzed,
+                ctx,
+                if_condition=if_condition,
+                subscript_context=subscript_context,
+            )
+        elif expr_type == "OffsetUnaryExpr":
+            # OffsetUnaryExpr: offset version of UnaryExpr (operators + operand)
+            inner = generate_expr(
+                textx_node.operand,
+                ctx,
+                if_condition=if_condition,
+                subscript_context=subscript_context,
+            )
+            for op_item in reversed(getattr(textx_node, "operators", [])):
+                op = op_item.op if hasattr(op_item, "op") else str(op_item)
+                if op == "'":
+                    inner = f"int(not m_truth({inner}))"
+                elif op == "-":
+                    inner = f"m_sub(0, {inner})"
+                elif op == "+":
+                    inner = f"m_num({inner})"
+                else:
+                    raise NotImplementedError(f"Unsupported unary operator: {op}")
+            return inner
+        raise NotImplementedError(f"Unsupported expression type: {expr_type}")
 
 
 def contains_naked_global(expr: MExpr) -> bool:
@@ -761,6 +862,14 @@ def _generate_binary_op(op: MBinaryOp, ctx: "GeneratorContext") -> str:
     elif op.operator == "'!":
         # NOR: returns 1 if NOT (A OR B)
         return f"int(not (m_truth({left}) or m_truth({right})))"
+    elif op.operator == ">=":
+        # Greater-than-or-equal: A>=B equivalent to A'<B (NOT less than)
+        # YDB extension — not in ANSI standard but widely used in VistA
+        return f'int(not m_compare({left}, "<", {right}))'
+    elif op.operator == "<=":
+        # Less-than-or-equal: A<=B equivalent to A'>B (NOT greater than)
+        # YDB extension — not in ANSI standard but widely used in VistA
+        return f'int(not m_compare({left}, ">", {right}))'
     elif op.operator == "?":
         # Pattern match: A?pattern returns 1 if A matches pattern
         return f"m_pattern_match({left}, {right})"
@@ -1343,10 +1452,12 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
                 # For @@@A(0): base_name="A", subscripts=[0] -> "A(0)"
                 sub_exprs = [generate_expr(sub, ctx) for sub in inner_subscripts]
                 if len(sub_exprs) == 1:
-                    full_name_expr = f'f"{base_name}({{{sub_exprs[0]}}})"'
+                    full_name_expr = (
+                        "'" + base_name + "(' + str(" + sub_exprs[0] + ") + ')'"
+                    )
                 else:
-                    subs_parts = ",".join(f"{{{s}}}" for s in sub_exprs)
-                    full_name_expr = f'f"{base_name}({subs_parts})"'
+                    subs_parts = " + ',' + ".join("str(" + s + ")" for s in sub_exprs)
+                    full_name_expr = "'" + base_name + "(' + " + subs_parts + " + ')'"
             else:
                 full_name_expr = f'"{base_name}"'
 

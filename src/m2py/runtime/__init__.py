@@ -2723,6 +2723,47 @@ class MUMPSRuntime:
         """
         return self._current_device.y_pos
 
+    def set_x(self, value) -> None:
+        """Set cursor column position ($X).
+
+        MUMPS allows SET $X=n to control cursor column position.
+        Common VistA pattern: S $X=0 to reset column after manual positioning.
+
+        Args:
+            value: New column position (coerced to int via MUMPS numeric rules)
+        """
+        from m2py.codegen.helpers import m_num
+
+        self._current_device.x_pos = int(m_num(value))
+
+    def set_y(self, value) -> None:
+        """Set cursor line position ($Y).
+
+        MUMPS allows SET $Y=n to control cursor line position.
+        Common VistA pattern: S $Y=0 to reset line counter after page break.
+
+        Args:
+            value: New line position (coerced to int via MUMPS numeric rules)
+        """
+        from m2py.codegen.helpers import m_num
+
+        self._current_device.y_pos = int(m_num(value))
+
+    def device_control(self, keyword: str, *params) -> None:
+        """Handle device control mnemonics (W /keyword).
+
+        Device control commands are implementation-specific extensions for device I/O:
+        /EOF, /WAIT, /LISTEN, /ACCEPT, /PASS, /CLEAR, /FLUSH, etc.
+
+        Currently a stub: most VistA code uses these for socket/pipe operations
+        that are not yet implemented.
+
+        Args:
+            keyword: Control keyword (e.g. 'EOF', 'WAIT', 'LISTEN')
+            *params: Optional parameters
+        """
+        pass  # Stub — full implementation in Phase 3 (US5)
+
     def zeof(self) -> int:
         """Return end-of-file indicator ($ZEOF).
 

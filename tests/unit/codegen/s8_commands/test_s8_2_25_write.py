@@ -55,24 +55,24 @@ class TestWriteCommandCodegen:
         assert result.success is True
 
     def test_write_device_control_not_supported(self, generate_python):
-        """WRITE device control (/mnemonic) raises NotImplementedError.
+        """WRITE device control (/mnemonic) generates device_control() stub call.
 
         Device control mnemonics like /CUP(row,col) are terminal-specific
-        sequences that cannot be transpiled to pure Python.
+        sequences that generate a runtime stub call.
 
-        Spec 015: Document that device control mnemonics are not supported.
+        Spec 015: Device control mnemonics generate stub calls.
         """
         code = "TEST\n W /CUP(10,5)\n Q\n"
-        with pytest.raises(NotImplementedError, match="DeviceControl"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.device_control(" in result
 
     def test_write_device_control_with_string_raises_not_implemented(
         self, generate_python
     ):
-        """WRITE with device control mnemonic and string raises NotImplementedError."""
+        """WRITE with device control mnemonic and string generates device_control() calls."""
         code = 'TEST\n W /BOLD,"text",/NORMAL\n Q\n'
-        with pytest.raises(NotImplementedError, match="DeviceControl"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.device_control(" in result
 
 
 @pytest.mark.codegen

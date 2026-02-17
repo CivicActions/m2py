@@ -1102,6 +1102,10 @@ def _generate_single_assignment(
             ctx.emitter.line(f"_rt.set_zstatus({value_expr})")
         elif svar_name in ("ZPOSITION", "ZP"):
             ctx.emitter.line(f"_rt.set_zposition({value_expr})")
+        elif svar_name == "X":
+            ctx.emitter.line(f"_rt.set_x({value_expr})")
+        elif svar_name == "Y":
+            ctx.emitter.line(f"_rt.set_y({value_expr})")
         else:
             raise NotImplementedError(f"SET ${assignment.target.name} not supported")
         return
@@ -1664,11 +1668,21 @@ def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:
     """
     from m2py.asg.expressions import MIndirection
     from m2py.asg.enums import IndirectionType
+    from m2py.asg.expressions import MDeviceControl
 
     for arg in stmt.arguments:
         if isinstance(arg, MFormatControl):
             # Handle format control nodes
             _generate_format_control(arg, ctx)
+        elif isinstance(arg, MDeviceControl):
+            # Device control mnemonics (W /EOF, W /WAIT, etc.)
+            # Stub: emit a runtime call that can be handled per-device
+            keyword = arg.keyword.upper()
+            if arg.params:
+                params_code = ", ".join(generate_expr(p, ctx) for p in arg.params)
+                ctx.emitter.line(f"_rt.device_control({keyword!r}, {params_code})")
+            else:
+                ctx.emitter.line(f"_rt.device_control({keyword!r})")
         elif (
             isinstance(arg, MIndirection)
             and arg.indirection_type == IndirectionType.ARGUMENT
@@ -1953,8 +1967,13 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f"if {cond_expr}:")
         with ctx.emitter.indented():
             if stmt.then_scope and stmt.then_scope.statements:
+                _pre_count = len(ctx.emitter._lines)
                 for body_stmt in stmt.then_scope.statements:
                     generate_statement(body_stmt, ctx)
+                # Guard against body statements that generate no code
+                # (e.g., argumentless DO with body flattened into parent scope)
+                if len(ctx.emitter._lines) == _pre_count:
+                    ctx.emitter.line("pass")
             else:
                 ctx.emitter.line("pass")
         # Sync $TEST to runtime after multi-condition IF
@@ -1965,8 +1984,11 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line("if _test:")
         with ctx.emitter.indented():
             if stmt.then_scope and stmt.then_scope.statements:
+                _pre_count = len(ctx.emitter._lines)
                 for body_stmt in stmt.then_scope.statements:
                     generate_statement(body_stmt, ctx)
+                if len(ctx.emitter._lines) == _pre_count:
+                    ctx.emitter.line("pass")
             else:
                 ctx.emitter.line("pass")
         return
@@ -1978,8 +2000,11 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
 
     with ctx.emitter.indented():
         if stmt.then_scope and stmt.then_scope.statements:
+            _pre_count = len(ctx.emitter._lines)
             for body_stmt in stmt.then_scope.statements:
                 generate_statement(body_stmt, ctx)
+            if len(ctx.emitter._lines) == _pre_count:
+                ctx.emitter.line("pass")
         else:
             ctx.emitter.line("pass")
 
@@ -1998,8 +2023,11 @@ def _generate_else(stmt: MElseStatement, ctx: "GeneratorContext") -> None:
 
     with ctx.emitter.indented():
         if stmt.body and stmt.body.statements:
+            _pre_count = len(ctx.emitter._lines)
             for body_stmt in stmt.body.statements:
                 generate_statement(body_stmt, ctx)
+            if len(ctx.emitter._lines) == _pre_count:
+                ctx.emitter.line("pass")
         else:
             ctx.emitter.line("pass")
 
