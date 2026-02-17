@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from m2py.codegen import generate_python
+from m2py.cli.transpile import transpile_sources
 from m2py.core.names import NameTranslator
 
 
@@ -330,29 +331,39 @@ class TestPyrightAllFunctionalFiles:
         }
         (tmp_path / "pyrightconfig.json").write_text(json.dumps(config))
 
-        # Transpile each file, collecting results
-        transpiled = 0
-        failed_transpile: list[tuple[Path, str]] = []
-        seen_names: set[str] = set()
-
+        # Read all sources and batch-transpile in parallel
+        sources: list[tuple[str, str]] = []
+        read_errors: list[tuple[Path, str]] = []
         for m_file in m_files:
             try:
                 source = m_file.read_text(encoding="utf-8", errors="replace")
-                code = generate_python(source, validate=False)
-
-                # Use NameTranslator for safe Python filenames
-                # (e.g. io.m -> io_.py to avoid stdlib conflicts)
-                stem = NameTranslator.to_python(m_file.stem)
-                if stem in seen_names:
-                    # Use parent dir name as prefix to disambiguate
-                    parent = m_file.parent.parent.name
-                    stem = f"{parent}_{stem}"
-                seen_names.add(stem)
-
-                (tmp_path / f"{stem}.py").write_text(code)
-                transpiled += 1
+                sources.append((source, m_file.stem.upper()))
             except Exception as exc:
-                failed_transpile.append((m_file, str(exc)))
+                read_errors.append((m_file, str(exc)))
+
+        results = transpile_sources(sources, validate=False)
+
+        # Write transpiled files to disk
+        transpiled = 0
+        failed_transpile: list[tuple[Path, str]] = list(read_errors)
+        seen_names: set[str] = set()
+
+        for m_file, (code, error) in zip(m_files, results):
+            if error is not None:
+                failed_transpile.append((m_file, error))
+                continue
+
+            # Use NameTranslator for safe Python filenames
+            # (e.g. io.m -> io_.py to avoid stdlib conflicts)
+            stem = NameTranslator.to_python(m_file.stem)
+            if stem in seen_names:
+                # Use parent dir name as prefix to disambiguate
+                parent = m_file.parent.parent.name
+                stem = f"{parent}_{stem}"
+            seen_names.add(stem)
+
+            (tmp_path / f"{stem}.py").write_text(code)
+            transpiled += 1
 
         assert transpiled > 900, (
             f"Only {transpiled} files transpiled successfully — "
@@ -578,26 +589,38 @@ class TestRuffAllFunctionalFiles:
             "test setup may be broken"
         )
 
-        transpiled = 0
-        failed_transpile: list[tuple[Path, str]] = []
-        seen_names: set[str] = set()
-
+        # Read all sources and batch-transpile in parallel
+        sources: list[tuple[str, str]] = []
+        read_errors: list[tuple[Path, str]] = []
         for m_file in m_files:
             try:
                 source = m_file.read_text(encoding="utf-8", errors="replace")
-                code = generate_python(source, validate=False)
-                code = lint_fix(code, m_file.name.replace(".m", ".py"))
-
-                stem = NameTranslator.to_python(m_file.stem)
-                if stem in seen_names:
-                    parent = m_file.parent.parent.name
-                    stem = f"{parent}_{stem}"
-                seen_names.add(stem)
-
-                (tmp_path / f"{stem}.py").write_text(code)
-                transpiled += 1
+                sources.append((source, m_file.stem.upper()))
             except Exception as exc:
-                failed_transpile.append((m_file, str(exc)))
+                read_errors.append((m_file, str(exc)))
+
+        results = transpile_sources(sources, validate=False)
+
+        # Write transpiled files to disk with lint-fix
+        transpiled = 0
+        failed_transpile: list[tuple[Path, str]] = list(read_errors)
+        seen_names: set[str] = set()
+
+        for m_file, (code, error) in zip(m_files, results):
+            if error is not None:
+                failed_transpile.append((m_file, error))
+                continue
+
+            code = lint_fix(code, m_file.name.replace(".m", ".py"))
+
+            stem = NameTranslator.to_python(m_file.stem)
+            if stem in seen_names:
+                parent = m_file.parent.parent.name
+                stem = f"{parent}_{stem}"
+            seen_names.add(stem)
+
+            (tmp_path / f"{stem}.py").write_text(code)
+            transpiled += 1
 
         assert transpiled > 900, (
             f"Only {transpiled} files transpiled successfully — "
@@ -890,28 +913,40 @@ class TestFormatAllFunctionalFiles:
             "test setup may be broken"
         )
 
-        transpiled = 0
-        failed_transpile: list[tuple[Path, str]] = []
-        seen_names: set[str] = set()
-
+        # Read all sources and batch-transpile in parallel
+        sources: list[tuple[str, str]] = []
+        read_errors: list[tuple[Path, str]] = []
         for m_file in m_files:
             try:
                 source = m_file.read_text(encoding="utf-8", errors="replace")
-                code = generate_python(source, validate=False)
-                # Apply full CLI pipeline: lint_fix + format_code
-                code = lint_fix(code, m_file.name.replace(".m", ".py"))
-                code = format_code(code, m_file.name.replace(".m", ".py"))
-
-                stem = NameTranslator.to_python(m_file.stem)
-                if stem in seen_names:
-                    parent = m_file.parent.parent.name
-                    stem = f"{parent}_{stem}"
-                seen_names.add(stem)
-
-                (tmp_path / f"{stem}.py").write_text(code)
-                transpiled += 1
+                sources.append((source, m_file.stem.upper()))
             except Exception as exc:
-                failed_transpile.append((m_file, str(exc)))
+                read_errors.append((m_file, str(exc)))
+
+        results = transpile_sources(sources, validate=False)
+
+        # Write transpiled files to disk with lint-fix + format
+        transpiled = 0
+        failed_transpile: list[tuple[Path, str]] = list(read_errors)
+        seen_names: set[str] = set()
+
+        for m_file, (code, error) in zip(m_files, results):
+            if error is not None:
+                failed_transpile.append((m_file, error))
+                continue
+
+            # Apply full CLI pipeline: lint_fix + format_code
+            code = lint_fix(code, m_file.name.replace(".m", ".py"))
+            code = format_code(code, m_file.name.replace(".m", ".py"))
+
+            stem = NameTranslator.to_python(m_file.stem)
+            if stem in seen_names:
+                parent = m_file.parent.parent.name
+                stem = f"{parent}_{stem}"
+            seen_names.add(stem)
+
+            (tmp_path / f"{stem}.py").write_text(code)
+            transpiled += 1
 
         assert transpiled > 900, (
             f"Only {transpiled} files transpiled successfully — "

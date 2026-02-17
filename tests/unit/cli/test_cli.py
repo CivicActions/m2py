@@ -27,6 +27,7 @@ from m2py.cli.transpile import (
     lint_fix,
     transpile_file,
     transpile_paths,
+    transpile_sources,
 )
 
 
@@ -537,3 +538,97 @@ class TestEdgeCases:
         result = transpile_file(f, out)
         assert not result.success
         assert "Cannot write file" in (result.error or "")
+
+
+class TestTranspileSources:
+    """Tests for transpile_sources() parallel batch transpilation."""
+
+    def test_empty_input_returns_empty_list(self):
+        """Empty input produces empty output."""
+        assert transpile_sources([]) == []
+
+    def test_single_item(self):
+        """Single item is transpiled correctly (sequential path)."""
+        results = transpile_sources([("TEST\n QUIT\n", "TEST")])
+        assert len(results) == 1
+        code, err = results[0]
+        assert err is None
+        assert "def TEST" in code or "class" in code.lower() or len(code) > 0
+
+    def test_small_batch_sequential(self):
+        """Batches of <=4 items use sequential execution."""
+        items = [
+            ("A\n QUIT\n", "A"),
+            ("B\n QUIT\n", "B"),
+            ("C\n QUIT\n", "C"),
+        ]
+        results = transpile_sources(items)
+        assert len(results) == 3
+        for code, err in results:
+            assert err is None
+            assert len(code) > 0
+
+    def test_large_batch_parallel(self):
+        """Batches of >4 items use parallel execution."""
+        items = [(f"R{i}\n QUIT\n", f"R{i}") for i in range(6)]
+        results = transpile_sources(items)
+        assert len(results) == 6
+        for code, err in results:
+            assert err is None
+            assert len(code) > 0
+
+    def test_ordering_preserved(self):
+        """Results maintain the same order as input items."""
+        items = [
+            ("ALPHA\n QUIT\n", "ALPHA"),
+            ("BETA\n QUIT\n", "BETA"),
+            ("GAMMA\n QUIT\n", "GAMMA"),
+            ("DELTA\n QUIT\n", "DELTA"),
+            ("EPSILON\n QUIT\n", "EPSILON"),
+        ]
+        results = transpile_sources(items)
+        assert len(results) == 5
+        # Each result should contain the routine name in some form
+        for i, (code, err) in enumerate(results):
+            assert err is None
+            assert items[i][1] in code  # routine name appears in output
+
+    def test_error_handling(self):
+        """Invalid MUMPS source returns error string instead of raising."""
+        results = transpile_sources([("@@@@INVALID{{{{", "BAD")])
+        assert len(results) == 1
+        _code, err = results[0]
+        assert err is not None
+        assert "Error" in err or "Exception" in err or "error" in err.lower()
+
+    def test_mixed_success_and_failure(self):
+        """Mix of valid and invalid sources returns correct results."""
+        items = [
+            ("GOOD\n QUIT\n", "GOOD"),
+            ("@@@@INVALID", "BAD"),
+            ("ALSO\n QUIT\n", "ALSO"),
+        ]
+        results = transpile_sources(items)
+        assert len(results) == 3
+        assert results[0][1] is None  # success
+        assert results[1][1] is not None  # failure
+        assert results[2][1] is None  # success
+
+    def test_max_workers_one_forces_sequential(self):
+        """max_workers=1 forces sequential even for large batches."""
+        items = [(f"S{i}\n QUIT\n", f"S{i}") for i in range(10)]
+        results = transpile_sources(items, max_workers=1)
+        assert len(results) == 10
+        for code, err in results:
+            assert err is None
+
+    def test_validate_false(self):
+        """validate=False skips ast.parse() validation."""
+        results = transpile_sources(
+            [("V\n QUIT\n", "V")],
+            validate=False,
+        )
+        assert len(results) == 1
+        code, err = results[0]
+        assert err is None
+        assert len(code) > 0

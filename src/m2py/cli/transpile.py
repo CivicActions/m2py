@@ -5,6 +5,7 @@ Provides the core transpilation logic:
 - format_code: Post-generation ruff formatting
 - TranspileResult / TranspileSummary: Result dataclasses
 - transpile_file: Single-file transpilation pipeline
+- transpile_sources: Parallel batch transpilation of MUMPS sources
 - transpile_paths: Batch transpilation with directory support
 """
 
@@ -12,9 +13,10 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 from m2py.codegen import generate_python
 
@@ -217,6 +219,76 @@ def _safe_output_name(stem: str) -> str:
 
 
 # =============================================================================
+# Parallel Batch Transpilation
+# =============================================================================
+
+
+def _transpile_one(args: tuple[str, str, bool]) -> tuple[str, str | None]:
+    """Worker function for parallel transpilation.
+
+    Must be a top-level function (not a lambda or closure) so it can be
+    pickled for use with ProcessPoolExecutor.
+
+    Args:
+        args: Tuple of (source_code, routine_name, validate)
+
+    Returns:
+        Tuple of (python_code, error_message_or_none)
+    """
+    source, routine_name, validate = args
+    try:
+        code = generate_python(source, routine_name=routine_name, validate=validate)
+        return (code, None)
+    except Exception as e:
+        return ("", f"{type(e).__name__}: {e}")
+
+
+def transpile_sources(
+    items: Sequence[tuple[str, str]],
+    *,
+    max_workers: int | None = None,
+    validate: bool = True,
+) -> list[tuple[str, str | None]]:
+    """Transpile multiple MUMPS sources in parallel.
+
+    Uses ProcessPoolExecutor to distribute CPU-bound transpilation across
+    multiple cores. Falls back to sequential execution for small batches.
+
+    Args:
+        items: Sequence of (source_code, routine_name) tuples
+        max_workers: Maximum parallel workers (default: CPU count).
+            Pass 1 to force sequential execution.
+        validate: Whether to validate generated Python with ast.parse()
+
+    Returns:
+        List of (python_code, error_or_none) in same order as input.
+        If error is not None, transpilation failed for that item.
+
+    Example:
+        >>> results = transpile_sources([
+        ...     ('TEST W "Hello" Q', "TEST"),
+        ...     ('ADD(A,B) Q A+B', "ADD"),
+        ... ])
+        >>> for code, err in results:
+        ...     if err:
+        ...         print(f"Failed: {err}")
+        ...     else:
+        ...         print(f"OK: {len(code)} chars")
+    """
+    if not items:
+        return []
+
+    args_list = [(src, name, validate) for src, name in items]
+
+    # Sequential for small batches or when max_workers=1
+    if len(items) <= 4 or max_workers == 1:
+        return [_transpile_one(a) for a in args_list]
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(_transpile_one, args_list))
+
+
+# =============================================================================
 # Core Transpilation
 # =============================================================================
 
@@ -351,18 +423,81 @@ def transpile_paths(
     results: list[TranspileResult] = list(not_found_results)
     out_dir = Path(output_dir).resolve() if output_dir else None
 
+    # Build list of (input_path, output_path, source) for batch transpilation
+    file_specs: list[tuple[Path, Path, str]] = []
     for input_path, base_dir in m_files:
-        # Compute output path
         output_path = _compute_output_path(input_path, base_dir, out_dir)
+        try:
+            source = input_path.read_text(encoding="utf-8")
+            file_specs.append((input_path, output_path, source))
+        except OSError as e:
+            results.append(
+                TranspileResult(
+                    input_path=input_path,
+                    output_path=None,
+                    success=False,
+                    error=f"Cannot read file: {e}",
+                    routine_name=input_path.stem.upper(),
+                )
+            )
 
-        if verbose:
-            print(f"  Transpiling: {input_path}", file=sys.stderr)
+    if verbose:
+        for inp, _, _ in file_specs:
+            print(f"  Transpiling: {inp}", file=sys.stderr)
 
-        result = transpile_file(input_path, output_path, no_format=no_format)
-        results.append(result)
+    # Parallel transpilation of all sources
+    items = [(src, inp.stem.upper()) for inp, _, src in file_specs]
+    transpiled = transpile_sources(items)
 
-        if verbose and not result.success:
-            print(f"    ERROR: {result.error}", file=sys.stderr)
+    # Post-process results: ruff + write to disk
+    for (input_path, output_path, _source), (python_code, error) in zip(
+        file_specs, transpiled
+    ):
+        routine_name = input_path.stem.upper()
+        if error is not None:
+            results.append(
+                TranspileResult(
+                    input_path=input_path,
+                    output_path=None,
+                    success=False,
+                    error=error,
+                    routine_name=routine_name,
+                )
+            )
+            if verbose:
+                print(f"    ERROR: {error}", file=sys.stderr)
+            continue
+
+        # Post-gen processing (ruff lint-fix and format)
+        if not no_format:
+            filename = output_path.name
+            python_code = lint_fix(python_code, filename)
+            python_code = format_code(python_code, filename)
+
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(python_code, encoding="utf-8")
+        except OSError as e:
+            results.append(
+                TranspileResult(
+                    input_path=input_path,
+                    output_path=None,
+                    success=False,
+                    error=f"Cannot write file: {e}",
+                    routine_name=routine_name,
+                )
+            )
+            continue
+
+        results.append(
+            TranspileResult(
+                input_path=input_path,
+                output_path=output_path,
+                success=True,
+                error=None,
+                routine_name=routine_name,
+            )
+        )
 
     succeeded = sum(1 for r in results if r.success)
     failed = len(results) - succeeded

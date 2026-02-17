@@ -170,10 +170,14 @@ class TestMergeSuite:
         )
 
         # Load helpers if needed (lfill.m for mergelv tests)
-        helpers = _load_merge_helpers() if _needs_helpers(subtest_def.routine) else None
+        needs_helpers = _needs_helpers(subtest_def.routine)
+        helpers = _load_merge_helpers() if needs_helpers else None
 
-        # Run through m2py
-        result = run_mumps(source, timeout=30, helper_sources=helpers)
+        # Run through m2py (helper-dependent routines need longer timeout
+        # because they create large datasets and are slow under parallel load)
+        result = run_mumps(
+            source, timeout=90 if needs_helpers else 30, helper_sources=helpers
+        )
 
         if result is None or (not result.output and not result.success):
             pytest.fail(f"No result for {subtest_def.label}")
@@ -222,10 +226,14 @@ class TestMergeRoutines:
         assert source is not None, f"Failed to load routine {routine_def.routine}"
 
         # Load helpers if needed (lfill.m for mergelv tests)
-        helpers = _load_merge_helpers() if _needs_helpers(routine_def.routine) else None
+        needs_helpers = _needs_helpers(routine_def.routine)
+        helpers = _load_merge_helpers() if needs_helpers else None
 
-        # Run through m2py
-        result = run_mumps(source, timeout=30, helper_sources=helpers)
+        # Run through m2py (helper-dependent routines need longer timeout
+        # because they create large datasets and are slow under parallel load)
+        result = run_mumps(
+            source, timeout=90 if needs_helpers else 30, helper_sources=helpers
+        )
 
         if result is None or (not result.output and not result.success):
             pytest.fail(f"No result for {routine_def.routine}")

@@ -188,10 +188,7 @@ Full pyright run over 1016 transpiled .py files (from 1261 functional test .m fi
 
 ### Implementation
 
-- [ ] T041 [US7] Baseline: record current coverage numbers, test count, and execution time (`time uv run pytest --cov=m2py --cov-report=term-missing | tail -30`)
-- [ ] T042 [US7] Analyze test overlap: identify test groups exercising the same code paths (use `--cov-report=json` and compare per-test coverage)
-- [ ] T043 [US7] Remove redundant tests conservatively — for each removal, verify coverage does not decrease by re-running coverage
-- [ ] T044 [US7] Final validation: compare coverage and test count against baseline from T041, confirm coverage ≥ baseline and test runtime ≤ baseline + 10%
+- [X] T041–T044 [US7] SKIPPED — Phase 9 dedup skipped per user decision (tests are stable, no redundancy issues identified)
 
 **Checkpoint**: Test suite is leaner. Coverage unchanged or improved. Runtime stable or improved.
 
@@ -201,11 +198,11 @@ Full pyright run over 1016 transpiled .py files (from 1261 functional test .m fi
 
 **Purpose**: Final integration verification and documentation
 
-- [ ] T045 [P] Run full test suite with coverage: `uv run pytest --cov=m2py` — verify all tests pass, no regressions
-- [ ] T046 [P] Run quickstart.md validation: execute all quickstart commands against `tmp/` test files
-- [ ] T047 Update `main.py` to import and call `m2py.cli:main` instead of printing stub message
-- [ ] T048 Verify `uv sync && uv run m2py --help` works from a clean environment
-- [ ] T049 Run `uv run pytest` one final time to confirm green across all tests
+- [X] T045 [P] Run full test suite with coverage: `uv run pytest --cov=m2py` — verify all tests pass, no regressions
+- [X] T046 [P] Run quickstart.md validation: execute all quickstart commands against `tmp/` test files
+- [X] T047 Update `main.py` to import and call `m2py.cli:main` instead of printing stub message
+- [X] T048 Verify `uv sync && uv run m2py --help` works from a clean environment
+- [X] T049 Run `uv run pytest` one final time to confirm green across all tests
 
 ---
 
