@@ -999,7 +999,11 @@ def _generate_single_assignment_with_preeval_subs(
         value_var: Name of the variable holding the pre-evaluated value
         ctx: Generator context
     """
-    from m2py.asg.expressions import MIndirection as MIndirectionType, MVariable
+    from m2py.asg.expressions import (
+        MIndirection as MIndirectionType,
+        MIntrinsicFunction,
+        MVariable,
+    )
     from m2py.codegen.indirection import generate_name_indirection_write
     from m2py.parser.textx_classes import LocalVariable, GlobalVariable, NakedGlobal
 
@@ -1010,6 +1014,88 @@ def _generate_single_assignment_with_preeval_subs(
     if isinstance(assignment.target, MIndirectionType):
         set_stmt = generate_name_indirection_write(assignment.target, value_var, ctx)
         ctx.emitter.line(set_stmt)
+        return
+
+    # Handle special variable targets in tuple SET: S ($X,$Y)=0
+    if isinstance(assignment.target, MSpecialVariable):
+        svar_name = assignment.target.name.upper()
+        if svar_name in ("ETRAP", "ET"):
+            ctx.emitter.line(f"_rt.set_etrap({value_var})")
+        elif svar_name in ("ECODE", "EC"):
+            ctx.emitter.line(f"_rt.set_ecode({value_var})")
+        elif svar_name in ("ZERROR", "ZE"):
+            ctx.emitter.line(f"_rt.set_zerror({value_var})")
+        elif svar_name in ("ZTRAP", "ZT"):
+            ctx.emitter.line(f"_rt.set_ztrap({value_var})")
+        elif svar_name in ("ZSTATUS", "ZS"):
+            ctx.emitter.line(f"_rt.set_zstatus({value_var})")
+        elif svar_name in ("ZPOSITION", "ZP"):
+            ctx.emitter.line(f"_rt.set_zposition({value_var})")
+        elif svar_name == "X":
+            ctx.emitter.line(f"_rt.set_x({value_var})")
+        elif svar_name == "Y":
+            ctx.emitter.line(f"_rt.set_y({value_var})")
+        else:
+            raise NotImplementedError(
+                f"SET ${assignment.target.name} not supported in tuple SET"
+            )
+        return
+
+    # Handle $PIECE/$EXTRACT targets in tuple SET: S ($P(X,"^",2),Y)=value
+    if isinstance(assignment.target, MIntrinsicFunction):
+        func = assignment.target
+        func_name = func.name.upper()
+        args = func.arguments
+        if func_name in ("P", "PIECE"):
+            if len(args) < 2:
+                raise ValueError(
+                    f"LHS $PIECE requires at least 2 arguments, got {len(args)}"
+                )
+            first_arg = args[0]
+            getter, setter = _build_lhs_getter_setter(
+                first_arg, ctx, str_wrap_getter=True
+            )
+            delimiter_expr = f"m_str({generate_expr(args[1], ctx)})"
+            if len(args) >= 3:
+                piece_from_expr = f"int(m_num({generate_expr(args[2], ctx)}))"
+            else:
+                piece_from_expr = "1"
+            if len(args) >= 4:
+                arg3 = args[3]
+                assert arg3 is not None
+                piece_to_expr = f"int(m_num({generate_expr(arg3, ctx)}))"
+            else:
+                piece_to_expr = "None"
+            ctx.emitter.line(
+                f"m_set_piece({getter}, {setter}, {delimiter_expr}, "
+                f"{piece_from_expr}, {piece_to_expr}, m_str({value_var}))"
+            )
+        elif func_name in ("E", "EXTRACT"):
+            if len(args) < 1:
+                raise ValueError(
+                    f"LHS $EXTRACT requires at least 1 argument, got {len(args)}"
+                )
+            first_arg = args[0]
+            getter, setter = _build_lhs_getter_setter(first_arg, ctx)
+            if len(args) == 1:
+                from_pos_expr = "1"
+                to_pos_expr = "1"
+            elif len(args) == 2:
+                from_pos_expr = generate_expr(args[1], ctx)
+                to_pos_expr = "None"
+            else:
+                from_pos_expr = generate_expr(args[1], ctx)
+                arg2 = args[2]
+                assert arg2 is not None
+                to_pos_expr = generate_expr(arg2, ctx)
+            ctx.emitter.line(
+                f"m_set_extract({getter}, {setter}, {from_pos_expr}, "
+                f"{to_pos_expr}, {value_var})"
+            )
+        else:
+            raise NotImplementedError(
+                f"Unsupported LHS function in tuple SET: ${func.name}"
+            )
         return
 
     target = assignment.target
@@ -1477,24 +1563,28 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
     func = assignment.target
     args = func.arguments
 
-    # $EXTRACT(var, from_pos [, to_pos])
-    if len(args) < 2:
-        raise ValueError(f"LHS $EXTRACT requires at least 2 arguments, got {len(args)}")
+    # $EXTRACT(var [, from_pos [, to_pos]])
+    # 1-arg form: $E(X) is shorthand for $E(X,1,1) — replace first character
+    if len(args) < 1:
+        raise ValueError(f"LHS $EXTRACT requires at least 1 argument, got {len(args)}")
 
     # First argument must be a variable (local or global)
     first_arg = args[0]
     getter, setter = _build_lhs_getter_setter(first_arg, ctx)
 
-    # Generate from_pos expression
-    from_pos_expr = generate_expr(args[1], ctx)
-
-    # Generate to_pos expression (optional, 3rd argument)
-    if len(args) >= 3:
+    # Generate from_pos and to_pos expressions
+    if len(args) == 1:
+        # $E(X) = shorthand for $E(X,1,1) — replace first character
+        from_pos_expr = "1"
+        to_pos_expr = "1"
+    elif len(args) == 2:
+        from_pos_expr = generate_expr(args[1], ctx)
+        to_pos_expr = "None"
+    else:
+        from_pos_expr = generate_expr(args[1], ctx)
         arg2 = args[2]
         assert arg2 is not None  # Type narrowing for pyright
         to_pos_expr = generate_expr(arg2, ctx)
-    else:
-        to_pos_expr = "None"
 
     # Generate value expression
     assert assignment.value is not None, "LHS $EXTRACT requires a value"
@@ -4869,9 +4959,28 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                     ctx.emitter.line("for _ind_var in _ind_var_list:")
                     with ctx.emitter.indented():
                         ctx.emitter.line("_scope.pop(_ind_var, None)")
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE:
+                if ctx.uses_dynamic_locals:
+                    # TRAMPOLINE with dynamic locals: split the variable name
+                    # list and push each to state._new_stack for unwind on QUIT
+                    ctx.emitter.line(
+                        f"for _ind_var in _rt._split_argument_list(str({value_expr})):"
+                    )
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            "state._new_stack.append(('var', _ind_var, "
+                            "state._locals.pop(_ind_var, None)))"
+                        )
+                else:
+                    # TRAMPOLINE without dynamic locals: pop from _scope
+                    ctx.emitter.line(
+                        f"for _ind_var in _rt._split_argument_list(str({value_expr})):"
+                    )
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("_scope.pop(_ind_var, None)")
             else:
                 raise NotImplementedError(
-                    "NEW indirection not supported in TRAMPOLINE strategy"
+                    f"NEW indirection not supported for strategy {ctx.strategy}"
                 )
         elif isinstance(var, MSpecialVariable):
             # Handle NEW for special variables ($ETRAP, $ECODE, $ZERROR, etc.)

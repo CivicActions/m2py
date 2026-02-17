@@ -947,3 +947,80 @@ class TestContainsNakedGlobalPass2:
             'TEST\n K ^VV,^V S ^V="^VV",@^V@(1)=0,^(2)=0 W $D(^VV(1)),",",$D(^VV(2)) Q\n'
         )
         assert "1" in result.output
+
+
+# =============================================================================
+# f-string Nested Quotes Fix (024-vista-transpilation-fixes, Contract 2)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestFStringNestedQuotes:
+    """Contract 2: Generated Python must not have f-string nested quote issues.
+
+    Validates FR-002: no nested matching quotes in f-strings (Python 3.10).
+    """
+
+    def test_fstring_contract_2(self, execute_mumps):
+        """Contract 2 happy path: indirected $D with $P subscript."""
+        code = (
+            "FSTR1\n"
+            ' S Y="Y"\n'
+            ' S Y(1)="found"\n'
+            ' S X="1^2" I $D(@Y@($P(X,"^",1))) W "yes",!\n'
+            " Q\n"
+        )
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "yes\n"
+
+    def test_fstring_compiles_on_py310(self, generate_python):
+        """Generated Python must compile() without SyntaxError."""
+        code = (
+            "FSTR1\n"
+            ' S Y="Y"\n'
+            ' S Y(1)="found"\n'
+            ' S X="1^2" I $D(@Y@($P(X,"^",1))) W "yes",!\n'
+            " Q\n"
+        )
+        py_code = generate_python(code)
+        compile(py_code, "<test>", "exec")
+
+    def test_fstring_multiple_subscripts(self, generate_python):
+        """f-string with multiple indirection subscripts compiles."""
+        code = (
+            "TEST\n"
+            ' S A="A"\n'
+            ' S X="1^2"\n'
+            ' S A($P(X,"^",1),$P(X,"^",2))=99\n'
+            ' W @A@($P(X,"^",1),$P(X,"^",2)),!\n'
+            " Q\n"
+        )
+        py_code = generate_python(code)
+        compile(py_code, "<test>", "exec")
+
+    def test_fstring_subscript_indirection_data(self, generate_python):
+        """$D(@GLB@(+X,0)) — subscript indirection in $DATA (SCAPMCU3 pattern)."""
+        code = (
+            "TEST\n"
+            ' S GLB="^TMP($J)"\n'
+            ' S @GLB@(1,0)="hello"\n'
+            ' I $D(@GLB@(1,0)) W "found",!\n'
+            " Q\n"
+        )
+        result = generate_python(code)
+        assert isinstance(result, str)
+        compile(result, "<test>", "exec")
+
+    def test_fstring_order_indirection(self, generate_python):
+        """$O(@SRC@(I)) — subscript indirection in $ORDER (DSICDDBR pattern)."""
+        code = (
+            "TEST\n"
+            ' S SRC="^TMP($J)"\n'
+            ' S @SRC@(1)="a",@SRC@(2)="b"\n'
+            " S I=0 F  S I=$O(@SRC@(I)) Q:'I  W @SRC@(I),!\n"
+            " Q\n"
+        )
+        result = generate_python(code)
+        assert isinstance(result, str)
+        compile(result, "<test>", "exec")

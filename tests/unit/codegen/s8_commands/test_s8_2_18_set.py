@@ -1625,5 +1625,198 @@ class TestSetSpecialVarsCodegen:
 
 
 # =============================================================================
+# SET $X / SET $Y (024-vista-transpilation-fixes, Contract 5)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestSetSpecialXY:
+    """Contract 5: SET $X/$Y must update cursor position in runtime."""
+
+    def test_set_x_codegen(self, generate_python):
+        """SET $X=0 generates _rt.set_x() call."""
+        code = "TEST\n S $X=0\n Q\n"
+        py = generate_python(code)
+        assert "_rt.set_x(" in py
+
+    def test_set_y_codegen(self, generate_python):
+        """SET $Y=0 generates _rt.set_y() call."""
+        code = "TEST\n S $Y=0\n Q\n"
+        py = generate_python(code)
+        assert "_rt.set_y(" in py
+
+    def test_set_x_executes(self, execute_mumps):
+        """Contract 5: SET $X=0, W $X outputs 0."""
+        code = "SETXY\n S $X=0 W $X,!\n Q\n"
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "0\n"
+
+    def test_set_y_executes(self, execute_mumps):
+        """Contract 5: SET $Y=0, W $Y outputs 0."""
+        code = "SETXY\n S $Y=0 W $Y,!\n Q\n"
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "0\n"
+
+    def test_set_x_numeric_coercion(self, execute_mumps):
+        """SET $X with string value coerces to numeric."""
+        code = 'TEST\n S $X="5abc" W $X,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "5\n"
+
+    def test_set_y_zero_resets(self, execute_mumps):
+        """SET $Y=0 resets line counter (common VistA pattern)."""
+        code = "TEST\n W !,! S $Y=0 W $Y,!\n Q\n"
+        result = execute_mumps(code)
+        assert result.success is True
+        assert "0\n" in result.output
+
+    def test_set_xy_in_tuple(self, execute_mumps):
+        """SET ($X,$Y)=0 — tuple SET with special variable targets."""
+        code = 'TEST\n S ($X,$Y)=0 W $X," ",$Y,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.output == "0 0\n"
+
+    def test_set_xy_together(self, generate_python):
+        """S $Y=DY,$X=DX — SET both $Y and $X (PXRMRXTY pattern)."""
+        code = "TEST\n S DY=5,DX=10\n S $Y=DY,$X=DX\n W $X,$Y,!\n Q\n"
+        result = generate_python(code)
+        assert isinstance(result, str)
+        assert "_rt.set_y(" in result
+        assert "_rt.set_x(" in result
+        compile(result, "<test>", "exec")
+
+
+# =============================================================================
+# LHS $EXTRACT 1-Argument Form (024-vista-transpilation-fixes, Contract 6)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestLHSExtract1Arg:
+    """Contract 6: $E(X) on LHS defaults to $E(X,1,1) — replace first char.
+
+    Validates FR-006: SET $EXTRACT(var)=value (1-argument form).
+    """
+
+    def test_contract_6_replace_first_char(self, execute_mumps):
+        """Contract 6 happy path: $E(X)="H" replaces first char."""
+        code = 'TEST\n S X="hello" S $E(X)="H" W X,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "Hello\n"
+
+    def test_contract_6_second_case(self, execute_mumps):
+        """Contract 6 second case: $E(X)="Z" replaces first char."""
+        code = 'TEST\n S X="abc" S $E(X)="Z" W X,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "Zbc\n"
+
+    def test_extract_1arg_empty_string(self, execute_mumps):
+        """$E(X)="A" on empty string creates single-char string."""
+        code = 'TEST\n S X="" S $E(X)="A" W X,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "A\n"
+
+    def test_extract_1arg_undefined_var(self, execute_mumps):
+        """$E(X)="Z" on undefined variable creates it."""
+        code = 'TEST\n S $E(Z)="Z" W Z,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "Z\n"
+
+    def test_extract_1arg_longer_replacement(self, execute_mumps):
+        """$E(X)="ABC" replaces first char with multi-char string."""
+        code = 'TEST\n S X="hello" S $E(X)="ABC" W X,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "ABCello\n"
+
+    def test_extract_1arg_single_char_string(self, execute_mumps):
+        """$E(X)="Z" on single-char string replaces the whole string."""
+        code = 'TEST\n S X="A" S $E(X)="Z" W X,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "Z\n"
+
+    def test_extract_1arg_uppercase_pattern(self, execute_mumps):
+        """$E(PNAME)=$TR($E(PNAME),lower,upper) — VistA uppercase first char pattern."""
+        code = 'TEST\n S X="hello" S $E(X)="H" W X,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.output == "Hello\n"
+
+    def test_extract_1arg_with_piece_combo(self, generate_python):
+        """S $E(P2)="L",$P(R,U,2)=P2 — $E 1-arg + $P combo (PXRMCVRL pattern)."""
+        code = (
+            'TEST\n S P2="ABC",U="^"\n'
+            ' S R="X^Y^Z"\n'
+            ' S $E(P2)="L",$P(R,U,2)=P2\n'
+            " W P2,!,R,!\n Q\n"
+        )
+        result = generate_python(code)
+        assert isinstance(result, str)
+        compile(result, "<test>", "exec")
+
+
+# =============================================================================
+# Tuple SET with $PIECE/$EXTRACT Targets (024-vista-transpilation-fixes, Contract 7)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestTupleSetWithIntrinsicTargets:
+    """Contract 7: Tuple SET with $PIECE/$EXTRACT targets.
+
+    Validates FR-007: S ($P(X,"^",2),Y)="Z" must set both targets.
+    """
+
+    def test_contract_7_tuple_set_piece(self, execute_mumps):
+        """Contract 7: S ($P(X,"^",2),Y)="Z" — tuple SET with $PIECE target."""
+        code = 'TEST\n S X="A^B^C" S ($P(X,"^",2),Y)="Z" W X,!,Y,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "A^Z^C\nZ\n"
+
+    def test_tuple_set_extract_target(self, execute_mumps):
+        """Tuple SET with $EXTRACT target: S ($E(X,1,2),Y)="AB"."""
+        code = 'TEST\n S X="hello" S ($E(X,1,2),Y)="AB" W X,!,Y,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "ABllo\nAB\n"
+
+    def test_tuple_set_piece_and_variable(self, execute_mumps):
+        """Tuple SET with $PIECE and plain variable."""
+        code = 'TEST\n S X="A:B:C" S ($P(X,":",3),Z)="NEW" W X,!,Z,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "A:B:NEW\nNEW\n"
+
+    def test_tuple_set_multiple_piece_targets(self, execute_mumps):
+        """Tuple SET with multiple $PIECE targets."""
+        code = 'TEST\n S X="A^B^C",Y="D:E:F" S ($P(X,"^",1),$P(Y,":",2))="Z" W X,!,Y,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "Z^B^C\nD:Z:F\n"
+
+    def test_tuple_set_extract_1arg_target(self, execute_mumps):
+        """Tuple SET with $E(X) 1-arg target."""
+        code = 'TEST\n S X="hello" S ($E(X),Y)="Z" W X,!,Y,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "Zello\nZ\n"
+
+    def test_tuple_set_piece_preserves_evaluation_order(self, execute_mumps):
+        """Tuple SET evaluates all subscripts before assignments."""
+        code = 'TEST\n S X="A^B^C",I=2 S ($P(X,"^",I),I)="Z" W X,!,I,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "A^Z^C\nZ\n"
+
+
+# =============================================================================
 # $DATA / $GET with indirection
 # =============================================================================

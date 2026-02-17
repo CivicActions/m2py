@@ -1109,6 +1109,23 @@ class SemanticAnalyzer:
             label_ref = target.label
             call.name = label_ref.label or ""
 
+            # Check for labelIndirect (Indirection node from LabelRef grammar path).
+            # This handles cases like G @$S(%=1:"A",%=2:"B") where IndirectChain
+            # fails (due to : in $SELECT args conflicting with postcondition syntax)
+            # and textX falls back to LabelRef which captures @expr as labelIndirect.
+            if hasattr(label_ref, "labelIndirect") and label_ref.labelIndirect:
+                call.label_is_indirect = True
+                # The labelIndirect is an Indirection node — analyze its expression
+                indirection_node = label_ref.labelIndirect
+                analyzed_indirection = self.analyze(indirection_node, call)
+                # Extract the inner expression from the analyzed MIndirection
+                from m2py.asg.expressions import MIndirection as MIndirectionType
+
+                if isinstance(analyzed_indirection, MIndirectionType):
+                    call.indirection = analyzed_indirection
+                else:
+                    call.indirection = analyzed_indirection
+
             if hasattr(label_ref, "routine") and label_ref.routine:
                 call.routine = label_ref.routine
             elif hasattr(label_ref, "routineIndirect") and label_ref.routineIndirect:

@@ -404,3 +404,88 @@ class TestExclusiveNewCodegen:
             'TEST\n S A=1,B=2,C=3\n N (A,C)\n W $D(A)," ",$D(B)," ",$D(C),!\n Q\n'
         )
         assert result.output.strip() == "1 0 1"
+
+
+# =============================================================================
+# NEW @VAR in TRAMPOLINE (024-vista-transpilation-fixes, Contract 8)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestNewIndirectionTrampoline:
+    """Contract 8: NEW @VAR in TRAMPOLINE strategy.
+
+    Validates FR-008: N @"X" in subroutine preserves outer X.
+    """
+
+    def test_contract_8_new_indirection_preserves_outer(self, execute_mumps):
+        """Contract 8: N @"X" in subroutine, outer X preserved."""
+        code = (
+            'NEWIND\n S X="hello"\n D SUB\n W X,!\n Q\nSUB N @"X"\n S X="world"\n Q\n'
+        )
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "hello\n"
+
+    def test_new_indirection_variable_ref(self, execute_mumps):
+        """N @A where A="X" — indirect NEW via variable."""
+        code = (
+            'TEST\n S X="saved",A="X"\n D SUB\n W X,!\n Q\nSUB N @A\n S X="gone"\n Q\n'
+        )
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "saved\n"
+
+    def test_new_indirection_multiple_vars(self, execute_mumps):
+        """N @A where A="X,Y" — indirect NEW of multiple vars."""
+        code = (
+            'TEST\n S X="a",Y="b",A="X,Y"\n D SUB\n W X,",",Y,!\n Q\n'
+            'SUB N @A\n S X="x",Y="y"\n Q\n'
+        )
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "a,b\n"
+
+    def test_new_indirection_restores_on_return(self, execute_mumps):
+        """NEW @VAR restores value when subroutine returns."""
+        code = 'TEST\n S X=42\n D SUB\n W X,!\n Q\nSUB N @"X"\n S X=99 W X,!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "99\n42\n"
+
+    def test_new_indirection_undefined_var(self, execute_mumps):
+        """NEW @VAR for undefined var creates NEW frame (no-op on restore)."""
+        code = (
+            'TEST\n S A="Z"\n D SUB\n W $D(Z),!\n Q\nSUB N @A\n S Z="temp" W Z,!\n Q\n'
+        )
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "temp\n0\n"
+
+    def test_new_indirection_in_loop(self, generate_python):
+        """N @X in FOR loop — dynamic NEW of variable names (XQOR4 pattern)."""
+        code = (
+            "TEST\n"
+            ' S A="kept",B="kept",C="kept"\n'
+            ' S X("A")="",X("B")=""\n'
+            ' S X="" F  S X=$O(X(X)) Q:X=""  N @X\n'
+            ' W $G(A,"gone"),!,$G(B,"gone"),!,$G(C,"gone"),!\n'
+            " Q\n"
+        )
+        result = generate_python(code)
+        assert isinstance(result, str)
+        compile(result, "<test>", "exec")
+
+    def test_new_indirection_then_set(self, generate_python):
+        """N @VNAME S @VNAME="" — NEW + SET via indirection (LEXPRNT pattern)."""
+        code = (
+            "TEST\n"
+            ' S VNAME="MYVAR"\n'
+            ' N @VNAME S @VNAME=""\n'
+            ' S @VNAME="test"\n'
+            " W @VNAME,!\n"
+            " Q\n"
+        )
+        result = generate_python(code)
+        assert isinstance(result, str)
+        compile(result, "<test>", "exec")
