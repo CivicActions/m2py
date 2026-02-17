@@ -136,6 +136,17 @@ TEST ; Test $ZDATE custom months
         output = run_routine(mumps)
         assert output.strip() == "16 Aug 2022"
 
+    def test_zdate_four_args_custom_days(self):
+        """$ZD with 4 args: custom day names."""
+        mumps = """\
+TEST ; Test $ZDATE with custom day names
+ W $ZD(66337,"DAY DD MON","","Dom,Lun,Mar,Mie,Jue,Vie,Sab"),!
+ Q
+"""
+        output = run_routine(mumps)
+        # 66337 = Aug 16, 2022 = Tuesday = weekday index 2 (Sun=0)
+        assert "Mar" in output.strip()
+
     def test_zdate_epoch_day_zero(self):
         """$ZD for epoch day 0 (Dec 31, 1840)."""
         mumps = """\

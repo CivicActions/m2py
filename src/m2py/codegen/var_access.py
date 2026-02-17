@@ -38,9 +38,13 @@ def var_read_expr(var_name: str, ctx: "GeneratorContext") -> str:
 
     Returns the appropriate expression based on the codegen strategy:
 
-    - TRAMPOLINE + dynamic_locals: ``m_var_value(state._locals.get(name))``
+    - TRAMPOLINE + dynamic_locals: ``m_var_value(state._locals[name])``
     - TRAMPOLINE + state_vars: ``state.{python_name}``
-    - SIMPLE_FUNCTIONS: ``m_var_value(_scope.get(name))``
+    - SIMPLE_FUNCTIONS: ``m_var_value(_scope[name])``
+
+    Uses ``[]`` (not ``.get()``) so that accessing an undefined variable
+    raises ``KeyError``, which the label-level try/except maps to MUMPS
+    error M6 (LVUNDEF) via ``_handle_etrap``.
 
     Args:
         var_name: MUMPS variable name (e.g., ``"X"``, ``"RESULT"``)
@@ -51,10 +55,10 @@ def var_read_expr(var_name: str, ctx: "GeneratorContext") -> str:
     """
     py = translate_name(var_name)
     if _is_dynamic(ctx):
-        return f"m_var_value(state._locals.get({py!r}))"
+        return f"m_var_value(state._locals[{py!r}])"
     if _is_static(ctx, var_name):
         return f"state.{py}"
-    return f"m_var_value(_scope.get({py!r}))"
+    return f"m_var_value(_scope[{py!r}])"
 
 
 def var_write_stmt(var_name: str, value_expr: str, ctx: "GeneratorContext") -> str:

@@ -90,6 +90,7 @@ from m2py.asg.statements import (
     MZTriggerStatement,
 )
 from m2py.codegen.enums import GotoStrategy
+from m2py.codegen.exceptions import UnsupportedFeatureError
 from m2py.codegen.expressions import contains_naked_global, generate_expr
 from m2py.codegen.names import translate_name
 from m2py.codegen.var_access import var_base_expr, var_write_stmt, scope_dict_expr
@@ -98,13 +99,6 @@ if TYPE_CHECKING:
     from m2py.asg.elements import MCall
     from m2py.asg.statements import MStatement
     from m2py.codegen.routine import GeneratorContext
-
-
-# =============================================================================
-# Exceptions
-# =============================================================================
-
-from m2py.codegen.exceptions import UnsupportedFeatureError  # noqa: E402
 
 
 # =============================================================================
@@ -405,11 +399,15 @@ class ForGenContext:
             loop_var = f"_xec_{loop_var}"
 
         # Check if loop var should use state for trampoline
+        # Only use state.{var} when in TRAMPOLINE mode with static state vars.
+        # If uses_dynamic_locals is True, RoutineState only has _locals dict,
+        # so we can't use state.I — we must use local Python vars instead.
         if (
             ctx
             and ctx.strategy == GotoStrategy.TRAMPOLINE
             and var_name in ctx.state_vars
             and not loop_var_indirect
+            and not ctx.uses_dynamic_locals
         ):
             loop_var = f"state.{translate_name(var_name)}"
 
@@ -1144,8 +1142,9 @@ def _generate_single_assignment(
                 # _scope.setdefault('A', MArray())[subscripts] = value
                 base = f"_scope.setdefault({target_name!r}, MArray())"
             else:
-                # Plain Python local variable (TRAMPOLINE without array_vars)
-                base = target_name
+                # TRAMPOLINE var not in array_vars — store in _scope for
+                # cross-routine visibility and consistency
+                base = f"_scope.setdefault({target_name!r}, MArray())"
 
             if has_naked_in_subscripts:
                 # Pre-evaluate subscripts to preserve correct naked reference order
@@ -1182,12 +1181,21 @@ def _generate_single_assignment(
             target_name = f"state._locals.setdefault({target_name!r}, MArray()).value"
         # Check if variable should be accessed via state (TRAMPOLINE)
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-            target_name = f"state.{target_name}"
+            if var_name in ctx.array_vars:
+                # Array vars use .value for scalar SET to preserve MArray type.
+                # This prevents pyright type-narrowing issues: state.X = 0 would
+                # narrow the type to int, breaking later state.X[sub] access.
+                target_name = f"state.{target_name}.value"
+            else:
+                target_name = f"state.{target_name}"
         elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             # Store variables in _scope using MArray for consistency
             # This allows later subscripted access: S X=1 S X(1)=2 both work
             target_name = f"_scope.setdefault({target_name!r}, MArray()).value"
-        # else: use plain Python local variable (TRAMPOLINE without state_vars)
+        else:
+            # TRAMPOLINE var not in state_vars — store in _scope for
+            # cross-routine visibility and to avoid F841 bare-local lint
+            target_name = f"_scope.setdefault({target_name!r}, MArray()).value"
 
     elif isinstance(assignment.target, GlobalVariable):
         # Handle global variable SET targets
@@ -1846,7 +1854,8 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
             # Use MArray.value for consistency
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
                 byref_exprs = [
-                    f"_scope.get({p!r}, MArray()).value" for p in formal_params
+                    f"_scope.get({translate_name(p)!r}, MArray()).value"
+                    for p in formal_params
                 ]
             else:
                 byref_exprs = [translate_name(p) for p in formal_params]
@@ -1889,7 +1898,10 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         # For SIMPLE_FUNCTIONS, return values from _scope.
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             formal_params = ctx.current_label.signature.formal_params
-            return_exprs = [f"_scope.get({p!r}, MArray()).value" for p in formal_params]
+            return_exprs = [
+                f"_scope.get({translate_name(p)!r}, MArray()).value"
+                for p in formal_params
+            ]
             if return_exprs:
                 ctx.emitter.line(f"return {', '.join(return_exprs)}")
                 return
@@ -2145,6 +2157,19 @@ def _generate_for_body(
         and not stmt.loop_var_modified_in_body
         and not (for_ctx and for_ctx.loop_var_subscripts)  # Skip for subscripted vars
     )
+    # TRAMPOLINE vars not in state_vars also need _scope sync
+    # (reads go through _scope, so FOR loop var must be synced there)
+    needs_trampoline_scope_sync = (
+        ctx.strategy == GotoStrategy.TRAMPOLINE
+        and not ctx.uses_dynamic_locals
+        and stmt.loop_var
+        and not stmt.loop_var_modified_in_body
+        and not (for_ctx and for_ctx.loop_var_subscripts)  # Skip for subscripted vars
+        and for_ctx is not None
+        and not for_ctx.loop_var.startswith(
+            "state."
+        )  # Skip state_vars (already in state)
+    )
     # TRAMPOLINE with dynamic_locals also needs sync (state._locals)
     needs_locals_sync = (
         ctx.strategy == GotoStrategy.TRAMPOLINE
@@ -2153,7 +2178,7 @@ def _generate_for_body(
         and not stmt.loop_var_modified_in_body
         and not (for_ctx and for_ctx.loop_var_subscripts)  # Skip for subscripted vars
     )
-    if needs_scope_sync or needs_locals_sync:
+    if needs_scope_sync or needs_locals_sync or needs_trampoline_scope_sync:
         if isinstance(stmt.loop_var, str):
             var_name = stmt.loop_var
             subscripts = []
@@ -2262,8 +2287,6 @@ def _generate_for_bounded(
         # Handle indirect loop variable (F @A=1:1:3)
         # Resolve the target variable name once before the loop
         ctx.emitter.line(f"_for_indirect_var_{lid} = {for_ctx.loop_var_expr}")
-        # Set loop var to start value (MUMPS semantics)
-        ctx.emitter.line(f"{for_ctx.loop_var} = {start_var}")
         # Set indirect var to start value
         ctx.emitter.line(
             f"_scope.setdefault(_for_indirect_var_{lid}, MArray()).value = m_num({start_var})"
@@ -2304,15 +2327,17 @@ def _generate_for_bounded(
 
         # Choose correct variable storage based on code generation strategy
         # Must match the pattern used for variable access (expressions.py line 267)
+        # Use translate_name() to ensure the key matches SET/expression codegen
+        translated_var = translate_name(var_name)
         if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             # Dynamic locals - use state._locals for consistency with read access
-            base = f"state._locals.setdefault({var_name!r}, MArray())"
+            base = f"state._locals.setdefault({translated_var!r}, MArray())"
         elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             # Use _scope for SIMPLE_FUNCTIONS
-            base = f"_scope.setdefault({var_name!r}, MArray())"
+            base = f"_scope.setdefault({translated_var!r}, MArray())"
         else:
             # Fallback to _scope (shouldn't normally be reached)
-            base = f"_scope.setdefault({var_name!r}, MArray())"
+            base = f"_scope.setdefault({translated_var!r}, MArray())"
 
         def make_set_expr(val: str) -> str:
             return f"{base}.set({cached_subs_str}, value={val})"
@@ -2321,9 +2346,6 @@ def _generate_for_bounded(
         ctx.emitter.line(f"{counter_var} = {start_var}")
         ctx.emitter.line(make_set_expr(counter_var))
 
-        # Also set Python temp var for body access (some body code may use it)
-        ctx.emitter.line(f"{for_ctx.loop_var} = {start_var}")
-
         # While loop - condition uses the counter, not the variable value
         ctx.emitter.line(
             f"while ({step_var} > 0 and {counter_var} <= {end_var}) or "
@@ -2331,9 +2353,6 @@ def _generate_for_bounded(
             f"({step_var} == 0 and {counter_var} <= {end_var}):"
         )
         with ctx.emitter.indented():
-            # Sync Python temp var at start of each iteration
-            ctx.emitter.line(f"{for_ctx.loop_var} = {counter_var}")
-
             # Generate loop body (may modify subscript source variables)
             _generate_for_body(stmt, ctx, for_ctx)
 
@@ -2354,16 +2373,16 @@ def _generate_for_bounded(
             # (subscript is re-evaluated here)
             ctx.emitter.line(make_set_expr(counter_var))
 
-            # Sync Python temp var for next iteration
-            ctx.emitter.line(f"{for_ctx.loop_var} = {counter_var}")
     else:
         # Simple loop variable (F I=1:1:3)
         # Set loop var to start value (MUMPS semantics)
         ctx.emitter.line(f"{for_ctx.loop_var} = {start_var}")
         # Sync to storage BEFORE the while loop so the value is set even if loop doesn't execute
+        _needs_scope_sync = False
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS and for_ctx.loop_var_name:
+            translated_lv = translate_name(for_ctx.loop_var_name)
             ctx.emitter.line(
-                f"_scope.setdefault({for_ctx.loop_var_name!r}, MArray()).value = {start_var}"
+                f"_scope.setdefault({translated_lv!r}, MArray()).value = {start_var}"
             )
         elif (
             ctx.strategy == GotoStrategy.TRAMPOLINE
@@ -2375,6 +2394,18 @@ def _generate_for_bounded(
             ctx.emitter.line(
                 f"state._locals.setdefault({translated_name!r}, MArray()).value = {start_var}"
             )
+        elif (
+            ctx.strategy == GotoStrategy.TRAMPOLINE
+            and not ctx.uses_dynamic_locals
+            and for_ctx.loop_var_name
+            and not for_ctx.loop_var.startswith("state.")
+        ):
+            # TRAMPOLINE var not in state_vars — sync to _scope
+            translated_lv = translate_name(for_ctx.loop_var_name)
+            ctx.emitter.line(
+                f"_scope.setdefault({translated_lv!r}, MArray()).value = {start_var}"
+            )
+            _needs_scope_sync = True
         ctx.emitter.line(
             f"while ({step_var} > 0 and {for_ctx.loop_var} <= {end_var}) or "
             f"({step_var} < 0 and {for_ctx.loop_var} >= {end_var}) or "
@@ -2386,6 +2417,12 @@ def _generate_for_bounded(
             ctx.emitter.line(
                 f"{for_ctx.loop_var} = m_add({for_ctx.loop_var}, {step_var})"
             )
+            # Sync to _scope after increment for TRAMPOLINE non-state_vars
+            if _needs_scope_sync:
+                translated_lv = translate_name(for_ctx.loop_var_name)
+                ctx.emitter.line(
+                    f"_scope.setdefault({translated_lv!r}, MArray()).value = {for_ctx.loop_var}"
+                )
 
 
 def _generate_for_string_list(
@@ -2614,12 +2651,13 @@ def _generate_for_open_ended_while(
     ctx.emitter.line(f"{for_ctx.loop_var} = m_num({start_expr})")
 
     # Handle indirect loop variable
+    translated_loop_key = translate_name(for_ctx.loop_var_name)
     if for_ctx.loop_var_indirect and for_ctx.loop_var_expr:
         ctx.emitter.line(f"_for_indirect_var = {for_ctx.loop_var_expr}")
         ctx.emitter.line(f"_rt.set_var(_for_indirect_var, {for_ctx.loop_var}, _scope)")
     else:
         ctx.emitter.line(
-            f"_scope.setdefault('{for_ctx.loop_var}', MArray()).value = {for_ctx.loop_var}"
+            f"_scope.setdefault({translated_loop_key!r}, MArray()).value = {for_ctx.loop_var}"
         )
 
     ctx.emitter.line("while True:")
@@ -2638,10 +2676,10 @@ def _generate_for_open_ended_while(
             )
         else:
             ctx.emitter.line(
-                f"{for_ctx.loop_var} = m_add(m_num(m_var_value(_scope.get('{for_ctx.loop_var}'))), _for_step)"
+                f"{for_ctx.loop_var} = m_add(m_num(m_var_value(_scope[{translated_loop_key!r}])), _for_step)"
             )
             ctx.emitter.line(
-                f"_scope.setdefault('{for_ctx.loop_var}', MArray()).value = {for_ctx.loop_var}"
+                f"_scope.setdefault({translated_loop_key!r}, MArray()).value = {for_ctx.loop_var}"
             )
 
 
@@ -2875,7 +2913,9 @@ def _generate_for_while(
     elif ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS or (
         ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals
     ):
-        # Get the original MUMPS variable name for _scope/_locals key
+        # Get the MUMPS variable name and translate it for _scope/_locals key
+        # Must use translate_name() to match the keys used by SET/expression codegen
+        # (e.g., MUMPS "I" → Python "_a_I" to avoid E743 lint ambiguity)
         if isinstance(stmt.loop_var, str):
             var_name = stmt.loop_var
         elif isinstance(stmt.loop_var, MVariable):
@@ -2884,12 +2924,15 @@ def _generate_for_while(
             var_name = None
 
         if var_name:
+            translated_var = translate_name(var_name)
             if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
                 # TRAMPOLINE with dynamic_locals: use state._locals
-                loop_ref = f"state._locals.setdefault({var_name!r}, MArray()).value"
+                loop_ref = (
+                    f"state._locals.setdefault({translated_var!r}, MArray()).value"
+                )
             else:
                 # SIMPLE_FUNCTIONS: use _scope
-                loop_ref = f"_scope.setdefault({var_name!r}, MArray()).value"
+                loop_ref = f"_scope.setdefault({translated_var!r}, MArray()).value"
         else:
             loop_ref = for_ctx.loop_var
     else:
@@ -3921,7 +3964,7 @@ def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
             for var_name in sorted(ctx.state_vars):
                 python_name = translate_name(var_name)
                 ctx.emitter.line(
-                    f"_scope[{var_name!r}] = MArray(value=state.{python_name}) "
+                    f"_scope[{python_name!r}] = MArray(value=state.{python_name}) "
                     f"if not isinstance(state.{python_name}, MArray) else state.{python_name}"
                 )
 
@@ -4158,9 +4201,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             ctx.emitter.line("else:")
             with ctx.emitter.indented():
                 # SIMPLE_FUNCTIONS strategy - try public function with _start_offset
-                ctx.emitter.line("from m2py.runtime import run_with_goto_support")
                 ctx.emitter.line(
-                    f"run_with_goto_support(lambda _rt, _scope=None: "
+                    f"run_with_goto_support(lambda _rt, _scope=_scope: "
                     f"getattr({routine_name}, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset), _rt, _scope)"
                 )
         elif target.name:
@@ -4176,16 +4218,17 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 )
             # Pass _rt and _scope for cross-routine variable visibility
             # Wrap in run_with_goto_support to handle GotoExternal from subroutine
-            ctx.emitter.line("from m2py.runtime import run_with_goto_support")
+            # Use getattr() instead of direct attribute access so pyright doesn't
+            # flag cross-module label references that may not be statically visible.
             args = _generate_call_arguments(target.arguments, ctx)
             if args:
                 ctx.emitter.line(
-                    f"run_with_goto_support(lambda _rt, _scope=None: "
-                    f"{routine_name}.{label_name}(_rt, {args}, _scope=_scope), _rt, _scope)"
+                    f"run_with_goto_support(lambda _rt, _scope=_scope: "
+                    f"getattr({routine_name}, {label_name!r})(_rt, {args}, _scope=_scope), _rt, _scope)"
                 )
             else:
                 ctx.emitter.line(
-                    f"run_with_goto_support({routine_name}.{label_name}, _rt, _scope)"
+                    f"run_with_goto_support(getattr({routine_name}, {label_name!r}), _rt, _scope)"
                 )
         else:
             # D ^ROUTINE - call entry function (may be _preamble for labelless first lines)
@@ -4193,11 +4236,10 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             entry_func = f"{routine_name}._entry_function"
             # Pass _rt and _scope for cross-routine variable visibility
             # Wrap in run_with_goto_support to handle GotoExternal from subroutine
-            ctx.emitter.line("from m2py.runtime import run_with_goto_support")
             args = _generate_call_arguments(target.arguments, ctx)
             if args:
                 ctx.emitter.line(
-                    f"run_with_goto_support(lambda _rt, _scope=None: "
+                    f"run_with_goto_support(lambda _rt, _scope=_scope: "
                     f"{entry_func}(_rt, {args}, _scope=_scope), _rt, _scope)"
                 )
             else:
@@ -4354,7 +4396,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 arg_node.passing_mode == PassingMode.BY_REFERENCE
                 and arg_node.variable_name
             ):
-                actual_var = arg_node.variable_name
+                actual_var = translate_name(arg_node.variable_name)
                 new_arg_parts.append(f"_scope.setdefault({actual_var!r}, MArray())")
             elif arg_node.expression is not None:
                 new_arg_parts.append(generate_expr(arg_node.expression, ctx))
@@ -4377,7 +4419,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 arg_node.passing_mode == PassingMode.BY_REFERENCE
                 and arg_node.variable_name
             ):
-                actual_var = arg_node.variable_name
+                actual_var = translate_name(arg_node.variable_name)
                 new_arg_parts.append(
                     f"state._locals.setdefault({actual_var!r}, MArray())"
                 )
@@ -4403,7 +4445,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             # Sync state to _scope before call
             for var_name in sorted(ctx.state_vars):
                 py_name = translate_name(var_name)
-                ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
+                ctx.emitter.line(f"_scope[{py_name!r}] = state.{py_name}")
         # For TRAMPOLINE with dynamic_locals, sync state._locals to _scope
         # before internal DO calls so subroutine sees current variable values
         # Must remove stale keys too (e.g., after KILL clears _locals
@@ -4411,7 +4453,9 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             ctx.emitter.line("for _k in list(_scope.keys()):")
             with ctx.emitter.indented():
-                ctx.emitter.line("if _k not in state._locals: del _scope[_k]")
+                ctx.emitter.line("if _k not in state._locals:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("del _scope[_k]")
             ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
         # Use globals() lookup for SIMPLE_FUNCTIONS to avoid parameter
         # shadowing label names (e.g., A(A,B) where param A shadows label A)
@@ -4434,9 +4478,11 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         ):
             for var_name in sorted(ctx.state_vars):
                 py_name = translate_name(var_name)
-                ctx.emitter.line(
-                    f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
-                )
+                ctx.emitter.line(f"if {py_name!r} in _scope:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        f"state.{py_name} = _scope[{py_name!r}].value if isinstance(_scope.get({py_name!r}), MArray) else _scope[{py_name!r}]"
+                    )
         # For TRAMPOLINE with dynamic_locals, sync _scope back to state._locals
         # Wrap plain values in MArray when syncing back (callee may use static state)
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
@@ -4480,7 +4526,9 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                 ctx.emitter.line(f"if _var_name not in {keep_vars_repr}:")
                 with ctx.emitter.indented():
                     ctx.emitter.line("_arr = _scope.get(_var_name)")
-                    ctx.emitter.line("if isinstance(_arr, MArray): _arr.kill()")
+                    ctx.emitter.line("if isinstance(_arr, MArray):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("_arr.kill()")
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             # Iterate over _locals and remove non-kept variables
             ctx.emitter.line("for _var_name in list(state._locals.keys()):")
@@ -4503,7 +4551,9 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
             # linked, so subsequent SET on one name affects the other.
             ctx.emitter.line("for _v in _scope.values():")
             with ctx.emitter.indented():
-                ctx.emitter.line("if isinstance(_v, MArray): _v.kill()")
+                ctx.emitter.line("if isinstance(_v, MArray):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("_v.kill()")
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
             # Clear _locals dict for dynamic locals mode
             ctx.emitter.line("state._locals.clear()")
@@ -4588,12 +4638,22 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                     # Kill entire variable - remove from state._locals
                     ctx.emitter.line(f"state._locals.pop({translated!r}, None)")
             else:
-                # TRAMPOLINE strategy with static state vars - direct variable access
-                if subscripts_args:
-                    ctx.emitter.line(f"{translated}.kill({subscripts_args})")
+                # TRAMPOLINE strategy with static state vars
+                if var_name in ctx.state_vars:
+                    # State var: use state.X attribute access
+                    state_name = f"state.{translated}"
+                    if subscripts_args:
+                        ctx.emitter.line(f"{state_name}.kill({subscripts_args})")
+                    else:
+                        ctx.emitter.line(f"{state_name} = MArray()")
                 else:
-                    # Kill entire variable - reset to empty MArray
-                    ctx.emitter.line(f"{translated} = MArray()")
+                    # Non-state var: use _scope (matches SET/READ pattern)
+                    if subscripts_args:
+                        ctx.emitter.line(
+                            f"_scope.get({translated!r}, MArray()).kill({subscripts_args})"
+                        )
+                    else:
+                        ctx.emitter.line(f"_scope.get({translated!r}, MArray()).kill()")
 
         elif isinstance(target, MIndirection):
             # Indirection target: K @A or K @A@(subs) using unified components
@@ -4877,7 +4937,7 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                     # Fallback: simple pop (used when no NewScopeManager in context)
                     ctx.emitter.line(f"_scope.pop({translated!r}, None)")
             else:
-                # TRAMPOLINE strategy - save and remove from _locals
+                # TRAMPOLINE strategy with static state vars
                 translated = translate_name(var_name)
                 if ctx.uses_dynamic_locals:
                     # Push tagged selective NEW entry to _new_stack
@@ -4885,8 +4945,12 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                     ctx.emitter.line(
                         f"state._new_stack.append(('var', {translated!r}, state._locals.pop({translated!r}, None)))"
                     )
+                elif var_name in ctx.state_vars:
+                    # State var: reset via state attribute
+                    ctx.emitter.line(f"state.{translated} = MArray()")
                 else:
-                    ctx.emitter.line(f"{translated} = MArray()")
+                    # Non-state var: clear from _scope
+                    ctx.emitter.line(f"_scope.pop({translated!r}, None)")
 
 
 def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
@@ -5243,10 +5307,15 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
             # Store in _scope dictionary like SET does
             storage_target = f"_scope.setdefault({var_name!r}, MArray()).value"
+        elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+            # Dynamic locals for argumentless KILL/NEW support
+            storage_target = f"state._locals.setdefault({var_name!r}, MArray()).value"
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
             storage_target = f"state.{var_name}"
         else:
-            storage_target = var_name
+            # TRAMPOLINE var not in state_vars — store in _scope for
+            # cross-routine visibility and to avoid F841 bare-local lint
+            storage_target = f"_scope.setdefault({var_name!r}, MArray()).value"
     else:
         # Could be array subscript or global - generate expression
         storage_target = generate_expr(target.variable, ctx)
@@ -5265,11 +5334,12 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
             ctx.emitter.line(f"{storage_target} = _read_val")
         else:
             ctx.emitter.line(
-                f"{storage_target}, _read_key, _test = _rt.read_maxlen_timeout("
+                f"_read_val, _read_key, _test = _rt.read_maxlen_timeout("
                 f"int({maxlen_expr}), {timeout_expr})"
             )
             ctx.emitter.line("_rt._test = _test")
             ctx.emitter.line("_rt._current_device.key = _read_key")
+            ctx.emitter.line(f"{storage_target} = _read_val")
     elif target.fixed_length is not None:
         # R X#n — maxlen read
         maxlen_expr = generate_expr(target.fixed_length, ctx)
@@ -5281,9 +5351,10 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
             ctx.emitter.line(f"{storage_target} = _read_val")
         else:
             ctx.emitter.line(
-                f"{storage_target}, _read_key = _rt.read_maxlen(int({maxlen_expr}))"
+                f"_read_val, _read_key = _rt.read_maxlen(int({maxlen_expr}))"
             )
             ctx.emitter.line("_rt._current_device.key = _read_key")
+            ctx.emitter.line(f"{storage_target} = _read_val")
     elif target.timeout is not None:
         # Timeout read: R X:n
         timeout_expr = generate_expr(target.timeout, ctx)
@@ -5297,9 +5368,10 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
             ctx.emitter.line(f"{storage_target} = _read_val")
         else:
             ctx.emitter.line(
-                f"{storage_target}, _test = _rt.read_line_timeout({timeout_expr})"
+                f"_read_val, _test = _rt.read_line_timeout({timeout_expr})"
             )
             ctx.emitter.line("_rt._test = _test")
+            ctx.emitter.line(f"{storage_target} = _read_val")
     elif target.is_char_read:
         # Single character read: R *X
         ctx.emitter.line(f"{storage_target} = _rt.read_char()")

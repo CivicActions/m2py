@@ -139,7 +139,8 @@ class TestTrampolineDynamicLocals:
         # for loop_ref so body modifications are visible to loop condition
         assert "state._locals" in code
         # Loop should read from state._locals, not a Python local
-        assert "state._locals.setdefault('I'" in code
+        # E743: I is translated to _a_I to avoid ambiguity
+        assert "state._locals.setdefault('_a_I'" in code
 
     def test_for_loop_body_modifies_loop_var_execution(self, execute_mumps):
         """T084: FOR loop body modification executes correctly in TRAMPOLINE.
@@ -179,7 +180,8 @@ class TestTrampolineDynamicLocals:
         # In TRAMPOLINE with dynamic_locals, open-ended FOR should sync to state._locals
         assert "state._locals" in code
         # Loop should sync I to state._locals
-        assert "state._locals.setdefault('I'" in code
+        # E743: I is translated to _a_I to avoid ambiguity
+        assert "state._locals.setdefault('_a_I'" in code
 
     def test_for_open_ended_with_goto_execution(self, execute_mumps):
         """T089h: Open-ended FOR in TRAMPOLINE executes correctly.

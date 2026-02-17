@@ -72,3 +72,8 @@ class TestLockCommandCodegen:
         """
         result = execute_mumps('TEST\n L (^A,^B)\n W "both locked"\n L\n Q')
         assert result.output == "both locked"
+
+    def test_lock_with_timeout(self, execute_mumps):
+        """L +^A:1 — lock with timeout checks $TEST (coverage: codegen L5545-5555)."""
+        result = execute_mumps("TEST\n L +^A:1\n W $T,!\n L -^A\n Q\n")
+        assert "1" in result.output

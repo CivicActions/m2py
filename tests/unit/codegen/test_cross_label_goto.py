@@ -568,12 +568,13 @@ NEXT W X Q"""
 
         # Label functions should have correct signature (now with _rt and _scope)
         # Phase 13 (T076): _rt is now first parameter
+        # Return type includes int for line-number targets from offset calls/indirection
         assert (
-            "def _TEST(_rt, state, _scope) -> Tuple[Optional[str], RoutineState]:"
+            "def _TEST(_rt, state, _scope) -> Tuple[str | int | None, RoutineState]:"
             in code
         )
         assert (
-            "def _NEXT(_rt, state, _scope) -> Tuple[Optional[str], RoutineState]:"
+            "def _NEXT(_rt, state, _scope) -> Tuple[str | int | None, RoutineState]:"
             in code
         )
         # Should return tuple with None for QUIT
@@ -920,9 +921,9 @@ NEXT
  Q"""
         code = generate_python(source)
 
-        # Should use _scope.get for input-only variable X
-        # The pattern is m_var_value(_scope.get("X"))
-        assert '_scope.get("X")' in code or "_scope.get('X')" in code
+        # Should use _scope[] for input-only variable X
+        # The pattern is m_var_value(_scope["X"])
+        assert '_scope["X"]' in code or "_scope['X']" in code
 
     def test_written_var_uses_state_not_scope(self):
         """Variable that is written uses state.VAR, not _scope.get().

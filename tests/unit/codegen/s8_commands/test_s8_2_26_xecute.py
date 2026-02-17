@@ -25,7 +25,7 @@ class TestXecuteCommandCodegen:
         code = generate_python('TEST S CODE="S X=1" X CODE Q')
         # Should generate runtime execute_mumps call
         assert "execute_mumps" in code
-        assert "_scope.get('CODE'" in code or '_scope.get("CODE"' in code
+        assert "_scope['CODE']" in code or '_scope["CODE"]' in code
         assert "_scope)" in code  # Passes _scope to runtime
 
     def test_xecute_dynamic_multiple_args(self, generate_python):
@@ -726,6 +726,36 @@ class TestXecutePostcondition:
     def test_xecute_with_false_postcondition(self, execute_mumps):
         """X code:0 — does not execute when postcondition is false."""
         result = execute_mumps('TEST\n\tX "W 42":0\n\tQ\n')
+        assert result.output == ""
+
+
+@pytest.mark.codegen
+class TestXecuteIndirectionCodegen:
+    """XECUTE with @ name indirection — exercises indirected execution paths.
+
+    X @A means name indirection: resolve A to get a variable name, then evaluate
+    that variable to get the MUMPS code to execute. This is different from X A
+    which directly evaluates A as code.
+    """
+
+    def test_xecute_indirected_local_var(self, execute_mumps):
+        """X @A — A holds variable name B; B holds code. YDB-validated."""
+        result = execute_mumps('TEST\n S A="B"\n S B="W ""hi"",!"\n X @A\n Q\n')
+        assert result.output.strip() == "hi"
+
+    def test_xecute_indirected_global_var(self, execute_mumps):
+        """X @^C — ^C holds variable name B; B holds code. YDB-validated."""
+        result = execute_mumps('TEST\n K ^C S ^C="B"\n S B="W ""hi"",!"\n X @^C\n Q\n')
+        assert result.output.strip() == "hi"
+
+    def test_xecute_indirected_with_true_postcondition(self, execute_mumps):
+        """X @A:1 — indirected XECUTE with true postcondition. YDB-validated."""
+        result = execute_mumps('TEST\n S A="B"\n S B="W ""hi"",!"\n X @A:1\n Q\n')
+        assert result.output.strip() == "hi"
+
+    def test_xecute_indirected_with_false_postcondition(self, execute_mumps):
+        """X @A:0 — indirected XECUTE with false postcondition. YDB-validated."""
+        result = execute_mumps('TEST\n S A="B"\n S B="W ""hi"",!"\n X @A:0\n Q\n')
         assert result.output == ""
 
 

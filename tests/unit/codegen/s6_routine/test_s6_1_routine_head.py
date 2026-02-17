@@ -26,9 +26,13 @@ class TestRoutineHeadCodegen:
         Phase 13 (T076): _rt is now first parameter.
         Phase 19 (Spec 017): Formal params have =None default so they can be
         omitted (MUMPS allows calling with fewer args than defined).
+        Spec 023 (T023): Return type hint emitted when QUIT type is consistent.
         """
         code = generate_python("ADD(A,B) Q A+B\n")
-        assert "def ADD(_rt, A=None, B=None, _scope=None, _start_offset=0):" in code
+        assert (
+            "def ADD(_rt, A=None, B=None, _scope=None, _start_offset=0) -> int | Decimal | None:"
+            in code
+        )
 
     def test_routine_docstring(self, generate_python):
         """Routine generates docstring with source info (§6.1).
@@ -258,9 +262,13 @@ class TestScopeStrategyGeneration:
         should generate `return <expr>`.
         Phase 13 (T076): _rt is now first parameter.
         Phase 19 (Spec 017): Formal params have =None default.
+        Spec 023 (T023): Return type hint emitted when QUIT type is consistent.
         """
         code = generate_python("ADD(A,B) Q A+B\n")
-        assert "def ADD(_rt, A=None, B=None, _scope=None, _start_offset=0):" in code
+        assert (
+            "def ADD(_rt, A=None, B=None, _scope=None, _start_offset=0) -> int | Decimal | None:"
+            in code
+        )
         # Should have return with expression (m_num(A) + m_num(B))
         assert "return" in code
         assert "m_num(A)" in code or "A" in code

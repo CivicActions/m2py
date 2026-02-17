@@ -6,9 +6,30 @@ Defines enums used to classify ASG elements:
 - GotoType: Classification of GOTO target and behavior
 - CallType: Type of subroutine call
 - LiteralType: Type of literal value
+- ExprResultType: Inferred result type of expressions
 """
 
 from enum import Enum, auto
+
+
+class ExprResultType(Enum):
+    """Inferred result type of an expression.
+
+    Populated by the type inference analysis pass. Used by codegen to emit
+    type annotations on generated Python code.
+
+    - STRING: String result (str)
+    - NUMERIC: Integer or decimal result (int | Decimal)
+    - BOOLEAN_INT: 0 or 1 result from comparisons/logical ops (int)
+    - NUMERIC_STRING: Formatted number as string, e.g. $JUSTIFY (str)
+    - UNKNOWN: Cannot determine statically (no annotation emitted)
+    """
+
+    STRING = auto()
+    NUMERIC = auto()
+    BOOLEAN_INT = auto()
+    NUMERIC_STRING = auto()
+    UNKNOWN = auto()
 
 
 class ForLoopType(Enum):

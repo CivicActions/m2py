@@ -1,660 +1,186 @@
-# Testing and Validation
-
-How to test and validate parser output.
-
-## Test Organization
-
-M2PY tests are organized to systematically map to the MUMPS 1995 ANSI specification sections (§5-§9). This spec-aligned structure ensures verifiable, gap-free coverage tracking against the standard.
-
-### Directory Structure
-
-```
-tests/
-├── unit/
-│   ├── parser/                    # Parser-level tests (textX grammar)
-│   │   ├── s5_metalanguage/       # §5 Metalanguage (informative)
-│   │   ├── s6_routine/            # §6 Routine Structure
-│   │   ├── s7_expressions/        # §7 Expressions
-│   │   ├── s8_commands/           # §8 Commands
-│   │   ├── s9_charset/            # §9 Character Set
-│   │   ├── extensions/ydb/        # YottaDB Z-commands
-│   │   └── legacy/                # Pre-1995 syntax tests
-│   ├── asg/                       # ASG-level tests (semantic analysis)
-│   │   └── (parallel structure to parser/)
-│   ├── codegen/                   # Codegen-level tests (Python output)
-│   │   └── (parallel structure to parser/)
-│   ├── cross_cutting/             # Features spanning multiple commands
-│   ├── analysis/                  # Internal algorithm tests
-│   └── meta/                      # Tooling and infrastructure tests
-├── integration/                   # Integration tests
-└── functional/                    # YDBTest functional suites
-```
-
-### Three-Level Testing
-
-Each MUMPS language feature is tested at three levels, mirroring the transpiler architecture:
-
-| Level | What it tests | Example assertion |
-|-------|--------------|-------------------|
-| **Parser** | textX grammar produces correct AST | `assert stmt.command == 'SET'` |
-| **ASG** | Semantic analyzer produces correct ASG | `assert node.loop_type == ForLoopType.BOUNDED` |
-| **Codegen** | Generated Python matches MUMPS behavior | `assert runtime.get('X') == 'value'` |
-
-**File naming convention**: Test files mirror spec sections with a parallel structure:
-```
-tests/unit/parser/s8_commands/test_s8_2_18_set.py   # §8.2.18 SET - parser level
-tests/unit/asg/s8_commands/test_s8_2_18_set.py      # §8.2.18 SET - ASG level
-tests/unit/codegen/s8_commands/test_s8_2_18_set.py  # §8.2.18 SET - codegen level
-```
-
-### Test Markers
-
-Tests use pytest markers to categorize and filter:
-
-| Marker | Purpose | Example |
-|--------|---------|---------|
-| `@pytest.mark.parser` | Parser-level test | Required in `tests/unit/parser/` |
-| `@pytest.mark.asg` | ASG-level test | Required in `tests/unit/asg/` |
-| `@pytest.mark.codegen` | Codegen-level test | Required in `tests/unit/codegen/` |
-| `@pytest.mark.stub` | Placeholder test (xfail) | Pending implementation |
-| `@pytest.mark.slow` | Long-running test | Skipped by default |
-| `@pytest.mark.pre1995` | Pre-1995 MUMPS syntax | Backward compatibility |
-| `@pytest.mark.ydb` | YottaDB-specific | Z-commands, Z-functions |
-
-**Marker enforcement**: Tests in `parser/`, `asg/`, and `codegen/` directories require a category marker. Tests in `analysis/`, `meta/`, and `cross_cutting/` do not (they test internal algorithms, not spec compliance).
-
-### Stub/XFail Workflow
-
-Stub tests mark unimplemented functionality while keeping CI green:
-
-```python
-@pytest.mark.stub
-@pytest.mark.parser
-@pytest.mark.xfail(reason="Not yet implemented: §8.2.18 SET multi-target assignment")
-def test_set_multi_target():
-    """Parse SET with multiple targets: SET (A,B)=value."""
-    pytest.fail("Stub - implement test")
-```
-
-**Converting a stub to an implemented test**:
-```python
-# After implementation, remove @stub and @xfail, add real test:
-@pytest.mark.parser
-def test_set_multi_target(parser):
-    """Parse SET with multiple targets: SET (A,B)=value."""
-    routine = parser.parse_string('TEST S (A,B)="x"')
-    stmt = routine.labels[0].body.statements[0]
-    assert len(stmt.assignments) == 1
-    assert len(stmt.assignments[0].targets) == 2
-```
-
-### Common pytest Commands
-
-Smart defaults in `tests/conftest.py` auto-inject `-n auto` (parallel) and
-`-m 'not slow'` (skip slow). These are overridden when you pass `-n` or `-m`
-explicitly — no `-o "addopts="` needed.
-
-```bash
-# Run all tests (parallel + skip slow)
-uv run pytest
-
-# Sequential execution (for debugging / readable output)
-uv run pytest -n0
-
-# Run by category
-uv run pytest -m parser              # All parser-level tests
-uv run pytest -m asg                 # All ASG-level tests
-uv run pytest -m codegen             # All codegen-level tests
-
-# Run only implemented tests (exclude stubs)
-uv run pytest -m "not stub"
-
-# Run only stubs (see pending work)
-uv run pytest -m stub --collect-only
-
-# Run specific spec section
-uv run pytest tests/unit/parser/s8_commands/ -v
-uv run pytest -k "s8_2_18"           # All SET command tests
-
-# Run by extension
-uv run pytest -m ydb -v              # YottaDB-specific tests
-uv run pytest -m pre1995 -v          # Backward compatibility tests
-
-# Include slow tests
-uv run pytest -m ''                  # All tests including slow
-uv run pytest -m slow -v -s          # Only slow tests
-```
+# Testing Guide
 
 ## Running Tests
 
-### Full Test Suite
-
-Tests run in parallel by default via smart defaults in `tests/conftest.py`:
-
 ```bash
-uv run pytest              # Parallel on all CPU cores, skip slow
-uv run pytest -n0          # Sequential execution (for debugging)
-uv run pytest -n0 -m ''    # Sequential, all tests including slow
+uv run pytest                        # Default: parallel, skip slow tests
+uv run pytest -n0                    # Sequential (for debugging)
+uv run pytest -m slow                # Run only slow tests
+uv run pytest -m "parser"            # Run only parser-level tests
+uv run pytest --backend sqlite       # Use SQLite global storage
+uv run pytest tests/unit/codegen/    # Run one directory
 ```
 
-### Specific Test Files
+**Smart defaults** are applied automatically by `tests/conftest.py`:
+- `-n auto` (parallel via pytest-xdist) unless you pass `-n`
+- `-m 'not slow'` unless you pass `-m`
 
-```bash
-uv run pytest tests/integration/
-uv run pytest tests/unit/
+No need for `-o "addopts="` — the smart defaults detect your CLI flags and stay out of the way.
+
+## Test Organization
+
+~390 test files across ~6,700 tests, organized in four tiers:
+
+```
+tests/
+├── unit/                    # Isolated component tests
+│   ├── parser/              # textX grammar / parser tests
+│   │   ├── s5_metalanguage/ # § 5 tests
+│   │   ├── s6_routine/      # § 6 tests
+│   │   ├── s7_expressions/  # § 7 tests
+│   │   ├── s8_commands/     # § 8 tests (~38 files, one per command)
+│   │   ├── s9_charset/      # § 9 tests
+│   │   ├── extensions/ydb/  # YottaDB-specific extensions
+│   │   └── legacy/          # Pre-1995 syntax tests
+│   ├── asg/                 # ASG semantic analysis tests (same structure)
+│   ├── codegen/             # Code generation tests (same structure)
+│   ├── analysis/            # Internal algorithm tests
+│   ├── runtime/             # MUMPSRuntime, globals, devices, JOB, LOCK
+│   ├── core/                # Value semantics, subscripts, indirection, scope
+│   ├── cross_cutting/       # Multi-feature behaviors ($TEST, postconditions)
+│   └── meta/                # Package setup, regressions, performance
+├── integration/             # Full transpile-and-execute pipeline (~21 files)
+└── functional/              # MUMPS test suites vs YDB reference output
+    ├── mugj/                # MUMPS User Group Japan suite
+    ├── mvts/                # MUMPS Validation Test Suite
+    ├── basic/               # Core language features
+    ├── merge/               # MERGE command tests
+    ├── indirection/         # Indirection operator tests
+    ├── m_commands/          # M commands + Z-commands
+    ├── io/                  # I/O operations
+    ├── tp/                  # Transaction processing
+    ├── triggers/            # Trigger tests
+    ├── longname/            # Long variable names
+    └── unicode/             # Unicode handling
 ```
 
-### Verbose Output
+### Spec-Aligned Structure
 
-```bash
-uv run pytest -v tests/integration/test_ydb_suites.py
-```
+The `parser/`, `asg/`, and `codegen/` directories mirror the MUMPS 1995 ANSI Standard sections (§5–§9). File naming convention: `test_s8_2_05_for.py` = Section 8.2.5 (FOR command). Each `s8_commands/` directory contains ~37-42 files covering all MUMPS commands.
 
-### Including Slow Tests
+Tests in these directories are validated by `pytest_collection_modifyitems` — if a test lacks a `@pytest.mark.parser`, `@pytest.mark.asg`, or `@pytest.mark.codegen` marker, a warning is emitted.
 
-Slow-marked tests are skipped by default. Passing `-m` overrides the default filter:
+## Key Fixtures
 
-```bash
-uv run pytest                           # Skip slow tests (default)
-uv run pytest -m slow -v -s             # Run only slow tests
-uv run pytest -m ''                     # Run all tests including slow
-```
+Fixtures are layered — each test directory has its own `conftest.py` providing level-appropriate fixtures.
 
-### Coverage Report
+### Parser Fixtures (`tests/unit/parser/conftest.py`)
 
-```bash
-uv run pytest --cov=src/m2py --cov-report=html
-open htmlcov/index.html
-```
+| Fixture | Purpose |
+|---------|---------|
+| `parse_mumps` | Parse MUMPS source → `MRoutine` ASG |
+| `parse_line` | Wrap a single line in a routine and parse |
+| `parse_expression` | Parse a MUMPS expression directly |
+| `mumps_parser` | Raw `MUMPSParser()` instance |
 
-## Test Coverage Audit
+### ASG Fixtures (`tests/unit/asg/conftest.py`)
 
-The `utils/audit_tests.py` script audits test coverage against MUMPS 1995 ANSI spec sections (§5-§9):
+| Fixture | Purpose |
+|---------|---------|
+| `analyze_routine` | Parse + full semantic analysis → enriched `MRoutine` |
+| `analyze_expression` | Analyze a single expression |
+| `analyze_statement` | Wrap in routine, parse, return first statement ASG node |
+| `resolve_refs` | The `resolve_references()` function |
 
-```bash
-# Full coverage report
-uv run python utils/audit_tests.py
+### Codegen Fixtures (`tests/unit/codegen/conftest.py`)
 
-# Filter by section
-uv run python utils/audit_tests.py --section s7              # All §7 sections
-uv run python utils/audit_tests.py --section s8_2_18         # Just SET command
-uv run python utils/audit_tests.py --section extensions/ydb  # YottaDB extensions
+| Fixture | Purpose |
+|---------|---------|
+| `generate_python` | Generate Python source from MUMPS source |
+| `execute_mumps` | Full pipeline: parse → generate → execute → `ExecutionResult` |
+| `execute_expr` | Wrap a command, execute, return output string |
+| `eval_mumps` | Evaluate a MUMPS expression, return value |
+| `validate_python_syntax` | Validate generated code via `ast.parse()` |
 
-# Save report to file
-uv run python utils/audit_tests.py --output docs/coverage-matrix.md
+### Analysis Fixtures (`tests/unit/analysis/conftest.py`)
 
-# Check coverage only (returns exit code 0 if all sections covered)
-uv run python utils/audit_tests.py --check-only
+| Fixture | Purpose |
+|---------|---------|
+| `classify_for` | FOR loop classification function |
+| `classify_goto` | GOTO classification function |
+| `analyze_variables` | Variable scope analysis function |
+| `resolve_references` | Reference resolution function |
 
-# Quiet mode (only exit code, no output)
-uv run python utils/audit_tests.py -q
-```
+### Runtime Fixtures (`tests/unit/runtime/conftest.py`)
 
-### Report Legend
+| Fixture | Purpose |
+|---------|---------|
+| `sqlite_storage` | `SQLiteGlobalStorage` instance (temp DB) |
+| `sqlite_rt` | `MUMPSRuntime` with SQLite backend |
+| `job_routine_dir` | Temp directory for JOB subprocess test routines |
 
-| Symbol | Meaning |
+### Functional Fixtures (`tests/functional/conftest.py`)
+
+| Fixture | Purpose |
+|---------|---------|
+| `mumps_runner` | Execute MUMPS via m2py in isolated subprocess (60s timeout) |
+| `outref_normalizer` | Strip YDB infrastructure from reference output |
+| `output_comparator` | Unified diff comparison |
+
+### Root Fixtures (`tests/conftest.py`)
+
+Suite-loading fixtures are auto-generated for 11 test suites. Each suite gets three fixtures:
+- `{suite}_inref_dir` → `Path` to the suite's `.m` file directory
+- `{suite}_file` → `Callable[[str], str]` to load a specific file
+- `{suite}_files` → `Callable[[], Iterator]` to iterate all files
+
+## Markers
+
+| Marker | Purpose |
 |--------|---------|
-| ✅ | Implemented (tests pass) |
-| 🚧 | Stub (xfail, pending implementation) |
-| ⚠️ | XFail (needs investigation) |
-| ⏭️ | Skipped (out of scope or implementation-defined) |
-| ❌ | Missing (no test file) |
-| — N/A | Not applicable for this category |
+| `parser` | textX grammar/parser level |
+| `asg` | ASG semantic analysis level |
+| `codegen` | Python code generation level |
+| `analysis` | Analysis module tests |
+| `runtime` | Runtime module tests |
+| `integration` | Full transpilation pipeline |
+| `functional` | YDB outref comparison |
+| `stub` | Placeholder expected to fail |
+| `slow` | Long-running (skipped by default) |
+| `ydb` | YottaDB-specific extensions |
+| `pre1995` | Pre-1995 MUMPS syntax |
+| `mugj` / `basic` / `mvts` / `merge` | Functional suite markers |
 
-### Exit Codes
+## Backend Pluggability
 
-- `0` - All required sections have test files
-- `1` - One or more sections missing test files
-
-## Test Suites
-
-The project includes multiple MUMPS test suites from YottaDB (YDBTest) for comprehensive validation:
-
-### Test Suite Summary
-
-| Suite | Tests | Description | Location |
-|-------|-------|-------------|----------|
-| **MUGJ** | 76 | MUMPS User Group Japan validation suite | `tests/functional/mugj/` |
-| **MVTS** | 354 | MUMPS Validation Test Suite | `tests/functional/mvts/` |
-| **basic** | 61 | Core language tests (FOR, KILL, arithmetic) | `tests/functional/basic/` |
-| **merge** | 25 | MERGE command tests | `tests/functional/merge/` |
-
-### Functional Tests (End-to-End)
-
-The `tests/functional/` directory contains end-to-end tests that execute MUMPS routines via m2py transpilation and compare output against YottaDB reference files (outrefs).
+The `--backend` option switches global storage across all tests:
 
 ```bash
-# Run all functional tests (~489 tests, ~37 seconds)
-uv run pytest tests/functional/ -q
-
-# Run specific suite
-uv run pytest tests/functional/test_mugj.py -v
-uv run pytest tests/functional/test_basic.py -v
-uv run pytest tests/functional/test_mvts.py -v
-uv run pytest tests/functional/test_merge.py -v
-
-# Run specific routine by pattern
-uv run pytest tests/functional/ -k "V1WR" -v
+uv run pytest --backend inmemory     # Default: fast in-process storage
+uv run pytest --backend sqlite       # SQLite: tests cross-process JOB/LOCK
 ```
 
-**Test markers for filtering:**
-- `@pytest.mark.mugj` - MUGJ suite tests
-- `@pytest.mark.basic` - Basic suite tests
-- `@pytest.mark.mvts` - MVTS suite tests
-- `@pytest.mark.merge` - MERGE command tests
-- `@pytest.mark.functional` - All functional tests
+`yottadb` and `iris` backends are defined but require external packages.
 
-**Known limitation handling:**
-Tests using features with documented limitations (VIEW command, Z-commands) are marked as `xfail` with references to limitation IDs:
+## Functional Test Suites
 
-```bash
-# View xfailed tests
-uv run pytest tests/functional/ -k "view" -v
-# 2 xfailed in 1.10s
-```
+Functional tests execute real MUMPS routines from YDBTest through m2py in **isolated `multiprocessing.Process` instances** (preventing infinite loops from killing the test runner) and compare output against YDB reference output (outref files).
 
-### Integration Tests
+Two validation strategies:
 
-The `tests/integration/` directory contains cross-module tests:
+- **Pattern-based** (MUGJ): counts PASS markers, checks visual "should be identical" pairs, flags unexpected FAILs
+- **Output comparison** (basic, merge, etc.): byte-for-byte diff against normalized outref content
 
-- `test_external_calls.py` - Cross-routine coordination (43 tests)
-- `test_indirection_edge_cases.py` - Indirection edge cases (10 tests)
+The `normalize_outref()` function strips YDB infrastructure (prompts, marker placeholders, infrastructure messages, SUSPEND/ALLOW blocks) for clean comparison.
 
-```bash
-# Run all integration tests
-uv run pytest tests/integration/ -v
-# 48 passed
-```
+Suite routine definitions (labels, expected pass/fail counts) are maintained in `tests/functional/suite_definitions.py`.
 
-### Test Fixtures
+## Validation Utilities
 
-Each test directory has corresponding fixtures in `tests/functional/conftest.py`:
-
-```python
-# Core functions (not fixtures)
-from tests.functional.conftest import (
-    normalize_outref,   # Strip YDB infrastructure from outref content
-    run_mumps,          # Execute MUMPS via m2py transpilation
-    compare_output,     # Byte-for-byte comparison with diff reporting
-    load_routine_source,  # Load MUMPS routine source
-)
-```
-
-## Validating Parser Output
-
-### Using validate_asg.py
-
-The validation utility displays ASG structure for any MUMPS file:
-
-```bash
-uv run python utils/validate_asg.py tests/functional/mugj/inref/V1SET.m
-```
-
-Output includes:
-1. Original MUMPS source with line numbers
-2. Formatted ASG structure
-3. Validation checklist
-
-### Using Python REPL
-
-```python
-from m2py import MUMPSParser
-from m2py.asg.statements import MSetStatement
-
-parser = MUMPSParser()
-routine = parser.parse_file("tests/functional/mugj/inref/V1SET.m")
-
-# Inspect structure
-print(f"Routine: {routine.name}")
-for label in routine.labels:
-    print(f"\nLabel: {label.name}")
-    for stmt in label.body.statements:
-        print(f"  {type(stmt).__name__}")
-```
-
-### Running Analysis Passes
-
-```python
-from m2py import MUMPSParser
-
-parser = MUMPSParser()
-routine = parser.parse_file("file.m")
-
-# All analysis passes
-parser.resolve_references(routine)
-parser.classify_gotos(routine)
-parser.analyze_for_loops(routine)
-parser.analyze_variables(routine)
-
-# Check results
-for label in routine.labels:
-    print(f"{label.name}:")
-    print(f"  Inputs: {label.input_variables}")
-    print(f"  Outputs: {label.output_variables}")
-```
-
-### JSON Output
-
-```python
-from m2py.parser import dump_asg_json
-
-json_str = dump_asg_json(routine)
-with open("output.json", "w") as f:
-    f.write(json_str)
-```
-
-## MUGJ Test Suite
-
-### Overview
-
-The MUGJ (MUMPS User Group Japan) validation suite provides comprehensive test coverage:
-
-- **376 test files** in `tests/functional/mugj/inref/`
-- Tests all language features
-- Reference implementation for correctness
-
-### File Naming
-
-| Prefix | Content |
+| Script | Purpose |
 |--------|---------|
-| `V1*` | Version 1 tests (core features) |
-| `VV1*` | Extended version 1 tests |
-| `VV2*` | Version 2 tests |
-| `VVE*` | Error handling tests |
-
-### Key Test Files
-
-| File | Features Tested |
-|------|-----------------|
-| `V1SET.m` | SET command variations |
-| `V1WR.m` | WRITE command |
-| `V1FORA*.m` | FOR loop patterns |
-| `V1DO*.m` | DO/QUIT subroutines |
-| `V1IE*.m` | IF/ELSE patterns |
-| `V1GO*.m` | GOTO patterns |
-| `V1PAT*.m` | Pattern matching |
-| `V1IDNM*.m` | Indirection |
-| `V1FN*.m` | Intrinsic functions |
-
-### Test Structure
-
-Each test file contains:
-1. **Test cases** with expected results
-2. **EXAMINER** subroutine for validation
-3. **PASS/FAIL counters**
-
-```mumps
-V1SET   ;SET COMMAND;...
-    S PASS=0,FAIL=0
-    ...
-    S ITEM="I-781.1"
-    SET A(1)="value"
-    S VCOMP=A(1)
-    S VCORR="value" D EXAMINER
-```
-
-## Adding New Tests
-
-### Unit Tests
-
-Create tests in `tests/unit/`:
-
-```python
-# tests/unit/test_set_statement.py
-import pytest
-from m2py import MUMPSParser
-from m2py.asg.statements import MSetStatement
-
-def test_simple_set():
-    parser = MUMPSParser()
-    routine = parser.parse_string("TEST S X=1")
-    
-    stmt = routine.labels[0].body.statements[0]
-    assert isinstance(stmt, MSetStatement)
-    assert len(stmt.assignments) == 1
-    assert stmt.assignments[0].target.name == "X"
-
-def test_multiple_set():
-    parser = MUMPSParser()
-    routine = parser.parse_string("TEST S A=1,B=2")
-    
-    stmt = routine.labels[0].body.statements[0]
-    assert len(stmt.assignments) == 2
-```
-
-### Functional Tests
-
-Add MUMPS files to `tests/functional/` with corresponding test code:
-
-```python
-# tests/functional/test_custom.py
-import pytest
-from pathlib import Path
-from m2py import MUMPSParser
-
-def test_my_feature():
-    parser = MUMPSParser()
-    routine = parser.parse_file("tests/functional/custom/mytest.m")
-    # Assertions
-```
-
-## Debugging Parser Issues
-
-### Parse Errors
-
-```python
-from m2py import MUMPSParser
-from m2py.parser.exceptions import MUMPSParseError
-
-parser = MUMPSParser()
-try:
-    routine = parser.parse_string("TEST S X=")  # Invalid
-except MUMPSParseError as e:
-    print(f"Parse error at line {e.line}, col {e.col}")
-    print(f"Message: {e.message}")
-```
-
-### Inspecting Grammar
-
-The textX grammar files are in `src/m2py/grammar/`:
+| `utils/validate.py` | Compare m2py output against YottaDB via Docker |
+| `utils/ydb.py` | Run MUMPS through YottaDB via Docker |
+| `utils/validate_asg.py` | Inspect ASG structure for a MUMPS file |
+| `utils/rebuild_docs.py` | Regenerate `docs/limitations.md` |
 
 ```bash
-ls src/m2py/grammar/
-# mumps.tx, line.tx, commands.tx, expressions.tx
-```
+# Compare output against YDB
+uv run python utils/validate.py --code 'TEST W "Hello" Q'
 
-### Debug Mode
+# Debug mode: show AST and generated Python
+uv run python utils/validate.py --debug --code 'TEST S X=1 W X Q'
 
-```python
-parser = MUMPSParser(debug=True)  # Enable debug output
-```
-
-## Continuous Integration
-
-### pytest Configuration
-
-Basic settings live in `pyproject.toml`:
-
-```toml
-[tool.pytest.ini_options]
-pythonpath = ["src"]
-```
-
-Smart defaults are applied programmatically in `tests/conftest.py` via
-`pytest_configure()`. This replaces the old `addopts` approach and avoids
-the need for `-o "addopts="` overrides:
-
-| Default | Override | Effect |
-|---------|----------|--------|
-| `-n auto` | `-n0` | Run sequentially |
-| `-m 'not slow'` | `-m slow` | Run only slow tests |
-| (both) | `-n0 -m ''` | Sequential, all tests |
-
-### Coverage Thresholds
-
-```bash
-uv run pytest --cov=src/m2py --cov-fail-under=80
-```
-
-## Common Issues
-
-### Missing Analysis
-
-If fields like `input_variables` are empty, ensure analysis passes ran:
-
-```python
-parser.resolve_references(routine)
-parser.analyze_variables(routine)
-```
-
-### Encoding Issues
-
-MUMPS files should be UTF-8 or ASCII:
-
-```python
-routine = parser.parse_file("file.m", encoding="utf-8")
-```
-
-### Large Files
-
-For performance testing with large files:
-
-```python
-import time
-start = time.time()
-routine = parser.parse_file("large.m")
-print(f"Parse time: {time.time() - start:.2f}s")
-```
-
-## Testing Conventions
-
-### Test Docstrings
-
-Test docstrings should describe the **behavior being tested**, not reference internal task numbers or bug IDs:
-
-```python
-# Good - describes behavior
-def test_double_negative(self):
-    """Parse double unary minus (chained unary operators are valid MUMPS syntax)."""
-
-# Avoid - references internal tracking
-def test_double_negative(self):
-    """Parse double unary minus (BUG-002 fix)."""  # ❌
-```
-
-### API Property Naming
-
-When testing statement properties, use the **primary field names** rather than deprecated aliases:
-
-```python
-# Good - uses primary field name
-assert len(stmt.targets) == 2  # MJobStatement, MDoStatement, MGotoStatement
-
-# Avoid - uses deprecated alias
-assert len(stmt.calls) == 2  # ❌ deprecated for MJobStatement
-```
-
-### Deprecated Properties
-
-The following properties are deprecated but maintained for backward compatibility:
-
-| Statement | Deprecated | Use Instead |
-|-----------|------------|-------------|
-| `MJobStatement` | `.calls` | `.targets` |
-| `MJobStatement` | `.call` | `.targets[0]` |
-
-Tests for backward compatibility should explicitly document the deprecation:
-
-```python
-def test_backward_compat_calls_property(self):
-    """Verify deprecated .calls property works for backward compatibility."""
-    stmt = ...
-    # .calls is deprecated alias for .targets
-    assert stmt.calls is stmt.targets
-```
-## Backward Compatibility
-
-M2PY supports MUMPS code written to older ANSI standards (1977, 1984, 1990) as well as the current 1995 standard. This section documents syntax differences across standards and how M2PY handles legacy constructs.
-
-### Supported Standards
-
-| Standard | Year | Key Features |
-|----------|------|--------------|
-| ANSI X11.1-1977 | 1977 | Base language (SET, IF, FOR, GOTO, etc.) |
-| ANSI X11.1-1984 | 1984 | NEW command, $ORDER, $QUERY, $GET, parameter passing |
-| ANSI M X11.1-1990 | 1990 | MERGE command, $TRANSLATE, $NAME, $FNUMBER, $REVERSE |
-| ANSI M X11.1-1995 | 1995 | Transaction processing, SSVNs, structured error handling |
-
-### Deprecated Constructs
-
-#### $NEXT Function (Pre-1995)
-
-The `$NEXT` function was deprecated in the 1995 standard in favor of `$ORDER`.
-
-**Syntax**: `$N[EXT](glvn)` or `$NEXT(glvn)`
-
-**M2PY Behavior**: 
-- Parses and transpiles correctly
-- Emits `MUMPSDeprecationWarning` at runtime:
-  ```
-  MUMPSDeprecationWarning: $NEXT is deprecated per 1995 spec §7.1.5; use $ORDER instead
-  ```
-
-**Usage in legacy code**:
-- VistA-M repository: ~488 occurrences
-- MVTS test suite: ~58 occurrences (explicit compatibility tests)
-
-**Example**:
-```mumps
-; Legacy (deprecated)
-S X=$N(^GLOBAL(""))
-; Modern (preferred)
-S X=$O(^GLOBAL(""))
-```
-
-#### $DEXTRACT and $DPIECE (Never Standardized)
-
-These functions were proposed for the 1984/1990 standards but never included in the final ANSI standard.
-
-**M2PY Behavior**: Not supported; raises parse error.
-
-### Pre-1995 Test Marker
-
-Tests for backward compatibility features use the `@pytest.mark.pre1995` marker:
-
-```python
-@pytest.mark.pre1995
-def test_next_function_parsing():
-    """Verify $NEXT parses correctly (deprecated but supported)."""
-    parser = MUMPSParser()
-    routine = parser.parse_string('TEST S X=$N(^A(""))')
-    # Assertions...
-```
-
-**Running pre-1995 tests**:
-```bash
-# Run only pre-1995 compatibility tests
-uv run pytest -m pre1995 -v
-
-# Exclude pre-1995 tests
-uv run pytest -m "not pre1995"
-```
-
-### Feature Evolution Reference
-
-For detailed information about which features were added in each standard version, see:
-- [specs/002-spec-unit-test-organization/research.md](../specs/002-spec-unit-test-organization/research.md#backward-compatibility-research) - Complete evolution table
-- [mumps-reference/INDEX.md](../mumps-reference/INDEX.md) - MUMPS specification reference documents
-
-### VistA Compatibility
-
-M2PY is designed to parse the VistA codebase without syntax errors due to standard version differences. The primary compatibility considerations are:
-
-1. **$NEXT usage**: Approximately 488 occurrences in VistA-M; all parse correctly
-2. **Core syntax**: All 1977 core commands/functions are stable across versions
-3. **Additions only**: No breaking syntax changes between standards; features are only added
-
-To verify VistA compatibility:
-```bash
-uv run python utils/verify_vista_parse.py
+# Run MUMPS through YDB only
+uv run python utils/ydb.py --code 'TEST W 1+2 Q'
 ```

@@ -183,8 +183,8 @@ class TestEvaluateSubscripts:
 
     def test_evaluate_mixed_with_varref(self):
         """Tuple with VarRef resolves the reference."""
-        scope = {"I": MArray()}
-        scope["I"].value = 10
+        scope = {"_a_I": MArray()}
+        scope["_a_I"].value = 10
         subs = (1, VarRef("I"), 3)
         result = _evaluate_subscripts(subs, scope)
         assert result == (1, 10, 3)

@@ -385,3 +385,22 @@ class TestNewIndirectionPass2:
         """N $EC — NEW special variable $ECODE."""
         result = execute_mumps('TEST\n S $EC="" D SUB Q\nSUB\n N $EC Q\n')
         assert result.success is True
+
+
+@pytest.mark.codegen
+class TestExclusiveNewCodegen:
+    """Exclusive NEW — N (var_list) preserves named variables, kills rest."""
+
+    def test_exclusive_new_preserves_named(self, execute_mumps):
+        """N (A) — keeps A, kills B and C."""
+        result = execute_mumps(
+            'TEST\n S A=1,B=2,C=3\n N (A)\n W $D(A)," ",$D(B)," ",$D(C),!\n Q\n'
+        )
+        assert result.output.strip() == "1 0 0"
+
+    def test_exclusive_new_preserves_multiple(self, execute_mumps):
+        """N (A,C) — keeps A and C, kills B."""
+        result = execute_mumps(
+            'TEST\n S A=1,B=2,C=3\n N (A,C)\n W $D(A)," ",$D(B)," ",$D(C),!\n Q\n'
+        )
+        assert result.output.strip() == "1 0 1"

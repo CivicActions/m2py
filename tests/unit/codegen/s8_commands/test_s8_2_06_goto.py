@@ -51,8 +51,8 @@ L1 W "0" Q
 
         # Should have _line_map for offset dispatch
         assert "_line_map" in python_code
-        # Should calculate offset from variable
-        assert "m_num(X)" in python_code or "int(X)" in python_code
+        # Should calculate offset from variable (may use scope or bare variable)
+        assert "m_num(" in python_code and "'X'" in python_code
 
         # Execute and verify correct offset dispatch
         result = execute_mumps(code)
@@ -69,8 +69,8 @@ L1 W "0" Q
 
         # Should import the external routine
         assert "import OTHER" in code
-        # Should import GotoExternal exception
-        assert "from m2py.runtime import GotoExternal" in code
+        # Should have GotoExternal available (imported from m2py.runtime)
+        assert "GotoExternal" in code
         # Should raise GotoExternal with module and None (entry label)
         # Phase 13 (T080): GotoExternal now includes _rt=_rt
         assert "raise GotoExternal(OTHER, None, _rt=_rt)" in code
@@ -913,18 +913,19 @@ STAR W "0"
         assert '4: ("STAR", 2),' in code  # Line 4 = STAR+2
         assert '5: ("STAR", 3),' in code  # Line 5 = STAR+3
 
-    def test_line_map_not_generated_without_offsets(self, generate_python):
-        """T013b: Routine without offset calls does NOT generate _line_map.
+    def test_line_map_generated_even_without_offsets(self, generate_python):
+        """T013b: _line_map is always generated for trampoline routines.
 
-        Only routines with computed offsets need the line map overhead.
+        Even without computed offsets, _line_map is needed for
+        run_with_goto_support() compatibility when called externally.
         """
         source = """TEST G NEXT Q
 NEXT W "done" Q"""
         code = generate_python(source)
 
-        # Verify _line_map is NOT present (no offset calls)
-        assert "_line_map" not in code, (
-            "No _line_map should be generated without offset calls"
+        # _line_map should always be generated (may be empty or populated)
+        assert "_line_map" in code, (
+            "_line_map should always be generated for trampoline routines"
         )
 
     def test_line_map_excludes_non_executable_lines(self, generate_python):
@@ -1665,18 +1666,18 @@ class TestGotoExternalImport:
         code = generate_python("TEST G END^OTHER Q\n")
 
         # Should have module-level import of GotoExternal
-        assert "from m2py.runtime import GotoExternal" in code
+        assert "GotoExternal" in code
 
-    def test_simple_routine_no_external_goto_no_import(self, generate_python):
-        """Simple routine without external GOTO doesn't need GotoExternal import.
+    def test_simple_routine_has_standard_imports(self, generate_python):
+        """Simple routine without external GOTO still gets standard runtime imports.
 
-        When there are no G ^ROUTINE or G LABEL^ROUTINE patterns, the
-        GotoExternal import should not be generated.
+        GotoExternal is part of the standard runtime import line now,
+        since any routine that does DO ^ROUTINE or indirect GOTO needs it.
         """
         code = generate_python("TEST S X=1 W X Q\n")
 
-        # Should NOT have GotoExternal import for simple routines
-        assert "GotoExternal" not in code
+        # GotoExternal is included in standard imports for all routines
+        assert "GotoExternal" in code
 
     def test_routine_with_internal_goto_no_external_import(self, generate_python):
         """Internal GOTO (G LABEL) doesn't require GotoExternal import.
@@ -1847,6 +1848,41 @@ class TestMultiTargetGoto:
             'TEST\n\tG A:0,B:0,C\n\tQ\nA\n\tW "A"\n\tQ\nB\n\tW "B"\n\tQ\nC\n\tW "C"\n\tQ\n'
         )
         assert result.output == "C"
+
+
+@pytest.mark.codegen
+class TestForwardGotoIfCodegen:
+    """Forward GOTO restructured as if/else — multi-condition and argumentless IF."""
+
+    def test_forward_goto_multi_condition_true(self, execute_mumps):
+        """I 1,1 G END — multi-condition IF all true, skips intermediate lines."""
+        result = execute_mumps(
+            'TEST\n I 1,1 G END\n W "skipped",!\nEND\n W "done",!\n Q\n'
+        )
+        assert "done" in result.output
+        assert "skipped" not in result.output
+
+    def test_forward_goto_multi_condition_false(self, execute_mumps):
+        """I 0,1 G END — first condition false, runs skipped lines."""
+        result = execute_mumps('TEST\n I 0,1 G END\n W "ran",!\nEND\n W "done",!\n Q\n')
+        assert "ran" in result.output
+        assert "done" in result.output
+
+    def test_forward_goto_argumentless_if_true(self, execute_mumps):
+        """I (argless) with $T=1 then GOTO — uses existing _test."""
+        result = execute_mumps(
+            'TEST\n S X=1\n I X\n I  G END\n W "skipped",!\nEND\n W "done",!\n Q\n'
+        )
+        assert "done" in result.output
+        assert "skipped" not in result.output
+
+    def test_forward_goto_argumentless_if_false(self, execute_mumps):
+        """I (argless) with $T=0 — runs intermediate lines."""
+        result = execute_mumps(
+            'TEST\n S X=0\n I X\n I  G END\n W "ran",!\nEND\n W "done",!\n Q\n'
+        )
+        assert "ran" in result.output
+        assert "done" in result.output
 
 
 # =============================================================================

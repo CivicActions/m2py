@@ -284,3 +284,17 @@ class TestMergeIndirectionPass2:
             'TEST\n K ^G S A("a")=1,A("b")=2 M ^G(1)=A W ^G(1,"a"),^G(1,"b") Q\n'
         )
         assert result.output == "12"
+
+    def test_merge_global_to_local_simple(self, execute_mumps):
+        """M B=^X — merge entire global tree into local variable."""
+        result = execute_mumps(
+            'TEST\n K ^X S ^X(1)=1,^X(2)=2\n M B=^X\n W B(1)," ",B(2),!\n Q\n'
+        )
+        assert result.output.strip() == "1 2"
+
+    def test_merge_local_to_local(self, execute_mumps):
+        """M B=A — merge local to local."""
+        result = execute_mumps(
+            'TEST\n S A(1)="x",A(2)="y"\n M B=A\n W B(1),B(2),!\n Q\n'
+        )
+        assert result.output.strip() == "xy"

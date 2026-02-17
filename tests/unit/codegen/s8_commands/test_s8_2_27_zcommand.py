@@ -51,3 +51,34 @@ class TestZCommandCodegenDispatch:
         """ZSHOW dispatches to zshow handler (§8.2.27)."""
         code = generate_python('TEST ZSHOW "I" Q')
         assert "zshow" in code.lower() or "_rt." in code
+
+
+@pytest.mark.codegen
+class TestZCommandExecution:
+    """Execution tests for Z-commands (coverage: codegen L6680-6810)."""
+
+    def test_zgoto_argumentless_exits(self, execute_mumps):
+        """ZG — argumentless ZGOTO exits program."""
+        result = execute_mumps('TEST\n W "before",!\n ZG\n W "after",!\n Q\n')
+        assert "before" in result.output
+
+    def test_zsystem_echo(self, execute_mumps):
+        """ZSY "echo hello" — runs OS command and captures stdout."""
+        result = execute_mumps('TEST\n ZSY "echo hello"\n Q\n')
+        assert result.success is True
+        assert "hello" in result.output
+
+    def test_zshow_i(self, execute_mumps):
+        """ZSHOW "I" — shows ISV info matching YDB format."""
+        result = execute_mumps('TEST\n ZSHOW "I"\n Q\n')
+        assert "$HOROLOG=" in result.output
+        assert "$JOB=" in result.output
+        assert "$ECODE=" in result.output
+        assert "$TEST=" in result.output
+        assert "$TLEVEL=" in result.output
+
+    def test_zshow_star(self, execute_mumps):
+        """ZSHOW "*" — shows all info (variables, stack, devices, ISVs)."""
+        result = execute_mumps('TEST\n ZSHOW "*"\n Q\n')
+        assert len(result.output) > 0
+        assert "$HOROLOG=" in result.output

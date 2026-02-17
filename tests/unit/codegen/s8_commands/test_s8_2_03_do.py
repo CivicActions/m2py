@@ -120,7 +120,7 @@ class TestDoCommandCodegen:
         assert "LabelNotFoundError" in code
 
         # Should call via run_with_goto_support for external GOTO handling
-        assert "run_with_goto_support(EXTRTN.LABEL, _rt, _scope)" in code
+        assert "run_with_goto_support(getattr(EXTRTN, 'LABEL'), _rt, _scope)" in code
 
 
 @pytest.mark.codegen
@@ -883,7 +883,7 @@ class TestPartialIndirection:
         assert "importlib.import_module" in code
 
         # Should evaluate the RTN variable
-        assert "_scope.get('RTN'" in code
+        assert "_scope['RTN']" in code or "_scope.get('RTN'" in code
 
         # Should handle the call target via runtime resolve_do_targets
         assert "resolve_do_targets" in code
@@ -1313,7 +1313,8 @@ class TestDoExternalRoutineEntryFunction:
     def test_d_label_routine_does_not_use_entry_function(self, generate_python):
         """D LABEL^EXTRTN still uses named label, not _entry_function."""
         code = generate_python("TEST D LABEL^EXTRTN Q")
-        assert "EXTRTN.LABEL" in code
+        # Uses getattr() for pyright-safe cross-module label access
+        assert "getattr(EXTRTN, 'LABEL')" in code
         # The DO call should reference the label directly, not _entry_function
         # (Note: _entry_function is always declared at module level, so just
         # check the call site doesn't use it)
@@ -1323,10 +1324,10 @@ class TestDoExternalRoutineEntryFunction:
                 and "import" not in line
                 and "_entry_function" not in line
             ):
-                if "EXTRTN.LABEL" in line:
+                if "getattr(EXTRTN, 'LABEL')" in line:
                     break
         else:
-            pytest.fail("Expected EXTRTN.LABEL call, not _entry_function")
+            pytest.fail("Expected getattr(EXTRTN, 'LABEL') call, not _entry_function")
 
 
 @pytest.mark.codegen
@@ -1364,3 +1365,8 @@ class TestTrampolineByRefPass2:
             'TEST\n S X=1,Y=2 D SUB(.X,.Y) W X,",",Y Q\nSUB(A,B)\n S A=A+10,B=B+20 Q\n'
         )
         assert result.output == "11,22"
+
+    def test_do_with_postcondition(self, execute_mumps):
+        """D:cond SUB — postconditioned DO (coverage: codegen DO path)."""
+        result = execute_mumps('TEST\n S X=1\n D:X SUB\n Q\nSUB\n W "called",!\n Q\n')
+        assert "called" in result.output

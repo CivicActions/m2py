@@ -321,3 +321,52 @@ class TestZWriteCodegen:
         result = execute_mumps('TEST\n\tS X="hello"\n\tZWRITE X\n\tQ\n')
         assert "X=" in result.output
         assert "hello" in result.output
+
+    def test_zwrite_global(self, execute_mumps):
+        """ZWR ^G — ZWRITE global (coverage: codegen L6610-6640)."""
+        result = execute_mumps(
+            'TEST\n S ^ZWG(1)="a",^ZWG(2)="b"\n ZWR ^ZWG\n K ^ZWG\n Q\n'
+        )
+        assert "ZWG" in result.output
+
+    def test_zwrite_subscripted_filter(self, execute_mumps):
+        """ZWR A(1) — specific subscript only (coverage: codegen L6555-6580)."""
+        result = execute_mumps('TEST\n S A(1)="x",A(2)="y"\n ZWR A(1)\n Q\n')
+        assert "A(1)" in result.output
+        assert "A(2)" not in result.output
+
+
+@pytest.mark.codegen
+class TestWriteCharcodeCodegen:
+    """Tests for WRITE *expr (character code) codegen (coverage: L1720-1740)."""
+
+    def test_write_star_65(self, execute_mumps):
+        """W *65 outputs 'A'."""
+        result = execute_mumps("TEST\n W *65\n Q\n")
+        assert "A" in result.output
+
+    def test_write_star_expression(self, execute_mumps):
+        """W *48+17 outputs 'A' (65)."""
+        result = execute_mumps("TEST\n W *48+17\n Q\n")
+        assert "A" in result.output
+
+    def test_write_star_codegen(self, generate_python):
+        """W *65 generates chr() call in Python."""
+        code = generate_python("TEST\n W *65\n Q\n")
+        assert "chr(" in code or "*" in code
+
+
+@pytest.mark.codegen
+class TestZWriteAllLocalsCodegen:
+    """Tests for ZWRITE all locals (coverage: codegen L6555-6640)."""
+
+    def test_zwrite_all_locals(self, execute_mumps):
+        """ZWR — dump all locals."""
+        result = execute_mumps("TEST\n S A=1,B=2\n ZWR\n Q\n")
+        assert "A=1" in result.output or "a=1" in result.output.lower()
+        assert "B=2" in result.output or "b=2" in result.output.lower()
+
+    def test_zwrite_specific_var(self, execute_mumps):
+        """ZWR A — dump specific variable."""
+        result = execute_mumps('TEST\n S A(1)="x",A(2)="y"\n ZWR A\n Q\n')
+        assert "A(" in result.output

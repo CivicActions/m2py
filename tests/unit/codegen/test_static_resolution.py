@@ -89,7 +89,7 @@ class TestStaticResolution:
         """
         code = generate_python("TEST\n S X=1\n W X\n Q")
         # Write should access variable via m_var_value helper (handles MArray and plain values)
-        assert "m_var_value(_scope.get('X'))" in code
+        assert "m_var_value(_scope['X'])" in code
         # Read should NOT use get_var or resolve_indirection
         assert "get_var" not in code
         assert "resolve_indirection" not in code

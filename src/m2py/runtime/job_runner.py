@@ -79,14 +79,11 @@ def main() -> None:
         module = _import_routine(args.routine)
         if module is None:
             # Module not found — exit with failure code
-            # (Must be outside try/except SystemExit to propagate correctly)
-            storage.close()
             sys.exit(1)
 
         # Find the entry function
         entry_func = getattr(module, args.label, None)
         if entry_func is None or not callable(entry_func):
-            storage.close()
             sys.exit(1)
 
         # Set routine context for $TEXT support
@@ -107,8 +104,10 @@ def main() -> None:
             entry_func, rt, {}, _args=actual_args if actual_args else None
         )
 
-    except SystemExit:
-        pass  # HALT in child is normal
+    except SystemExit as _se:
+        if _se.code and _se.code != 0:
+            raise  # Re-raise non-zero exit (import/label failure)
+        # HALT in child is normal (exit code 0)
     except Exception:
         pass  # JOB'd routine errors shouldn't crash anything
     finally:

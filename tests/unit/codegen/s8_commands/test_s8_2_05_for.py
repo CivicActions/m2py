@@ -24,7 +24,7 @@ class TestForCommandCodegen:
     def test_for_list_to_for_in(self, generate_python):
         """FOR list generates Python for-in loop (§8.2.5)."""
         code = generate_python('TEST\n F I="A","B","C" W I\n Q\n')
-        assert 'for I in ["A", "B", "C"]:' in code
+        assert 'for _a_I in ["A", "B", "C"]:' in code  # E743: I → _a_I
 
     def test_for_bounded_iteration(self, execute_mumps):
         """FOR bounded range outputs correct values.
@@ -73,7 +73,7 @@ class TestForCommandCodegen:
         code = generate_python("TEST\n F I=1:1 D\n . W I\n . I I=5 Q\n Q\n")
         assert "from itertools import" in code
         assert "count(" in code
-        assert "for I in count(" in code
+        assert "for _a_I in count(" in code
 
     def test_for_argumentless_with_do_block(self, generate_python):
         """FOR argumentless generates while True loop (§8.2.5).
@@ -351,7 +351,7 @@ class TestForGenContextCodegen:
         stmt.loop_type = ForLoopType.BOUNDED
 
         ctx = ForGenContext.from_statement(stmt)
-        assert ctx.loop_var == "I"
+        assert ctx.loop_var == "_a_I"  # E743: I is ambiguous, translated to _a_I
         assert ctx.loop_type == ForLoopType.BOUNDED
         assert ctx.is_infinite is False
 
@@ -377,7 +377,7 @@ class TestForGenContextCodegen:
         stmt.loop_type = ForLoopType.STRING_LIST
 
         ctx = ForGenContext.from_statement(stmt)
-        assert ctx.loop_var == "I"
+        assert ctx.loop_var == "_a_I"  # E743: I is ambiguous, translated to _a_I
         assert ctx.loop_type == ForLoopType.STRING_LIST
 
     def test_for_gen_context_from_argumentless(self):
@@ -547,6 +547,16 @@ class TestIndirectForCodegen:
         """F @A="X","Y","Z" W @A — indirect loop var with string list."""
         result = execute_mumps('TEST\n\tS A="I"\n\tF @A="X","Y","Z" W @A\n\tQ\n')
         assert result.output == "XYZ"
+
+
+@pytest.mark.codegen
+class TestForSubscriptedVar:
+    """FOR with subscripted loop variable (coverage: codegen FOR path)."""
+
+    def test_for_with_subscripted_var(self, execute_mumps):
+        """F A(1)=1:1:3 — loop var with subscripts."""
+        result = execute_mumps("TEST\n F A(1)=1:1:3 W A(1)\n Q\n")
+        assert result.output == "123"
 
 
 # =============================================================================

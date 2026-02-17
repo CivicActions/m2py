@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, Optional
 
 from m2py.asg.elements import MLabel, MRoutine
+from m2py.asg.enums import ExprResultType
+from m2py.asg.statements import MQuitStatement
 from m2py.analysis.variables import FunctionSignature
 from m2py.codegen.emitter import CodeEmitter
 from m2py.codegen.enums import GotoStrategy
@@ -29,6 +31,53 @@ from m2py.codegen.statements import (
 
 if TYPE_CHECKING:
     pass
+
+
+# Mapping from ExprResultType to Python type annotation strings.
+# All return types include None because generated functions can return None
+# via $ETRAP error handling paths and fall-through code paths.
+_RESULT_TYPE_TO_HINT: Dict[ExprResultType, str] = {
+    ExprResultType.STRING: "str | None",
+    ExprResultType.NUMERIC: "int | Decimal | None",
+    ExprResultType.BOOLEAN_INT: "int | None",
+    ExprResultType.NUMERIC_STRING: "str | None",
+}
+
+
+def _infer_return_type(label: MLabel) -> str | None:
+    """Infer a consistent return type hint from all QUIT expressions in a label.
+
+    Walks all statements in the label body, collects return_value.result_type
+    from every MQuitStatement that has a return value, and returns a type hint
+    string if all return types are consistent and non-UNKNOWN.
+
+    Args:
+        label: MLabel ASG node to analyze
+
+    Returns:
+        Python type annotation string (e.g. "str", "int") or None if
+        no consistent type can be determined.
+    """
+    result_types: set[ExprResultType] = set()
+
+    for stmt in label.body.walk_statements():
+        if isinstance(stmt, MQuitStatement) and stmt.return_value is not None:
+            rt = stmt.return_value.result_type
+            if rt is None or rt == ExprResultType.UNKNOWN:
+                # Any unknown return makes the whole function un-annotatable
+                return None
+            result_types.add(rt)
+
+    if not result_types:
+        # No QUIT with return value — not a function, no annotation
+        return None
+
+    if len(result_types) == 1:
+        rt = next(iter(result_types))
+        return _RESULT_TYPE_TO_HINT.get(rt)
+
+    # Multiple different types — cannot annotate consistently
+    return None
 
 
 @dataclass
@@ -284,15 +333,23 @@ class RoutineGenerator:
             ctx: Generator context
         """
         # Imports
+        # Suppress "too complex" warnings from pyright for large generated functions.
+        # Transpiled MUMPS code can produce deeply nested conditional paths that
+        # exceed pyright's analysis complexity threshold.
+        ctx.emitter.line("# pyright: reportGeneralTypeIssues=false")
         ctx.emitter.line("import re")
         ctx.emitter.line("import time")
         ctx.emitter.line("from decimal import Decimal")
         ctx.emitter.line("from itertools import chain, count")
         ctx.emitter.line(
-            "from m2py.codegen.helpers import m_str, m_num, m_truth, m_compare, m_div, m_add, m_sub, m_mul, m_mod, m_range"
+            "from m2py.codegen.helpers import m_str, m_num, m_truth, m_compare, m_div, m_int_div, m_pow, m_add, m_sub, m_mul, m_mod, m_range"
         )
         # Import MArray for subscripted local variable support
-        ctx.emitter.line("from m2py.runtime import MUMPSRuntime, MArray")
+        # run_with_goto_support is needed for any D ^ROUTINE call
+        # GotoExternal is needed for cross-routine GOTO and indirect GOTO
+        ctx.emitter.line(
+            "from m2py.runtime import MUMPSRuntime, MArray, run_with_goto_support, resolve_goto_target, LabelNotFoundError, GotoExternal"
+        )
         # Import runtime helpers: LHS functions, $DATA, $ORDER, $QUERY, $SELECT,
         # $PIECE, $EXTRACT, $GET, $FIND, $NAME/$QLENGTH/$QSUBSCRIPT, $FNUMBER,
         # sorts-after, pattern_match, NewScopeManager, READ helpers, m_var_value,
@@ -308,15 +365,6 @@ class RoutineGenerator:
         if self._strategy == GotoStrategy.TRAMPOLINE:
             ctx.emitter.line("from dataclasses import dataclass, field")
             ctx.emitter.line("from typing import Any, Optional, Tuple")
-            # Import GotoExternal and run_with_goto_support for cross-routine GOTO handling
-            ctx.emitter.line(
-                "from m2py.runtime import GotoExternal, run_with_goto_support, resolve_goto_target, LabelNotFoundError"
-            )
-        elif self._routine.has_external_gotos:
-            # Non-TRAMPOLINE routines with external GOTOs also need GotoExternal
-            ctx.emitter.line(
-                "from m2py.runtime import GotoExternal, run_with_goto_support, resolve_goto_target, LabelNotFoundError"
-            )
 
         ctx.emitter.blank()
 
@@ -553,7 +601,15 @@ class RoutineGenerator:
             ["_rt"] + formal_params_with_defaults + ["_scope=None", "_start_offset=0"]
         )
         params_str = ", ".join(all_params)
-        ctx.emitter.line(f"def {func_name}({params_str}):")
+
+        # Infer return type from QUIT expressions
+        # Skip annotation for labels with byref_outputs since those return tuples
+        has_byref = bool(label.signature and label.signature.byref_outputs)
+        return_hint = None if has_byref else _infer_return_type(label)
+        if return_hint:
+            ctx.emitter.line(f"def {func_name}({params_str}) -> {return_hint}:")
+        else:
+            ctx.emitter.line(f"def {func_name}({params_str}):")
 
         with ctx.emitter.indented():
             # Generate docstring with MUMPS source info
@@ -754,7 +810,7 @@ class RoutineGenerator:
             ctx: Generator context
         """
         entry_label = self._routine.labels[0].name if self._routine.labels else None
-        if not entry_label:
+        if entry_label is None:
             return
 
         entry_func = translate_name(entry_label)
@@ -812,21 +868,27 @@ class RoutineGenerator:
         ctx.emitter.line("}")
         ctx.emitter.blank()
 
-        # Generate _line_map when routine has offset calls.
-        # Uses pre-computed ASG field from classify_gotos() analysis.
-        has_offsets = self._routine.has_offset_calls
-        if has_offsets:
-            line_map = generate_line_map(self._routine)
+        # Generate _line_map for external D/G +N^ROUTINE patterns and
+        # internal indirection that may resolve to offset calls at runtime.
+        # Always emitted to ensure _line_map is defined even when
+        # has_offset_calls is False (indirection can generate offset
+        # references that pyright needs to see defined).
+        line_map = generate_line_map(self._routine)
+        if line_map:
             generate_line_map_code(line_map, ctx.emitter)
-            ctx.emitter.blank()
+        else:
+            ctx.emitter.line("_line_map: dict[int, tuple[str, int]] = {}")
+        ctx.emitter.blank()
+
+        has_offsets = self._routine.has_offset_calls
 
         # Generate trampoline dispatcher entry point
         # Named after the first label so it's the default entry point
         # Accept _rt parameter for shared runtime across routines
         # Accept _scope parameter for cross-routine variable visibility
         entry_label = self._routine.labels[0].name if self._routine.labels else None
-        if entry_label:
-            entry_func = translate_name(entry_label)
+        if entry_label is not None:
+            entry_func = translate_name(entry_label)  # "" -> "_preamble"
             ctx.emitter.line(f"def {entry_func}(_rt, _scope=None):")
             with ctx.emitter.indented():
                 ctx.emitter.line('"""Trampoline dispatcher for routine execution."""')
@@ -846,9 +908,11 @@ class RoutineGenerator:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
                         # Check if variable exists in _scope and initialize from it
-                        ctx.emitter.line(
-                            f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
-                        )
+                        ctx.emitter.line(f"if {py_name!r} in _scope:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                f"state.{py_name} = _scope[{py_name!r}].value if isinstance(_scope.get({py_name!r}), MArray) else _scope[{py_name!r}]"
+                            )
                 # Target can be str (label) or int (line number)
                 ctx.emitter.line(f'target: str | int | None = "{entry_label}"')
                 ctx.emitter.blank()
@@ -890,6 +954,8 @@ class RoutineGenerator:
                                 )
                         else:
                             # No offsets: simple label dispatch
+                            # Assert narrowing for type checker - target is str here
+                            ctx.emitter.line("assert isinstance(target, str)")
                             ctx.emitter.line("func = _labels[target]")
                             # Pass _rt and _scope to inner functions
                             ctx.emitter.line("target, state = func(_rt, state, _scope)")
@@ -904,7 +970,7 @@ class RoutineGenerator:
                             for var_name in sorted(ctx.state_vars):
                                 py_name = translate_name(var_name)
                                 ctx.emitter.line(
-                                    f"_scope[{var_name!r}] = state.{py_name}"
+                                    f"_scope[{py_name!r}] = state.{py_name}"
                                 )
                         # Run the external GOTO chain to completion and sync back
                         _emit_goto_external_handler(ctx)
@@ -912,9 +978,11 @@ class RoutineGenerator:
                         if not ctx.uses_dynamic_locals:
                             for var_name in sorted(ctx.state_vars):
                                 py_name = translate_name(var_name)
-                                ctx.emitter.line(
-                                    f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
-                                )
+                                ctx.emitter.line(f"if {py_name!r} in _scope:")
+                                with ctx.emitter.indented():
+                                    ctx.emitter.line(
+                                        f"state.{py_name} = _scope[{py_name!r}].value if isinstance(_scope.get({py_name!r}), MArray) else _scope[{py_name!r}]"
+                                    )
                         # Continue the trampoline - set target to None to exit
                         # (the GOTO chain has completed, so we're done with this call)
                         ctx.emitter.line("target = None")
@@ -937,8 +1005,10 @@ class RoutineGenerator:
                     # Remove from _scope only keys that unwind explicitly removed
                     # (not ALL missing keys — _scope may have vars from called routines)
                     ctx.emitter.line(
-                        "for _k in _pre_unwind - set(state._locals.keys()): _scope.pop(_k, None)"
+                        "for _k in _pre_unwind - set(state._locals.keys()):"
                     )
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("_scope.pop(_k, None)")
                 # Sync state back to _scope before returning for cross-routine visibility
                 emit_state_to_scope_sync(ctx)
                 if not ctx.uses_dynamic_locals:
@@ -983,9 +1053,11 @@ class RoutineGenerator:
                 if not ctx.uses_dynamic_locals:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
-                        ctx.emitter.line(
-                            f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
-                        )
+                        ctx.emitter.line(f"if {py_name!r} in _scope:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                f"state.{py_name} = _scope[{py_name!r}].value if isinstance(_scope.get({py_name!r}), MArray) else _scope[{py_name!r}]"
+                            )
 
                 # Wrap entire execution in try/except GotoExternal
                 # This handles GotoExternal from both:
@@ -1035,6 +1107,7 @@ class RoutineGenerator:
                                     "target, state = func(_rt, state, _scope)"
                                 )
                         else:
+                            ctx.emitter.line("assert isinstance(target, str)")
                             ctx.emitter.line("func = _labels[target]")
                             ctx.emitter.line("target, state = func(_rt, state, _scope)")
                 # Handle GotoExternal - run the external GOTO chain to completion
@@ -1046,16 +1119,18 @@ class RoutineGenerator:
                     if not ctx.uses_dynamic_locals:
                         for var_name in sorted(ctx.state_vars):
                             py_name = translate_name(var_name)
-                            ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
+                            ctx.emitter.line(f"_scope[{py_name!r}] = state.{py_name}")
                     # Run the external GOTO chain to completion and sync back
                     _emit_goto_external_handler(ctx)
                     # Static scope→state sync after external call
                     if not ctx.uses_dynamic_locals:
                         for var_name in sorted(ctx.state_vars):
                             py_name = translate_name(var_name)
-                            ctx.emitter.line(
-                                f"if {var_name!r} in _scope: state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
-                            )
+                            ctx.emitter.line(f"if {py_name!r} in _scope:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(
+                                    f"state.{py_name} = _scope[{py_name!r}].value if isinstance(_scope.get({py_name!r}), MArray) else _scope[{py_name!r}]"
+                                )
 
                 # Unwind NEW stack before syncing state back to _scope
                 if ctx.uses_dynamic_locals:
@@ -1064,14 +1139,16 @@ class RoutineGenerator:
                     ctx.emitter.line("unwind_new_stack(state)")
                     # Remove from _scope only keys that unwind explicitly removed
                     ctx.emitter.line(
-                        "for _k in _pre_unwind - set(state._locals.keys()): _scope.pop(_k, None)"
+                        "for _k in _pre_unwind - set(state._locals.keys()):"
                     )
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("_scope.pop(_k, None)")
                 # Sync state back to _scope before returning
                 emit_state_to_scope_sync(ctx)
                 if not ctx.uses_dynamic_locals:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
-                        ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
+                        ctx.emitter.line(f"_scope[{py_name!r}] = state.{py_name}")
                 # Return extrinsic function return value if one was stored
                 # Otherwise return state for normal DO calls
                 ctx.emitter.line(
@@ -1141,11 +1218,10 @@ class RoutineGenerator:
                 params_str = "_rt, state, _scope"
 
         # Return type annotation for trampoline labels.
-        # When offsets are used, target can be str | int | None (label name or line number).
-        if has_offsets:
-            return_type = "Tuple[Optional[str | int], RoutineState]"
-        else:
-            return_type = "Tuple[Optional[str], RoutineState]"
+        # Target can be str (label name), int (line number), or None (exit).
+        # Line numbers can come from explicit D LABEL+N or from indirection
+        # that resolves offsets at runtime, so always include int.
+        return_type = "Tuple[str | int | None, RoutineState]"
         ctx.emitter.line(f"def {func_name}({params_str}) -> {return_type}:")
 
         with ctx.emitter.indented():
@@ -1175,6 +1251,24 @@ class RoutineGenerator:
                         ctx.emitter.line(
                             f"state._locals.setdefault({param!r}, MArray()).value = {param}"
                         )
+
+            # Fallback: formal params NOT in state_vars and NOT in dynamic_locals
+            # must be placed into _scope so the body can read them via _scope[].
+            # This handles TRAMPOLINE labels with static state vars where the
+            # formal parameter is local to one label (not shared across GOTOs).
+            if not ctx.uses_dynamic_locals and formal_params:
+                for param in formal_params:
+                    if param not in state_vars:
+                        ctx.emitter.line(f"if {param} is not None:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(f"if isinstance({param}, MArray):")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(f"_scope[{param!r}] = {param}")
+                            ctx.emitter.line("else:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(
+                                    f"_scope.setdefault({param!r}, MArray()).value = {param}"
+                                )
 
             # Get label line number for offset calculation
             label_line = label.line_number
