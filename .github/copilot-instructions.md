@@ -17,7 +17,7 @@ uv sync                          # Sync environment
 
 - Never use bare `python`, `pip`, or `pytest` commands.
 - **Never use `-o "addopts="`** — smart defaults in `tests/conftest.py` auto-inject
-  `-n auto` and `-m 'not slow'` only when the user hasn't passed `-n` or `-m`.
+  `-n auto` and `-m 'not slow'` only when the user hasn't passed `-n` or `-m`. Avoid -n0 unless debugging issues with parallel test execution.
 - Run short Python snippets with pylanceRunCodeSnippet or create a permanent helper script in `/utils`. *Don't* use `uv python -c` or cat to /tmp files.
 - If you need to use a tmp directory for m files, use the one in the workspace - do not use `/tmp`.
 - Avoid `2> /dev/null` and `&> /dev/null` redirection.
@@ -45,17 +45,23 @@ Uses **Speckit** for spec-driven development via `.github/prompts/speckit.*.prom
 
 ## Validation Utility
 
-The `utils/validate.py` script compares m2py output against YottaDB for runtime verification:
+The `utils/validate.py` script compares m2py output against YottaDB and/or IRIS for runtime verification:
 
 ```bash
 # Compare output against YottaDB (requires Docker)
 uv run python utils/validate.py --code 'TEST W "Hello" Q'
 uv run python utils/validate.py myprogram.m
 
+# Compare against both YDB and IRIS
+uv run python utils/validate.py --iris --code 'TEST W "Hello" Q'
+
+# Compare against IRIS only (skip YDB)
+uv run python utils/validate.py --no-ydb --iris --code 'TEST W $ZCONVERT("hello","U") Q'
+
 # Debug mode: show AST and generated Python
 uv run python utils/validate.py --debug --code 'TEST S X=1 W X Q'
 
-# Skip YottaDB comparison (m2py only)
+# Skip all comparisons (m2py only)
 uv run python utils/validate.py --no-ydb --code 'TEST W 1+2 Q'
 ```
 
@@ -75,6 +81,27 @@ echo -e 'TEST\n write 1+2,!' | uv run python utils/ydb.py -
 ```
 
 **⚠️ Never use `-t` for testing** — TTY mangles control characters (form feed `\x0c` → ANSI escapes), breaking output comparison.
+
+## Generating IRIS Reference Output
+
+Use `utils/iris.py` to run MUMPS through InterSystems IRIS. Uses a persistent Docker container (auto-started on first use) to avoid slow IRIS startup on each invocation.
+
+```bash
+# Run MUMPS file through IRIS
+uv run python utils/iris.py routine.m
+
+# Run inline MUMPS
+uv run python utils/iris.py --code 'TEST W 1+2 Q'
+
+# Run from stdin
+echo -e 'TEST\n write 1+2,!' | uv run python utils/iris.py -
+
+# Container management
+uv run python utils/iris.py --start   # Pre-start the container
+uv run python utils/iris.py --stop    # Stop and remove the container
+```
+
+This is useful for testing IRIS/Caché-specific functions (e.g., `$ZCONVERT`, `$LISTBUILD`) that are not available in YottaDB.
 
 ## Core Principles
 

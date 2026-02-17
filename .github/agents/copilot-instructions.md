@@ -42,29 +42,15 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - SQLite file-backed database (WAL mode) for cross-process globals and lock table (022-large-architecture)
 - Python 3.10+ (constitution constraint; runtime uses 3.10) + textX 4.0+ (parser), argparse (CLI, stdlib), ruff 0.15+ (lint/format), pyright 1.1.408+ (type check) (023-cli-codegen-quality)
 - File system (`.m` input → `.py` output) (023-cli-codegen-quality)
+- Python 3.10+ (generated code must be valid on 3.10; transpiler itself runs on 3.10+) + textX (parser), pytest (testing), uv (package management) (024-vista-transpilation-fixes)
+- SQLite-backed global storage (existing `sqlite_storage.py`) (024-vista-transpilation-fixes)
 
 - (001-textx-semantic-graph)
 
-## Project Structure
-
-```text
-backend/
-frontend/
-tests/
-```
-
-## Commands
-
-# Add commands for 
-
-## Code Style
-
-: Follow standard conventions
-
 ## Recent Changes
+- 024-vista-transpilation-fixes: Added Python 3.10+ (generated code must be valid on 3.10; transpiler itself runs on 3.10+) + textX (parser), pytest (testing), uv (package management)
 - 023-cli-codegen-quality: Added Python 3.10+ (constitution constraint; runtime uses 3.10) + textX 4.0+ (parser), argparse (CLI, stdlib), ruff 0.15+ (lint/format), pyright 1.1.408+ (type check)
 - 022-large-architecture: Added Python 3.10+ + textX (parser), sqlite3 (stdlib — shared storage), subprocess (stdlib — JOB)
-- 021-correctness-features: Added Python 3.10+ + textX ≥ 4.0 (parser), `copy` (stdlib, deepcopy for transactions), `subprocess` (stdlib, ZSYSTEM), `glob`/`pathlib` (stdlib, $ZSEARCH), `importlib` (stdlib, ZLINK — already used), `datetime` (stdlib, $ZDATE)
 
 
 <!-- MANUAL ADDITIONS START -->

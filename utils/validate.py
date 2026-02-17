@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""MUMPS Validation Utility - Compare m2py output vs YottaDB.
+"""MUMPS Validation Utility - Compare m2py output vs YottaDB and/or IRIS.
 
 This script validates MUMPS code by:
 1. Running it through m2py (parse → generate Python → execute)
-2. Running it through YottaDB via Docker
+2. Running it through YottaDB and/or InterSystems IRIS via Docker
 3. Comparing the outputs
 
 Usage:
@@ -18,6 +18,12 @@ Usage:
 
     # Debug mode (show AST and generated Python)
     uv run python utils/validate.py --debug tests/functional/mugj/inref/V1FORA.m
+
+    # Compare against IRIS (in addition to YDB)
+    uv run python utils/validate.py --iris --code 'TEST W "Hello" Q'
+
+    # Compare against IRIS only (skip YDB)
+    uv run python utils/validate.py --no-ydb --iris --code 'TEST W $ZCONVERT("hello","U") Q'
 """
 
 import argparse
@@ -28,6 +34,7 @@ from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
+from iris import run_iris
 from ydb import run_ydb
 
 
@@ -319,29 +326,55 @@ def run_m2py(
 
 
 # =============================================================================
+# Diff Display
+# =============================================================================
+
+
+def _show_diff(m2py_output: str, ref_output: str, label: str) -> None:
+    """Show a line-by-line diff between m2py and reference output."""
+    if "\n" not in m2py_output and "\n" not in ref_output:
+        return
+    print(color(f"\n─── DIFF (m2py vs {label}) ───", Colors.YELLOW))
+    m2py_lines = m2py_output.split("\n")
+    ref_lines = ref_output.split("\n")
+    max_lines = max(len(m2py_lines), len(ref_lines))
+    for i in range(max_lines):
+        m_line = m2py_lines[i] if i < len(m2py_lines) else ""
+        r_line = ref_lines[i] if i < len(ref_lines) else ""
+        if m_line == r_line:
+            print(f"  {i + 1:3}  {m_line}")
+        else:
+            print(color(f"  {i + 1:3}< {m_line}", Colors.RED))
+            print(color(f"  {i + 1:3}> {r_line}", Colors.GREEN))
+
+
+# =============================================================================
 # Main
 # =============================================================================
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate MUMPS code by comparing m2py output vs YottaDB",
+        description="Validate MUMPS code by comparing m2py output vs YottaDB and/or IRIS",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Validate a file
+    # Validate a file (compares m2py vs YDB)
     uv run python utils/validate.py tests/functional/mugj/inref/V1FORA.m
-    
-    # Validate from stdin
-    echo 'TEST W "Hello" Q' | uv run python utils/validate.py -
     
     # Pass code directly
     uv run python utils/validate.py --code 'TEST W "Hello" Q'
     
+    # Compare against both YDB and IRIS
+    uv run python utils/validate.py --iris --code 'TEST W "Hello" Q'
+    
+    # Compare against IRIS only (skip YDB)
+    uv run python utils/validate.py --no-ydb --iris --code 'TEST W $ZCV("hello","U") Q'
+    
     # Debug mode (show AST and generated Python)
     uv run python utils/validate.py --debug --code 'TEST S X=1 W X Q'
     
-    # Skip YDB comparison (m2py only)
+    # Skip all comparisons (m2py only)
     uv run python utils/validate.py --no-ydb --code 'TEST W 1+2 Q'
         """,
     )
@@ -357,15 +390,18 @@ Examples:
         action="store_true",
         help="Show AST structure and generated Python code",
     )
+    parser.add_argument("--no-ydb", action="store_true", help="Skip YottaDB comparison")
     parser.add_argument(
-        "--no-ydb", action="store_true", help="Skip YottaDB comparison (m2py only)"
+        "--iris",
+        action="store_true",
+        help="Also compare against InterSystems IRIS",
     )
     parser.add_argument(
         "--timeout",
         "-t",
         type=int,
         default=5,
-        help="Execution timeout in seconds for both m2py and YottaDB (default: 5)",
+        help="Execution timeout in seconds for m2py, YDB, and IRIS (default: 5)",
     )
 
     args = parser.parse_args()
@@ -419,63 +455,73 @@ Examples:
     print(color("\n─── M2PY OUTPUT ───", Colors.BLUE))
     print(repr(m2py_output))
 
-    if args.no_ydb:
+    use_ydb = not args.no_ydb
+    use_iris = args.iris
+
+    if not use_ydb and not use_iris:
         print(color("\n─── RESULT ───", Colors.YELLOW))
-        print("YDB comparison skipped (--no-ydb)")
+        print("Comparison skipped (--no-ydb, no --iris)")
         return 0
 
-    # Run YottaDB
-    ydb_output = run_ydb(source, timeout=args.timeout)
+    # Run reference implementations
+    ydb_output: str | None = None
+    iris_output: str | None = None
 
-    # Show YDB output
-    print(color("\n─── YDB OUTPUT ───", Colors.BLUE))
-    print(repr(ydb_output))
+    if use_ydb:
+        ydb_output = run_ydb(source, timeout=args.timeout)
+        print(color("\n─── YDB OUTPUT ───", Colors.BLUE))
+        print(repr(ydb_output))
+
+    if use_iris:
+        iris_output = run_iris(source, timeout=max(args.timeout, 10))
+        print(color("\n─── IRIS OUTPUT ───", Colors.BLUE))
+        print(repr(iris_output))
 
     # Compare outputs
     print(color("\n─── RESULT ───", Colors.BOLD))
-
-    # Handle error cases
+    exit_code = 0
     m2py_error = m2py_output.startswith("ERROR:")
-    ydb_error = ydb_output.startswith("ERROR:")
 
-    if m2py_error and ydb_error:
-        print(color("⚠️  BOTH ERRORED", Colors.YELLOW))
-        print(f"   m2py: {m2py_output.split(chr(10))[0]}")
-        print(f"   ydb:  {ydb_output.split(chr(10))[0]}")
-        return 2
-    elif m2py_error:
-        print(color("❌ M2PY ERROR", Colors.RED))
-        return 1
-    elif ydb_error:
-        print(color("⚠️  YDB ERROR (m2py succeeded)", Colors.YELLOW))
-        print(f"   ydb: {ydb_output.split(chr(10))[0]}")
-        return 2
+    for label, ref_output in [("YDB", ydb_output), ("IRIS", iris_output)]:
+        if ref_output is None:
+            continue
 
-    # Compare actual outputs
-    if m2py_output == ydb_output:
-        print(color("✅ MATCH", Colors.GREEN))
-        return 0
-    else:
-        print(color("❌ MISMATCH", Colors.RED))
-        print(f"\n   m2py: {repr(m2py_output)}")
-        print(f"   ydb:  {repr(ydb_output)}")
+        ref_error = ref_output.startswith("ERROR:")
 
-        # Show diff if outputs are multi-line
-        if "\n" in m2py_output or "\n" in ydb_output:
-            print(color("\n─── DIFF ───", Colors.YELLOW))
-            m2py_lines = m2py_output.split("\n")
-            ydb_lines = ydb_output.split("\n")
-            max_lines = max(len(m2py_lines), len(ydb_lines))
-            for i in range(max_lines):
-                m_line = m2py_lines[i] if i < len(m2py_lines) else ""
-                y_line = ydb_lines[i] if i < len(ydb_lines) else ""
-                if m_line == y_line:
-                    print(f"  {i + 1:3}  {m_line}")
-                else:
-                    print(color(f"  {i + 1:3}< {m_line}", Colors.RED))
-                    print(color(f"  {i + 1:3}> {y_line}", Colors.GREEN))
+        if m2py_error and ref_error:
+            print(color(f"⚠️  BOTH ERRORED (m2py vs {label})", Colors.YELLOW))
+            print(f"   m2py: {m2py_output.split(chr(10))[0]}")
+            print(f"   {label.lower()}:  {ref_output.split(chr(10))[0]}")
+            exit_code = max(exit_code, 2)
+        elif m2py_error:
+            print(color(f"❌ M2PY ERROR (vs {label})", Colors.RED))
+            exit_code = max(exit_code, 1)
+        elif ref_error:
+            print(color(f"⚠️  {label} ERROR (m2py succeeded)", Colors.YELLOW))
+            print(f"   {label.lower()}: {ref_output.split(chr(10))[0]}")
+            exit_code = max(exit_code, 2)
+        elif m2py_output == ref_output:
+            print(color(f"✅ MATCH (m2py vs {label})", Colors.GREEN))
+        else:
+            print(color(f"❌ MISMATCH (m2py vs {label})", Colors.RED))
+            print(f"\n   m2py: {repr(m2py_output)}")
+            print(f"   {label.lower()}:  {repr(ref_output)}")
+            _show_diff(m2py_output, ref_output, label)
+            exit_code = max(exit_code, 1)
 
-        return 1
+    # If both references ran, also compare them against each other
+    if ydb_output is not None and iris_output is not None:
+        ydb_err = ydb_output.startswith("ERROR:")
+        iris_err = iris_output.startswith("ERROR:")
+        if not ydb_err and not iris_err:
+            if ydb_output == iris_output:
+                print(color("✅ YDB == IRIS", Colors.GREEN))
+            else:
+                print(color("⚠️  YDB != IRIS", Colors.YELLOW))
+                print(f"   ydb:  {repr(ydb_output)}")
+                print(f"   iris: {repr(iris_output)}")
+
+    return exit_code
 
 
 if __name__ == "__main__":
