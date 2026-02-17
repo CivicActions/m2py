@@ -306,7 +306,7 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
             # state._locals may contain MArray objects (from SET) or plain values
             # (from external TRAMPOLINE routine returns), so m_var_value
             # handles both cases uniformly.
-            return f"m_var_value(state._locals.get({python_name!r}))"
+            return f"m_var_value(state._locals[{python_name!r}])"
 
     # Handle subscripted array access
     if var.subscripts:
@@ -352,11 +352,11 @@ def _generate_variable(var: MVariable, ctx: "GeneratorContext") -> str:
     # TRAMPOLINE routines may return plain strings in _scope).
     # Uses python_name (translated) to match SET statement key format.
     if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-        return f"m_var_value(_scope.get({python_name!r}))"
+        return f"m_var_value(_scope[{python_name!r}])"
 
     # TRAMPOLINE var not in state_vars (including input-only vars from caller's
     # scope) — read from _scope for consistency with SET which stores there
-    return f"m_var_value(_scope.get({python_name!r}))"
+    return f"m_var_value(_scope[{python_name!r}])"
 
 
 def _generate_global_variable(var: MGlobal, ctx: "GeneratorContext") -> str:
@@ -1061,7 +1061,7 @@ def _generate_extrinsic_arguments_with_byref(
                 parts.append(generate_expr(arg.expression, ctx))
             elif arg.variable_name:
                 var_name = arg.variable_name
-                parts.append(f"m_var_value(_scope.get({var_name!r}))")
+                parts.append(f"m_var_value(_scope[{var_name!r}])")
             else:
                 parts.append("None")
             byref_names.append(None)

@@ -1252,6 +1252,24 @@ class RoutineGenerator:
                             f"state._locals.setdefault({param!r}, MArray()).value = {param}"
                         )
 
+            # Fallback: formal params NOT in state_vars and NOT in dynamic_locals
+            # must be placed into _scope so the body can read them via _scope[].
+            # This handles TRAMPOLINE labels with static state vars where the
+            # formal parameter is local to one label (not shared across GOTOs).
+            if not ctx.uses_dynamic_locals and formal_params:
+                for param in formal_params:
+                    if param not in state_vars:
+                        ctx.emitter.line(f"if {param} is not None:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(f"if isinstance({param}, MArray):")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(f"_scope[{param!r}] = {param}")
+                            ctx.emitter.line("else:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(
+                                    f"_scope.setdefault({param!r}, MArray()).value = {param}"
+                                )
+
             # Get label line number for offset calculation
             label_line = label.line_number
 

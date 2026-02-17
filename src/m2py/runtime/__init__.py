@@ -2374,8 +2374,6 @@ class MUMPSRuntime:
             scope: Variable scope dictionary
             destination: Optional output destination (not implemented)
         """
-        import traceback
-
         codes = codes.upper() if codes else "*"
 
         for code in codes:
@@ -2383,10 +2381,17 @@ class MUMPSRuntime:
                 # Variables - like ZWRITE
                 self.zwrite(scope)
             if code == "S" or code == "*":
-                # Stack trace
-                self.write("Stack trace:\n")
-                for line in traceback.format_stack():
-                    self.write(line)
+                # Stack trace — use MUMPS-style frames, not Python traceback
+                for i, frame in enumerate(self._stack_frames):
+                    place = frame.label or ""
+                    if frame.routine:
+                        place = (
+                            f"{place}^{frame.routine}" if place else f"^{frame.routine}"
+                        )
+                    self.write(f"{place}\n")
+                if not self._stack_frames:
+                    # No stack frames — show at least a top-level marker
+                    self.write("\n")
             if code == "D" or code == "*":
                 # Devices
                 self.write(f"$IO={self._io}\n")
@@ -2404,10 +2409,32 @@ class MUMPSRuntime:
                 # Lock information
                 self._zshow_locks()
             if code == "I" or code == "*":
-                # Intrinsic special variables
-                self.write(f"$HOROLOG={self.horolog()}\n")
+                # Intrinsic special variables — output all ISVs m2py tracks,
+                # matching YDB's alphabetical ZSHOW "I" format.
+                self.write('$DEVICE=""\n')
+                self.write(f'$ECODE="{self._ecode}"\n')
+                self.write(f"$ESTACK={self.estack()}\n")
+                self.write(f'$ETRAP="{self._etrap}"\n')
+                self.write(f'$HOROLOG="{self.horolog()}"\n')
+                self.write(f"$IO={self.io()}\n")
                 self.write(f"$JOB={self.job()}\n")
+                self.write(f'$KEY="{self.key()}"\n')
+                self.write(f"$PRINCIPAL={self.principal()}\n")
+                self.write(f"$QUIT={self.quit_flag()}\n")
+                self.write('$REFERENCE=""\n')
+                self.write(f"$STACK={self.stack_level()}\n")
+                self.write("$STORAGE=2147483647\n")
+                self.write(f'$SYSTEM="{self.system()}"\n')
+                self.write(f"$TEST={1 if self._test else 0}\n")
                 self.write(f"$TLEVEL={self.tlevel()}\n")
+                self.write("$TRESTART=0\n")
+                self.write(f"$X={self.x()}\n")
+                self.write(f"$Y={self.y()}\n")
+                self.write(f'$ZERROR="{self._zerror}"\n')
+                self.write(f'$ZPOSITION="{self._zposition}"\n')
+                self.write(f'$ZSTATUS="{self._zstatus}"\n')
+                self.write(f"$ZSYSTEM={self._zsystem_exit}\n")
+                self.write(f'$ZTRAP="{self._ztrap}"\n')
 
     def _zshow_locks(self) -> None:
         """Display lock information for ZSHOW "L".
@@ -2497,7 +2524,9 @@ class MUMPSRuntime:
         """ZSYSTEM - execute a shell command.
 
         Executes command via subprocess and stores exit
-        code in _zsystem_exit. Empty string is a no-op that sets exit code to 0.
+        code in _zsystem_exit. Captured stdout is written to the
+        WRITE buffer so it appears in the routine's output (matching YDB).
+        Empty string is a no-op that sets exit code to 0.
 
         Args:
             command: Shell command string to execute
@@ -2509,8 +2538,10 @@ class MUMPSRuntime:
             self._zsystem_exit = 0
             return
 
-        result = subprocess.run(cmd, shell=True)
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         self._zsystem_exit = result.returncode
+        if result.stdout:
+            self.write(result.stdout)
 
     def zsystem_exit(self) -> int:
         """Return $ZSYSTEM - exit code from last ZSYSTEM command.
@@ -6972,8 +7003,10 @@ class MUMPSRuntime:
         if first_line and (
             first_line[0].isspace() or first_line[0].upper() in command_letters
         ):
-            # Wrap in a temporary routine with label
-            wrapped_code = "XECUTE " + mumps_code.strip() + " Q"
+            # Wrap in a temporary routine with label.
+            # The safety QUIT goes on a NEW LINE so it doesn't merge with the
+            # last command.  `Q Q` on one line means QUIT-returning-variable-Q.
+            wrapped_code = "XECUTE " + mumps_code.strip() + "\n Q"
         else:
             # Already has structure, use as-is
             wrapped_code = mumps_code

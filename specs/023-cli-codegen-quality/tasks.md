@@ -167,14 +167,14 @@ Full pyright run over 1016 transpiled .py files (from 1261 functional test .m fi
 
 ### Implementation
 
-- [ ] T033 [US6] Run coverage analysis: `uv run pytest --cov=m2py --cov-report=term-missing` and identify uncovered lines per module
-- [ ] T034 [US6] Add tests for meaningful gaps in `src/m2py/runtime/__init__.py` (78% → higher) — add to existing spec-aligned test files where appropriate
-- [ ] T035 [US6] Add tests for meaningful gaps in `src/m2py/codegen/statements.py` (81% → higher) — add to existing spec-aligned test files
-- [ ] T036 [P] [US6] Add tests for meaningful gaps in `src/m2py/codegen/expressions.py` (84% → higher) — add to existing spec-aligned test files
-- [ ] T037 [P] [US6] Add tests for meaningful gaps in `src/m2py/analysis/semantic_analyzer.py` (85% → higher) — add to existing spec-aligned test files
-- [ ] T038 [US6] Add tests for new code: `src/m2py/analysis/type_inference.py` in `tests/unit/analysis/test_type_inference.py`
-- [ ] T039 [US6] Add tests for new code: `src/m2py/cli/` in `tests/integration/test_cli.py`
-- [ ] T040 [US6] Re-run coverage and confirm no `# pragma: no cover` markers were added; remaining uncovered paths are documented as low-value
+- [X] T033 [US6] Run coverage analysis: `uv run pytest --cov=m2py --cov-report=term-missing` and identify uncovered lines per module
+- [X] T034 [US6] Add tests for meaningful gaps in `src/m2py/runtime/__init__.py` (78% → 83.4%) — add to existing spec-aligned test files where appropriate
+- [X] T035 [US6] Add tests for meaningful gaps in `src/m2py/codegen/statements.py` (81% → 85.7%) — add to existing spec-aligned test files
+- [X] T036 [P] [US6] Add tests for meaningful gaps in `src/m2py/codegen/expressions.py` (84% → 91.3%) — add to existing spec-aligned test files
+- [X] T037 [P] [US6] Add tests for meaningful gaps in `src/m2py/analysis/semantic_analyzer.py` (85% → 85.7%) — add to existing spec-aligned test files
+- [X] T038 [US6] Add tests for new code: `src/m2py/analysis/type_inference.py` in `tests/unit/analysis/test_type_inference.py`
+- [X] T039 [US6] Add tests for new code: `src/m2py/cli/` in `tests/unit/cli/test_cli.py`
+- [X] T040 [US6] Re-run coverage and confirm no `# pragma: no cover` markers were added; remaining uncovered paths are documented as low-value
 
 **Checkpoint**: Coverage improved for all targeted modules. All existing tests still pass.
 

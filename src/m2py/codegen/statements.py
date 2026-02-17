@@ -2676,7 +2676,7 @@ def _generate_for_open_ended_while(
             )
         else:
             ctx.emitter.line(
-                f"{for_ctx.loop_var} = m_add(m_num(m_var_value(_scope.get({translated_loop_key!r}))), _for_step)"
+                f"{for_ctx.loop_var} = m_add(m_num(m_var_value(_scope[{translated_loop_key!r}])), _for_step)"
             )
             ctx.emitter.line(
                 f"_scope.setdefault({translated_loop_key!r}, MArray()).value = {for_ctx.loop_var}"
