@@ -1867,16 +1867,12 @@ class TestSetTestSpecialVariable:
         assert "_rt._test" in code
         assert "_test = _rt._test" in code
 
-    def test_eeoeose_transpiles(self, generate_python):
-        """EEOEOSE.m (uses SET $T=0) should transpile without error."""
-        from pathlib import Path
-
-        path = list(Path("VistA-VEHU-M").rglob("EEOEOSE.m"))
-        if not path:
-            pytest.skip("VistA-VEHU-M not available")
-        code = path[0].read_text(errors="replace")
-        result = generate_python(code)
+    def test_set_test_in_routine_with_conditionals(self, generate_python):
+        """Routine using SET $T=0 with conditionals transpiles without error (EEOEOSE pattern)."""
+        source = 'TEST\n S U="^"\n I \'$D(DUZ) Q\n S $T=0\nQ Q $T\n'
+        result = generate_python(source)
         assert result
+        assert "_rt._test" in result
 
 
 # =============================================================================

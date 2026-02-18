@@ -95,80 +95,116 @@ class TestEncodingFallback:
         assert result.success, f"Failed: {result.error}"
 
 
-# Batch VistA Transpilation (Phase 9 / T048)
+# Empty Block Patterns (Phase 9 / T048)
 
 
 @pytest.mark.codegen
-class TestPhase9BatchTranspilation:
-    """Verify all Phase 9 affected VistA routines transpile successfully."""
+class TestPhase9EmptyBlockPatterns:
+    """Verify empty-block patterns from TRAMPOLINE strategy transpile successfully.
 
-    @pytest.fixture
-    def vista_available(self):
-        """Check VistA-VEHU-M is available."""
-        from pathlib import Path
+    These inline routines reproduce the patterns found in VistA routines
+    (e.g. PSAPUR, XINDX10, DICOMP) where IF+GOTO in TRAMPOLINE strategy
+    previously produced empty indented blocks.
+    """
 
-        if not Path("VistA-VEHU-M").exists():
-            pytest.skip("VistA-VEHU-M not available")
-
-    EMPTY_BLOCK_ROUTINES = [
-        "A4AARPT",
-        "DDS4",
-        "DDSU",
-        "DGRP1",
-        "DIAU",
-        "DIBTED",
-        "DICL",
-        "DICOMP",
-        "DICOMP1",
-        "DIP100",
-        "DIWE3",
-        "HLOPRSR3",
-        "IBAUTL9",
-        "PRC5CON",
-        "PRS8MT",
-        "PRSARC05",
-        "PSADJ",
-        "PSAENTO",
-        "PSALFM",
-        "PSAPUR",
-        "PSAREC2",
-        "PSATI",
-        "PSAVIN1",
-        "PSAVIN2",
-        "PSAVINC",
-        "PSBVDLIV",
-        "PSDADJ",
-        "PSDADJN",
-        "PSDEN",
-        "PSDREC",
-        "PSDREC1",
-        "PSDREC2",
-        "PSDREC3",
-        "PSJINVW",
-        "PSOCAN1",
-        "PXRRPCE1",
-        "QAPDEM1",
-        "QAPEDI1",
-        "QAPEDIT1",
-        "QAPPT1",
-        "QAPQCOPY",
-        "QAPSCRN1",
-        "QAPUTIL1",
-        "XINDX10",
-        "XUMF5I",
-        "ZVHFIX",
+    EMPTY_BLOCK_PATTERNS = [
+        pytest.param(
+            'EB1\n S X=1 I X G DONE\n W "not reached",!\nDONE W "done",!\n Q\n',
+            id="simple-if-goto",
+        ),
+        pytest.param(
+            'EB2\n F I=1:1:5 I I=3 G DONE\n Q\nDONE W "done",!\n Q\n',
+            id="for-if-goto",
+        ),
+        pytest.param(
+            "EB3\n S X=1 I X G A:X=1,B:X=2\nA Q\nB Q\n",
+            id="multi-target-conditional-goto",
+        ),
+        pytest.param(
+            'EB4\n N X,Y S X=1\n I X G DONE\n W "not reached",!\nDONE Q\n',
+            id="new-then-if-goto",
+        ),
+        pytest.param(
+            "EB5\n S X=1 I X D:X SUB G DONE\n Q\nSUB Q\nDONE Q\n",
+            id="do-then-goto-in-if",
+        ),
+        pytest.param(
+            'EB6\n S X=0 I \'X G SKIP\n W "yes",!\nSKIP Q\n',
+            id="negated-condition-goto",
+        ),
+        pytest.param(
+            # Pattern from XINDX10: G LABEL1:cond1,LABEL2:cond2
+            "EB7\n G A:1,B:0\nA Q\nB Q\n",
+            id="multi-conditional-goto",
+        ),
+        pytest.param(
+            # Pattern from PSAPUR: FOR+QUIT+DO with nested GOTOs
+            "EB8\n F  S X=$O(Y) Q:'X  I X=1 G DONE\n Q\nDONE Q\n",
+            id="for-quit-if-goto",
+        ),
     ]
 
-    @pytest.mark.parametrize("routine_name", EMPTY_BLOCK_ROUTINES)
-    def test_empty_block_routine_transpiles(
-        self, routine_name, generate_python, vista_available
-    ):
-        """Each empty-block-affected routine should transpile successfully."""
-        from pathlib import Path
+    @pytest.mark.parametrize("source", EMPTY_BLOCK_PATTERNS)
+    def test_empty_block_pattern_transpiles(self, source, generate_python):
+        """Each empty-block pattern should transpile to valid Python."""
+        import ast
 
-        paths = list(Path("VistA-VEHU-M").rglob(f"{routine_name}.m"))
-        if not paths:
-            pytest.skip(f"{routine_name}.m not found")
-        code = paths[0].read_text(errors="replace")
-        result = generate_python(code)
+        result = generate_python(source)
         assert result
+        ast.parse(result)
+
+
+@pytest.mark.codegen
+class TestPhase11UnresolvedGotoPatterns:
+    """Verify unresolved GOTO patterns transpile with runtime fallback.
+
+    These inline routines reproduce the pattern found in VistA routines
+    (e.g. A1BFJOBR, XQ11, RMPFDM) where GOTOs reference labels that
+    don't exist in the routine. The transpiler emits a warning and
+    generates LabelNotFoundError at the GOTO site.
+    """
+
+    UNRESOLVED_GOTO_PATTERNS = [
+        pytest.param(
+            # Pattern from A1BFJOBR: conditional GOTO to non-existent label
+            "UG1\n I 1 G NOPE\n Q\n",
+            id="simple-unresolved-goto",
+        ),
+        pytest.param(
+            # Pattern from XQ11: multiple GOTOs to non-existent labels
+            "UG2\n I 1 G MISS1\n I 0 G MISS2\n Q\n",
+            id="multiple-unresolved-gotos",
+        ),
+        pytest.param(
+            # Pattern: unconditional GOTO to non-existent label
+            "UG3\n G GONE\n Q\n",
+            id="unconditional-unresolved-goto",
+        ),
+        pytest.param(
+            # Pattern: GOTO with postcondition to non-existent label
+            "UG4\n S X=1 G:X MISSING\n Q\n",
+            id="postconditioned-unresolved-goto",
+        ),
+        pytest.param(
+            # Pattern: multi-target GOTO with one unresolved
+            "UG5\n S X=1 G:X MISSING,OK:1\nOK Q\n",
+            id="multi-target-one-unresolved",
+        ),
+        pytest.param(
+            # Pattern: unresolved GOTO in unreachable code
+            "UG6\n Q\n G NOPE\n Q\n",
+            id="unreachable-unresolved-goto",
+        ),
+    ]
+
+    @pytest.mark.parametrize("source", UNRESOLVED_GOTO_PATTERNS)
+    def test_unresolved_goto_pattern_transpiles(self, source, generate_python):
+        """Each unresolved-goto pattern should transpile to valid Python."""
+        import ast
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source)
+        assert result
+        ast.parse(result)

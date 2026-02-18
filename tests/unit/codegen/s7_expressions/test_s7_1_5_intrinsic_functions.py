@@ -1383,16 +1383,12 @@ class TestExtractEmptyThirdArg:
         result = execute_mumps('TEST\n S X="ABCDE" W $E(X,0,),!\n Q\n')
         assert result.output.strip() == "ABCDE"
 
-    def test_pss262po_transpiles(self, generate_python):
-        """PSS262PO.m (uses $E(X,3,)) should transpile without error."""
-        from pathlib import Path
-
-        path = list(Path("VistA-VEHU-M").rglob("PSS262PO.m"))
-        if not path:
-            pytest.skip("VistA-VEHU-M not available")
-        code = path[0].read_text(errors="replace")
-        result = generate_python(code)
+    def test_extract_empty_third_arg_in_longer_routine(self, generate_python):
+        """$E(X,3,) in a routine with SET and WRITE transpiles without error (PSS262PO pattern)."""
+        source = 'TEST\n S X="ABCDE"\n S Y=$E(X,3,)\n W Y,!\n Q\n'
+        result = generate_python(source)
         assert result
+        assert "len(m_str(" in result
 
     def test_extract_empty_arg_codegen(self, generate_python):
         """$E(X,3,) generates len-based upper bound."""

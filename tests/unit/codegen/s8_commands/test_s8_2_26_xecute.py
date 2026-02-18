@@ -784,49 +784,29 @@ class TestXecuteParseErrorQuoting:
 
         ast.parse(code)
 
-    def test_hlcstcp2_transpiles(self, generate_python):
-        """HLCSTCP2.m should transpile without SyntaxError."""
-        from pathlib import Path
+    def test_xecute_with_open_packet_mode(self, generate_python):
+        """XECUTE containing USE with packet mode quoting (HLCSTCP2/XWBVLL pattern)."""
+        source = 'TEST\n X "U IO:(::""-M"")"\n Q\n'
+        code = generate_python(source)
+        assert code
 
-        path = list(Path("VistA-VEHU-M").rglob("HLCSTCP2.m"))
-        if not path:
-            pytest.skip("VistA-VEHU-M not available")
-        code = path[0].read_text(errors="replace")
-        result = generate_python(code)
-        assert result
+    def test_xecute_with_open_and_conditional(self, generate_python):
+        """XECUTE containing OPEN with quoted flags (XWBTCPM pattern)."""
+        source = 'TEST\n S X="DEV" X "O X:(RECORDSIZE=512)"\n Q\n'
+        code = generate_python(source)
+        assert code
 
-    def test_xwbtcpm_transpiles(self, generate_python):
-        """XWBTCPM.m should transpile without SyntaxError."""
-        from pathlib import Path
+    def test_xecute_with_use_ioerror(self, generate_python):
+        """XECUTE containing USE with ioerror trap (XWBTCPM pattern)."""
+        source = 'TEST\n S X="DEV" X "U X:(nowrap:nodelimiter:ioerror=""TRAP"")"\n Q\n'
+        code = generate_python(source)
+        assert code
 
-        path = list(Path("VistA-VEHU-M").rglob("XWBTCPM.m"))
-        if not path:
-            pytest.skip("VistA-VEHU-M not available")
-        code = path[0].read_text(errors="replace")
-        result = generate_python(code)
-        assert result
-
-    def test_xwbvll_transpiles(self, generate_python):
-        """XWBVLL.m should transpile without SyntaxError."""
-        from pathlib import Path
-
-        path = list(Path("VistA-VEHU-M").rglob("XWBVLL.m"))
-        if not path:
-            pytest.skip("VistA-VEHU-M not available")
-        code = path[0].read_text(errors="replace")
-        result = generate_python(code)
-        assert result
-
-    def test_hlcstcpa_transpiles(self, generate_python):
-        """HLCSTCPA.m should transpile without SyntaxError."""
-        from pathlib import Path
-
-        path = list(Path("VistA-VEHU-M").rglob("HLCSTCPA.m"))
-        if not path:
-            pytest.skip("VistA-VEHU-M not available")
-        code = path[0].read_text(errors="replace")
-        result = generate_python(code)
-        assert result
+    def test_xecute_with_open_recordsize(self, generate_python):
+        """XECUTE containing OPEN with RECORDSIZE (HLCSTCPA pattern)."""
+        source = 'TEST\n X "O IO:(RECORDSIZE=512)"\n Q\n'
+        code = generate_python(source)
+        assert code
 
     def test_xecute_parse_error_contains_repr(self, generate_python):
         """Generated code for XECUTE parse error uses safe string escaping."""

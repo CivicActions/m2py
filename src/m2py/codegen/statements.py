@@ -3606,7 +3606,23 @@ def _generate_single_target_goto(
             postcond_ctx.__exit__(None, None, None)
         return
 
-    # Cross-label GOTO: pattern depends on strategy
+    # UNRESOLVED GOTO: target label doesn't exist in this routine.
+    # Generate a runtime error instead of a compile-time rejection so that
+    # routines with dead-code GOTOs to missing labels still compile.
+    # Skip this check inside inline XECUTE blocks — the target may exist
+    # in the enclosing routine's module globals (e.g., X "G B" where B is
+    # a label in the outer routine, not the XECUTE scope).
+    if (
+        not target.is_resolved
+        and target.target is None
+        and not target.routine
+        and not ctx.in_inline_xecute
+    ):
+        target_name = target.name or "unknown"
+        routine_name = ctx.routine.name or "unknown"
+        ctx.emitter.line(f'raise LabelNotFoundError("{target_name}", "{routine_name}")')
+        return
+
     # Cross-label GOTO: pattern depends on strategy
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
         # Inside inline XECUTE, call the label directly instead of returning
@@ -4034,6 +4050,20 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
             # Different routine - genuine external GOTO
             _generate_external_goto(target, ctx)
             return
+
+    # UNRESOLVED GOTO: target label doesn't exist in this routine.
+    # Generate a runtime error so the routine compiles but errors if reached.
+    # Skip inside inline XECUTE — the target may exist in enclosing routine globals.
+    if (
+        not target.is_resolved
+        and target.target is None
+        and not target.routine
+        and not ctx.in_inline_xecute
+    ):
+        target_name = target.name or "unknown"
+        routine_name = ctx.routine.name or "unknown"
+        ctx.emitter.line(f'raise LabelNotFoundError("{target_name}", "{routine_name}")')
+        return
 
     # Local target - original behavior
     if ctx.strategy == GotoStrategy.TRAMPOLINE:

@@ -199,27 +199,32 @@ class TestFixEmptyBlocksIntegration:
 
         ast.parse(code)
 
-    def test_psapur_transpiles(self, generate_python):
-        """PSAPUR.m (Drug Accountability) should transpile without error."""
-        from pathlib import Path
-
-        path = list(Path("VistA-VEHU-M").rglob("PSAPUR.m"))
-        if not path:
-            pytest.skip("VistA-VEHU-M not available")
-        code = path[0].read_text(errors="replace")
-        result = generate_python(code)
+    def test_for_quit_if_goto_pattern(self, generate_python):
+        """FOR+QUIT+IF+GOTO pattern (PSAPUR-like) produces valid Python."""
+        source = (
+            "TEST\n"
+            ' F  S X=$O(^DATA(X)) Q:\'X  I $P(^DATA(X,0),U,2)="P" D\n'
+            " .S Y=0\n"
+            " .F  S Y=$O(^DATA(X,1,Y)) Q:'Y  I Y>0 G DONE\n"
+            " Q\n"
+            "DONE Q\n"
+        )
+        result = generate_python(source)
         assert result
+        import ast
 
-    def test_xindx10_transpiles(self, generate_python):
-        """XINDX10.m (Kernel) should transpile without error."""
-        from pathlib import Path
+        ast.parse(result)
 
-        path = list(Path("VistA-VEHU-M").rglob("XINDX10.m"))
-        if not path:
-            pytest.skip("VistA-VEHU-M not available")
-        code = path[0].read_text(errors="replace")
-        result = generate_python(code)
+    def test_multi_label_goto_pattern(self, generate_python):
+        """G LABEL1:cond,LABEL2:cond pattern (XINDX10-like) produces valid Python."""
+        source = (
+            'TEST\n S X=9.4\n G A:X=9.4,B:X=9.7\n Q\nA W "pkg",! Q\nB W "next",! Q\n'
+        )
+        result = generate_python(source)
         assert result
+        import ast
+
+        ast.parse(result)
 
 
 # =============================================================================
@@ -274,16 +279,22 @@ class TestFixImportInElifChain:
         if_idx = next(i for i, l in enumerate(lines) if "if a:" in l)
         assert import_idx < if_idx
 
-    def test_xmctlk_transpiles(self, generate_python):
-        """XMCTLK.m should transpile without error after import hoisting."""
-        from pathlib import Path
-
-        path = list(Path("VistA-VEHU-M").rglob("XMCTLK.m"))
-        if not path:
-            pytest.skip("VistA-VEHU-M not available")
-        code = path[0].read_text(errors="replace")
-        result = generate_python(code)
+    def test_import_hoisting_with_goto_pattern(self, generate_python):
+        """Routine with GOTOs producing import between if/elif (XMCTLK pattern)."""
+        source = (
+            "TEST\n"
+            ' I \'$D(DUZ) W "no DUZ",! Q\n'
+            " S X=1 G:X A\n"
+            " I X=2 G B\n"
+            " Q\n"
+            'A W "A",! Q\n'
+            'B W "B",! Q\n'
+        )
+        result = generate_python(source)
         assert result
+        import ast
+
+        ast.parse(result)
 
     def test_from_import_also_hoisted(self):
         """'from X import Y' breaking chain is also hoisted."""

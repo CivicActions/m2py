@@ -846,42 +846,34 @@ class TestRuntimeISVProperties:
 
 @pytest.mark.codegen
 class TestVistARoutineTranspilation:
-    """Verify specific VistA routines that were blocked by Phase 6 issues now transpile."""
+    """Verify IRIS vendor feature patterns transpile correctly.
 
-    def _transpile(self, stem):
-        """Transpile a VistA routine by name, return generated Python."""
-        from pathlib import Path
+    Uses minimal inline MUMPS routines that reproduce the patterns found in
+    VistA routines (ZZLOG1, A1BFLOG1, HLCSTCP1, XWBRW, ZTMGRSET).
+    """
 
+    def test_set_zerr_pattern(self):
+        """SET $ZERR="" pattern (ZZLOG1/A1BFLOG1) transpiles successfully."""
         from m2py.codegen import generate_python
 
-        # Search common VistA package locations
-        base = Path("/workspaces/m2py/VistA-VEHU-M")
-        for m_file in base.rglob(f"{stem}.m"):
-            code = m_file.read_text(errors="replace")
-            return generate_python(code, routine_name=stem)
-        pytest.skip(f"VistA routine {stem}.m not found")
-
-    def test_zzlog1_transpiles(self):
-        """ZZLOG1 (SET $ZERR) transpiles successfully."""
-        result = self._transpile("ZZLOG1")
+        source = 'TEST\n S $ZERROR="" S $ZTRAP=""\n Q\nERR S $ZERR=""\n Q\n'
+        result = generate_python(source, routine_name="ZZLOG1")
         assert "set_zerror" in result
 
-    def test_a1bflog1_transpiles(self):
-        """A1BFLOG1 (SET $ZERR) transpiles successfully."""
-        result = self._transpile("A1BFLOG1")
-        assert "set_zerror" in result
+    def test_device_svn_pattern(self):
+        """$DEVICE usage pattern (HLCSTCP1/XWBRW) transpiles successfully."""
+        from m2py.codegen import generate_python
 
-    def test_hlcstcp1_transpiles(self):
-        """HLCSTCP1 ($DEVICE) transpiles successfully."""
-        result = self._transpile("HLCSTCP1")
+        source = 'TEST\n I $DEVICE W "device error",!\n Q\n'
+        result = generate_python(source, routine_name="HLCSTCP1")
         assert "device_status" in result
 
-    def test_xwbrw_transpiles(self):
-        """XWBRW ($DEVICE) transpiles successfully."""
-        result = self._transpile("XWBRW")
-        assert "device_status" in result
+    def test_zprint_zsource_pattern(self):
+        """ZPRINT and $ZSOURCE pattern (ZTMGRSET) transpiles successfully."""
+        from m2py.codegen import generate_python
 
-    def test_ztmgrset_transpiles(self):
-        """ZTMGRSET (ZPRINT, $ZSOURCE) transpiles successfully."""
-        result = self._transpile("ZTMGRSET")
+        source = (
+            "TEST\n ZPRINT @FROM\n N OLDSRC S OLDSRC=$ZSOURCE\n S $ZSOURCE=OLDSRC\n Q\n"
+        )
+        result = generate_python(source, routine_name="ZTMGRSET")
         assert "pass  # ZPRINT" in result

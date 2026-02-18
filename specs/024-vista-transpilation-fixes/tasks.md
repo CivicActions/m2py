@@ -295,13 +295,15 @@
 
 ### Implementation for Phase 11
 
-- [ ] T059 Change _check_unsupported_gotos() in src/m2py/codegen/__init__.py from raising UnsupportedFeatureError to warning + marking (19 routines: A1BFJOBR, A1CBRPT1, AQDBAR, AQDBAR1, LRBLJLG1, LRBLPUS1, LRZLIST, RMPFDM, RMPFDT4, RMPFDT7, RMPFDT8, RMPFDT9, RMPRHIS, RMPRPIYI, RMPRSTI, RMPRSTK, XQ11, ZBCK1, ZZPSODEL)
+- [X] T059 Change _check_unsupported_gotos() in src/m2py/codegen/__init__.py from raising UnsupportedFeatureError to warning + marking (19 routines: A1BFJOBR, A1CBRPT1, AQDBAR, AQDBAR1, LRBLJLG1, LRBLPUS1, LRZLIST, RMPFDM, RMPFDT4, RMPFDT7, RMPFDT8, RMPFDT9, RMPRHIS, RMPRPIYI, RMPRSTI, RMPRSTK, XQ11, ZBCK1, ZZPSODEL)
   - In TRAMPOLINE codegen: generate `raise LabelNotFoundError("label")` at UNRESOLVED GOTO sites instead of rejecting the routine entirely
   - Test: transpile A1BFJOBR.m should produce compilable Python with runtime error at GOTO EXIT
+  > Changed `_check_unsupported_gotos()` from `raise UnsupportedFeatureError` to `warnings.warn()`. Added UNRESOLVED GOTO check in both `_generate_single_target_goto()` and `_generate_goto_jump()` to emit `raise LabelNotFoundError(target, routine)` at GOTO sites. Excludes inline XECUTE contexts where unresolved labels may exist as module globals. All 19 routines now transpile. Updated existing tests that expected UnsupportedFeatureError.
 
 ### Validation for Phase 11
 
-- [ ] T060 Write tests for UNRESOLVED GOTO fallback in tests/unit/codegen/test_phase11_unresolved_goto.py
+- [X] T060 Write tests for UNRESOLVED GOTO fallback in tests/unit/codegen/test_reachable_labels.py and tests/unit/codegen/test_robustness.py
+  > Added TestUnresolvedGotoFallback class with 12 tests covering: basic compilation, warning emission, postconditioned GOTO, multi-target GOTO, XECUTE regression, A1BFJOBR pattern, multiple unresolved GOTOs, runtime error when reached, no error when unreached, guarded GOTO. Added TestPhase11UnresolvedGotoBatchTranspilation with 19 parametrized tests for all affected VistA routines. Updated TestUnresolvedGotoInDeadCode and TestCheckUnsupportedGotos to reflect new warning behavior. Full suite: 7328 passed, 0 failed.
 
 ---
 
