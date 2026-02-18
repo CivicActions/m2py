@@ -464,3 +464,123 @@ DEAD
         # The IF X is 0 (false), so GOTO MISSING is never taken
         run_with_goto_support(ns["TEST"], rt, {})
         assert rt.get_output() == "OK"
+
+
+# =============================================================================
+# Phase 14D: G ^SELF (GOTO self-routine restart) resolution
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestGotoSelfRoutineRestart:
+    """Tests for 'G ^ROUTINENAME' within ROUTINENAME itself.
+
+    This idiom restarts the routine from the top — it's NOT an external call.
+    Phase 14 fixes resolver.py and goto_analysis.py to handle this correctly
+    by defaulting empty call.name to routine.name and using case-insensitive
+    routine name comparison.
+    """
+
+    def test_goto_self_no_warning(self):
+        """G ^MYRTN within MYRTN should NOT produce UNRESOLVED GOTO warning."""
+        import warnings
+
+        source = """MYRTN
+ S X=1
+ I X=0 G ^MYRTN
+ W X,!
+ Q
+"""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            _code = generate_python(source, routine_name="MYRTN")  # noqa: F841
+        # Should not have UNRESOLVED GOTO warnings
+        unresolved = [x for x in w if "UNRESOLVED" in str(x.message)]
+        assert len(unresolved) == 0, (
+            f"Got unexpected UNRESOLVED warnings: {[str(x.message) for x in unresolved]}"
+        )
+
+    def test_goto_self_case_insensitive(self):
+        """G ^myrtn within MYRTN — case-insensitive match."""
+        import warnings
+
+        source = """MYRTN
+ I 0 G ^myrtn
+ Q
+"""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            _code = generate_python(source, routine_name="MYRTN")  # noqa: F841
+        unresolved = [x for x in w if "UNRESOLVED" in str(x.message)]
+        assert len(unresolved) == 0
+
+    def test_goto_self_transpiles_and_compiles(self):
+        """G ^SELF resolves to internal GOTO, transpiles to valid Python."""
+        import ast
+
+        source = """MYTEST
+ S X=1
+ I X=0 G ^MYTEST
+ W "done",!
+ Q
+"""
+        code = generate_python(source, routine_name="MYTEST")
+        assert code
+        ast.parse(code)
+
+    def test_goto_self_executes(self):
+        """G ^SELF correctly restarts the routine."""
+        import warnings
+
+        source = """SELFGOTO
+ S X=$G(X)+1
+ I X<3 G ^SELFGOTO
+ W X,!
+ Q
+"""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            code = generate_python(source, routine_name="SELFGOTO")
+
+        from m2py.runtime import MUMPSRuntime, run_with_goto_support
+
+        ns = {}
+        exec(code, ns)
+        rt = MUMPSRuntime()
+        rt._capture_output = True
+        rt._current_routine = "SELFGOTO"
+        rt._current_source_lines = ns.get("_source_lines", [])
+        rt._current_label_lines = ns.get("_label_lines", {})
+        run_with_goto_support(ns["SELFGOTO"], rt, {})
+        assert rt.get_output() == "3\n"
+
+    def test_goto_self_with_label(self):
+        """G LABEL^SELF — explicit label within own routine, no warning."""
+        import warnings
+
+        source = """MYRTN
+ G SUB^MYRTN
+ Q
+SUB
+ W "hi",!
+ Q
+"""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            _code = generate_python(source, routine_name="MYRTN")  # noqa: F841
+        unresolved = [x for x in w if "UNRESOLVED" in str(x.message)]
+        assert len(unresolved) == 0
+
+    def test_goto_external_still_unresolved(self):
+        """G ^OTHERRTN should still generate GotoExternal (not resolved locally)."""
+        import warnings
+
+        source = """MYRTN
+ G ^OTHERRTN
+ Q
+"""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            code = generate_python(source, routine_name="MYRTN")
+        # External GOTO should raise GotoExternal, not resolve locally
+        assert "GotoExternal" in code

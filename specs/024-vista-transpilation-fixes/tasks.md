@@ -3,7 +3,7 @@
 **Input**: Design documents from `/specs/024-vista-transpilation-fixes/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/, quickstart.md
 
-**Organization**: Tasks are grouped by user story (from spec.md) to enable independent implementation and testing of each story. 6 user stories, 8 phases.
+**Organization**: Tasks are grouped by user story (from spec.md) to enable independent implementation and testing of each story. 6 user stories, 14 phases.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -418,6 +418,76 @@ SET special variable dispatch in `_generate_single_assignment()` and `_generate_
 
 ---
 
+## Phase 14: Final Fixes — $ZBITSTR, SET $ZSTEP, READ/$I, G ^SELF (4 routines + warning cleanup)
+
+**Purpose**: Fix the 3 remaining addressable transpilation failures and eliminate ~15 spurious UNRESOLVED GOTO warnings caused by the valid `G ^SELF` (restart routine) MUMPS idiom. Target: 39,299/39,304 (99.99%) — only 5 remaining: 4 MWAPI (LIM-003) + 1 malformed (ZZBACSUA).
+
+**Scan reference**: Phase 13 scan — 39,296/39,304 (99.98%), 8 failures: 4 MWAPI, 1 malformed, 1 $ZBITSTR (ZOSVGTM), 1 SET $ZSTEP (ZSY), 1 READ/$I SyntaxError (ZOSVGUT3)
+
+### Phase 14A: $ZBITSTR Intrinsic Function (1 routine: ZOSVGTM)
+
+`$ZBITSTR(len[,truthval])` creates a bit string of `len` bits initialized to `truthval` (default 0). Used by ZOSVGTM for CRC computation. Follows the existing `$ZBITAND`/`$ZBITOR`/`$ZBITXOR`/`$ZBITNOT` pattern.
+
+- [X] T083 [P] Add `m_zbitstr(length, value=0)` runtime helper in src/m2py/runtime/helpers.py — creates YDB-format bit string: 2-byte header (bit count as big-endian short) + ceil(len/8) data bytes. Insert after the existing `m_zbitxor` function (~L2560).
+  - **MUMPS pattern**: `S R=$ZBITSTR(8,0)` → 8-bit zero string (ZOSVGTM L170)
+  - **Semantics**: YDB $ZBITSTR uses a 2-byte header followed by data bytes. Bit 0 = MSB of first data byte. `$ZBITSTR(8,0)` → `\x00\x08` + `\x00` (8 zero bits). `$ZBITSTR(8,1)` → `\x00\x08` + `\xff` (8 one bits).
+  - **Test snippet**: `TEST W $A($ZBITSTR(8,0),3) Q` → `0` (third byte is zero data byte)
+
+- [X] T084 [P] Add `_gen_zbitstr` codegen generator and register as `INTRINSIC_GENERATORS["ZBITSTR"]` in src/m2py/codegen/expressions.py — insert after `_gen_zbitxor` registration (~L3560). Pattern: generate `m_zbitstr(arg1_expr)` or `m_zbitstr(arg1_expr, arg2_expr)`.
+
+- [X] T085 [P] Add `m_zbitstr` to the import line in src/m2py/codegen/routine.py (~L460) — add alongside existing `m_zbitand, m_zbitor, m_zbitxor, m_zbitnot`.
+
+### Phase 14B: SET $ZSTEP No-Op Stub (1 routine: ZSY)
+
+`$ZSTEP` is a YDB/GT.M debugger intrinsic special variable. `SET $ZSTEP="code"` defines the step action; `ZSTEP INTO` activates stepping. Both are debugger-only with no semantic impact on program output.
+
+- [X] T086 [P] Add SET `$ZSTEP` no-op stub in SVN SET dispatch in src/m2py/codegen/statements.py:
+  - In `_generate_single_assignment()` (~L1226-1230): Add `elif svar_name in ("ZSTEP", "ZSTE"):` before the `else: raise NotImplementedError` — emit `pass  # $ZSTEP (debugger) no-op`
+  - In `_generate_single_assignment_with_preeval_subs()` (~L1051-1056): Same pattern before the `else: raise NotImplementedError`
+  - **MUMPS pattern**: `S $ZSTEP="D ZSTEP^ZSY"` (ZSY L130)
+  - **Routine**: ZSY
+
+### Phase 14C: READ with $INCREMENT Subscript Target (1 routine: ZOSVGUT3)
+
+When a READ target is a global variable with `$INCREMENT` (or other function call) in a subscript position, the codegen generates a non-assignable expression as the LHS of an assignment. The fix pre-evaluates the subscript and uses `_rt.globals.set()` instead of assigning to a `generate_expr()` result.
+
+- [X] T087 Fix READ target codegen for globals with side-effecting subscripts in `_generate_read_target()` (~L5504-5525) in src/m2py/codegen/statements.py:
+  - When the READ target is a `GlobalVariable`, generate `_rt.globals.set(name, (subs...,), read_value)` instead of `generate_expr(target) = read_value`
+  - The subscript expressions (including `$I(^TMP($J))`) should be pre-evaluated into temp variables
+  - **MUMPS pattern**: `R ^TMP($J,$I(^TMP($J))):0` (ZOSVGUT3 L18, 6 lines)
+  - **Routine**: ZOSVGUT3
+
+### Phase 14D: Fix `G ^SELF` Resolver Pattern (~15 spurious warnings)
+
+`G ^ROUTINENAME` inside routine ROUTINENAME is a standard MUMPS idiom meaning "restart the routine from the top" (jump to the entry point label). The resolver and goto classifier don't handle the empty label name case, causing spurious "UNRESOLVED GOTO to unknown" warnings. All 19 warned routines transpile correctly (Phase 11 fallback), but ~15 of them are false positives.
+
+- [X] T088 Fix empty-name self-reference resolution in `_resolve_call()` at L141-143 in src/m2py/analysis/resolver.py:
+  - After `target_name = call.name` at L141, add: `if not target_name and call.routine is not None and call.routine == routine.name: target_name = routine.name`
+  - This defaulting maps `G ^RMPRHIS` (empty label, self-routine) to the entry label `RMPRHIS`
+  - Also fix case-insensitive comparison at L135: change `call.routine != routine.name` to `call.routine.upper() != routine.name.upper()`
+  - **Affected routines**: RMPRHIS, RMPRPIYI, RMPRSTI, RMPRSTK, RMPFDM, RMPFDT4, RMPFDT7, RMPFDT8, RMPFDT9, LRBLJLG1, LRBLPUS1, LRZLIST, XQ11, and potentially others
+
+- [X] T089 [P] Fix empty-name self-reference in `_classify_goto()` at L232-235 in src/m2py/analysis/goto_analysis.py:
+  - After `if call.name in label_positions:` at L232, add handling for `call.name == ""`: default to `routine.name` when `call.routine.upper() == routine.name.upper()`
+  - This changes the goto from `GotoType.UNRESOLVED` to `GotoType.BACKWARD_JUMP` (restart)
+
+### Validation for Phase 14
+
+- [X] T090 Write tests for Phase 14 fixes in tests/unit/codegen/extensions/ydb/test_zfunctions.py and tests/unit/codegen/test_reachable_labels.py:
+  - $ZBITSTR: runtime helper tests (zero, one, various lengths), codegen transpile+execute test
+  - SET $ZSTEP: transpile test (no error), execute test (no-op)
+  - READ/$I: transpile ZOSVGUT3 pattern, verify valid Python
+  - G ^SELF: resolver test (verify RMPRHIS-pattern GOTOs resolve to entry label), verify warning count reduced
+  - Batch transpilation: ZOSVGTM, ZSY, ZOSVGUT3 now all transpile without error
+
+- [X] T091 Run VistA-VEHU-M transpilation scan — expect 39,299/39,304 (99.99%): only 4 MWAPI + 1 malformed ZZBACSUA
+
+- [X] T092 Update docs/limitations.md — move $ZBITSTR and SET $ZSTEP from not-implemented to implemented in LIM-015
+
+- [X] T093 Commit all Phase 14 changes
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -430,6 +500,7 @@ SET special variable dispatch in `_generate_single_assignment()` and `_generate_
 - **US5 (Phase 6)**: Can start after Phase 1; independent of US1-4
 - **US6 (Phase 7)**: Should start after US1-5 to accurately document what's supported
 - **Polish (Phase 8)**: Depends on ALL user stories being complete
+- **Final Fixes (Phase 14)**: Depends on Phase 13; fixes 3 remaining addressable failures + resolver warnings
 
 ### Within-Story Dependencies
 
@@ -541,6 +612,7 @@ T033: Write tests
 10. **Phase 11** → UNRESOLVED GOTO fallback ✅
 11. **Phase 12** → Remaining vendor functions & SVNs (16 routines)
 12. **Phase 13** → Final validation, 100% minus MWAPI/malformed
+13. **Phase 14** → Final fixes ($ZBITSTR, SET $ZSTEP, READ/$I, G ^SELF resolver)
 
 ### Task Counts per Story
 
@@ -557,9 +629,10 @@ T033: Write tests
 | SyntaxErrors (P9) | 5 | 53 | 99.86% |
 | Vendor Stubs (P10) | 6 | 99 | 99.93% |
 | GOTO Fallback (P11) | 2 | 19 | 99.95% |
-| Remaining (P12) | 14 | 16 | 99.99% |
-| Final (P13) | 4 | — | 99.99% confirmed |
-| **Total** | **78** | **~2,708** | **99.99%** |
+| Remaining (P12) | 14 | 16 | 99.98% |
+| Final (P13) | 4 | — | 99.98% confirmed |
+| Final Fixes (P14) | 11 | 3 | 99.99% |
+| **Total** | **93** | **~2,711** | **99.99%** |
 
 ---
 
@@ -576,3 +649,6 @@ T033: Write tests
 - Stop at any checkpoint to validate the incremental improvement
 - Task IDs T061-T064 intentionally skipped (superseded by Phase 12 rewrite)
 - Phase 12 tasks (T065-T078) are ALL [P] except T076 (SET $ZD touches both expressions.py and statements.py)
+- Phase 14 fixes the 3 remaining addressable failures from Phase 13 scan + eliminates ~15 spurious GOTO warnings
+- After Phase 14: only 5 unfixable failures remain (4 MWAPI LIM-003, 1 malformed ZZBACSUA)
+- Remaining GOTO warnings (4 routines: A1BFJOBR, A1CBRPT1, ZBCK1, ZZPSODEL) are genuine VistA bugs — missing/wrong labels

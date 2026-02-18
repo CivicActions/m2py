@@ -2559,6 +2559,49 @@ def m_zbitnot(s1: str) -> str:
     return result.decode("latin-1")
 
 
+def m_zbitstr(length: str, value: str = "0") -> str:
+    """Implement $ZBITSTR — create a bitstring of n bits.
+
+    Creates a YDB-format bitstring: 1-byte header + data bytes.
+    Header byte = number of unused bits in the last data byte.
+    Data bytes are initialized to all 0s (value=0) or all 1s (value=1).
+
+    Format:
+        byte 0: (8 - (n % 8)) % 8  (unused trailing bits)
+        bytes 1..ceil(n/8): data bytes
+
+    Examples:
+        $ZBITSTR(8,0) → [0x00, 0x00]  (header=0, 1 zero byte)
+        $ZBITSTR(8,1) → [0x00, 0xFF]  (header=0, 1 all-ones byte)
+        $ZBITSTR(4,0) → [0x04, 0x00]  (header=4, 4 unused bits)
+        $ZBITSTR(16,0) → [0x00, 0x00, 0x00]  (header=0, 2 zero bytes)
+
+    Args:
+        length: Number of bits (coerced to non-negative integer)
+        value: "0" (default) or "1" to initialize all bits
+
+    Returns:
+        Bitstring as a latin-1 encoded string
+    """
+    import math
+
+    from m2py.core.values import m_num
+
+    n = int(m_num(length))
+    v = int(m_num(value))
+    if n <= 0:
+        # Zero or negative length: just a header byte with 0 unused bits
+        return "\x00"
+    num_data_bytes = math.ceil(n / 8)
+    unused_bits = (8 - (n % 8)) % 8
+    header = bytes([unused_bits])
+    if v:
+        data = bytes([0xFF] * num_data_bytes)
+    else:
+        data = bytes([0x00] * num_data_bytes)
+    return (header + data).decode("latin-1")
+
+
 def m_zabs(value: str) -> str:
     """Implement $ZABS — absolute value.
 

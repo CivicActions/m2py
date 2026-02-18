@@ -364,6 +364,10 @@ stub codegen, and some require YDB infrastructure not available in transpiled co
 | $ZDIRECTORY/$ZD (GET) | Current working directory | Returns os.getcwd() |
 | $ZDIRECTORY/$ZD (SET) | Change working directory | os.chdir() |
 | $ZPIECE | $PIECE alias (GT.M/YDB) | Alias for $PIECE |
+| $ZBITSTR | Bit string constructor | Full implementation (YDB format) |
+| $ZCO | $ZCONVERT abbreviation | Alias for $ZCONVERT |
+| $ZSIGPROC | Process signal | Stub, returns "1" |
+| SET $ZSTEP | Single-step trap handler | No-op stub |
 
 **Not Implemented Z-Functions / Z-Special Variables:**
 
@@ -371,8 +375,6 @@ stub codegen, and some require YDB infrastructure not available in transpiled co
 |-------------------|-------------|-------------|
 | $ZRO | Routine search path | 10 |
 | $ZWIDTH | String width | 1 |
-| $ZBITSTR | Bit string constructor | 1 |
-| SET $ZSTEP | Single-step trap handler | 1 |
 
 **Z-Commands / Z-Functions with zero VistA usage:**
 
@@ -403,13 +405,10 @@ stub codegen, and some require YDB infrastructure not available in transpiled co
 
 Features with zero VistA usage are deferred indefinitely.
 
-**VistA-VEHU-M Coverage**: As of Phase 13, the transpiler handles 39,296 out of
-39,304 VistA routines (99.98%). The 8 remaining failures are:
+**VistA-VEHU-M Coverage**: As of Phase 14, the transpiler handles 39,299 out of
+39,304 VistA routines (99.99%). The 5 remaining failures are:
 - 4 MWAPI routines (LIM-003: ^$EVENT/^$WINDOW/^$DISPLAY SSVNs)
 - 1 malformed source file (ZZBACSUA)
-- 1 $ZBITSTR not implemented (ZOSVGTM)
-- 1 SET $ZSTEP not supported (ZSY)
-- 1 READ with $INCREMENT subscript codegen issue (ZOSVGUT3)
 
 **M2PY Behavior**: Parser accepts Z-commands (valid YDB grammar). ASG produces appropriate nodes.
 Implemented features generate working Python code. Stub features generate no-op

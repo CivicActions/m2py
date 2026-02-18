@@ -5,6 +5,7 @@ These are implementation-defined per FR-017.
 Spec 014: Verify LIM-015 errors for unimplemented Z-functions.
 Spec 021 Phase 10: $ZDATE is now implemented.
 Spec 024 Phase 10: Vendor function aliases and stubs.
+Spec 024 Phase 14: $ZBITSTR, SET $ZSTEP, ZSTEP command, $ZCO, $ZSIGPROC.
 """
 
 import pytest
@@ -1238,6 +1239,414 @@ class TestPhase12BatchTranspilation:
         from pathlib import Path
 
         # Use project root to build absolute path
+        project_root = Path(__file__).resolve().parents[5]
+        routine_path = project_root / "VistA-VEHU-M" / "Packages" / rel_path
+        if not routine_path.exists():
+            pytest.skip(f"VistA routine not found: {routine_path}")
+
+        source = routine_path.read_text(encoding="utf-8", errors="replace")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source, routine_name=routine_name)
+        assert result
+        ast.parse(result)
+
+
+# =============================================================================
+# Phase 14: $ZBITSTR runtime helper tests
+# =============================================================================
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZbitstrHelper:
+    """Unit tests for m_zbitstr() runtime helper.
+
+    $ZBITSTR(n[,v]) creates a YDB-format bitstring:
+    1-byte header (unused bits in last byte) + data bytes.
+    Verified against YDB output.
+    """
+
+    def test_zbitstr_8_zero(self):
+        """$ZBITSTR(8,0) → 2 bytes: header=0, data=0x00."""
+        from m2py.runtime.helpers import m_zbitstr
+
+        result = m_zbitstr("8", "0")
+        b = result.encode("latin-1")
+        assert len(b) == 2
+        assert b[0] == 0  # header: 0 unused bits
+        assert b[1] == 0  # 8 zero bits
+
+    def test_zbitstr_8_one(self):
+        """$ZBITSTR(8,1) → 2 bytes: header=0, data=0xFF."""
+        from m2py.runtime.helpers import m_zbitstr
+
+        result = m_zbitstr("8", "1")
+        b = result.encode("latin-1")
+        assert len(b) == 2
+        assert b[0] == 0  # header: 0 unused bits
+        assert b[1] == 0xFF  # 8 one bits
+
+    def test_zbitstr_16_zero(self):
+        """$ZBITSTR(16,0) → 3 bytes: header=0, data=0x00, 0x00."""
+        from m2py.runtime.helpers import m_zbitstr
+
+        result = m_zbitstr("16", "0")
+        b = result.encode("latin-1")
+        assert len(b) == 3
+        assert b[0] == 0  # header: 0 unused bits
+        assert b[1] == 0
+        assert b[2] == 0
+
+    def test_zbitstr_4_zero(self):
+        """$ZBITSTR(4,0) → 2 bytes: header=4, data=0x00 (4 unused bits)."""
+        from m2py.runtime.helpers import m_zbitstr
+
+        result = m_zbitstr("4", "0")
+        b = result.encode("latin-1")
+        assert len(b) == 2
+        assert b[0] == 4  # header: 4 unused bits
+        assert b[1] == 0  # data byte with 4 zero bits + 4 unused
+
+    def test_zbitstr_default_value_is_zero(self):
+        """$ZBITSTR(8) defaults to 0 (all zero bits)."""
+        from m2py.runtime.helpers import m_zbitstr
+
+        result = m_zbitstr("8")
+        b = result.encode("latin-1")
+        assert len(b) == 2
+        assert b[0] == 0
+        assert b[1] == 0
+
+    def test_zbitstr_zero_length(self):
+        """$ZBITSTR(0) → 1 byte header only."""
+        from m2py.runtime.helpers import m_zbitstr
+
+        result = m_zbitstr("0")
+        b = result.encode("latin-1")
+        assert len(b) == 1
+        assert b[0] == 0
+
+    def test_zbitstr_negative_length(self):
+        """$ZBITSTR(-1) → same as zero length (1 byte header)."""
+        from m2py.runtime.helpers import m_zbitstr
+
+        result = m_zbitstr("-1")
+        b = result.encode("latin-1")
+        assert len(b) == 1
+
+    def test_zbitstr_9_bits(self):
+        """$ZBITSTR(9,0) → 3 bytes: header=7, 2 data bytes (7 unused bits)."""
+        from m2py.runtime.helpers import m_zbitstr
+
+        result = m_zbitstr("9", "0")
+        b = result.encode("latin-1")
+        assert len(b) == 3  # header + 2 data bytes (ceil(9/8)=2)
+        assert b[0] == 7  # (8-9%8)%8 = (8-1)%8 = 7
+
+    def test_zbitstr_1_bit(self):
+        """$ZBITSTR(1,1) → 2 bytes: header=7, data=0xFF."""
+        from m2py.runtime.helpers import m_zbitstr
+
+        result = m_zbitstr("1", "1")
+        b = result.encode("latin-1")
+        assert len(b) == 2
+        assert b[0] == 7  # 7 unused bits
+        assert b[1] == 0xFF  # 1 set bit + 7 unused
+
+    def test_zbitstr_xor_with_char(self):
+        """Verify $ZBITSTR works with $ZBITXOR (ZOSVGTM LPC pattern).
+
+        LPC(X):
+          S R=$ZBITSTR(8,0)
+          F I=1:1:$L(X) S R=$ZBITXOR(R,$C(0)_$E(X,I))
+          Q $A(R,2)
+        """
+        from m2py.runtime.helpers import m_zbitstr, m_zbitxor
+
+        # $ZBITSTR(8,0) = [0, 0x00]
+        r = m_zbitstr("8", "0")
+        # XOR with $C(0)_"A" = [0x00, 0x41]
+        char_str = "\x00A"
+        r = m_zbitxor(r, char_str)
+        b = r.encode("latin-1")
+        # Result: [0^0, 0x00^0x41] = [0, 0x41]
+        assert b[1] == 0x41  # ASCII 'A'
+
+        # XOR with another char: $C(0)_"B" = [0x00, 0x42]
+        char_str = "\x00B"
+        r = m_zbitxor(r, char_str)
+        b = r.encode("latin-1")
+        # Result: [0, 0x41^0x42] = [0, 0x03]
+        assert b[1] == 0x03
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZbitstrCodegen:
+    """Codegen tests for $ZBITSTR — transpile and compile."""
+
+    def test_zbitstr_two_args_transpiles(self):
+        """$ZBITSTR(8,0) generates m_zbitstr() call."""
+        code = "TEST\n S R=$ZBITSTR(8,0)\n Q"
+        result = generate_python(code)
+        assert "m_zbitstr" in result
+        import ast
+
+        ast.parse(result)
+
+    def test_zbitstr_one_arg_transpiles(self):
+        """$ZBITSTR(8) generates m_zbitstr() call with one arg."""
+        code = "TEST\n S R=$ZBITSTR(8)\n Q"
+        result = generate_python(code)
+        assert "m_zbitstr" in result
+        import ast
+
+        ast.parse(result)
+
+    def test_zbitstr_lpc_pattern_transpiles(self):
+        """ZOSVGTM LPC CRC pattern transpiles and compiles."""
+        code = """LPC
+ N R,I
+ S R=$ZBITSTR(8,0)
+ S R=$ZBITXOR(R,$C(0)_"A")
+ W $A(R,2),!
+ Q
+"""
+        result = generate_python(code)
+        assert "m_zbitstr" in result
+        assert "m_zbitxor" in result
+        import ast
+
+        ast.parse(result)
+
+    def test_zbitstr_transpile_execute(self):
+        """$ZBITSTR(8,0) + $ZBITXOR CRC computation matches expected output."""
+        code = """TEST
+ N R,I,X
+ S X="AB"
+ S R=$ZBITSTR(8,0)
+ F I=1:1:$L(X) S R=$ZBITXOR(R,$C(0)_$E(X,I))
+ W $A(R,2),!
+ Q
+"""
+        result = generate_python(code)
+
+        from m2py.runtime import MUMPSRuntime, run_with_goto_support
+
+        ns = {}
+        exec(result, ns)
+        rt = MUMPSRuntime()
+        rt._capture_output = True
+        rt._current_routine = "TEST"
+        rt._current_source_lines = ns.get("_source_lines", [])
+        rt._current_label_lines = ns.get("_label_lines", {})
+        run_with_goto_support(ns["TEST"], rt, {})
+        # A=0x41, B=0x42; 0x41^0x42=0x03
+        assert rt.get_output() == "3\n"
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestSetZstepCodegen:
+    """Codegen tests for SET $ZSTEP — no-op stub."""
+
+    def test_set_zstep_transpiles(self):
+        """SET $ZSTEP generates a pass (no-op)."""
+        code = 'TEST\n S $ZSTEP="D ZSTEP^ZSY"\n Q'
+        result = generate_python(code)
+        assert "pass  # SET $ZSTEP no-op" in result
+
+    def test_set_zstep_abbreviation_transpiles(self):
+        """SET $ZSTE generates a pass (no-op) — abbreviation form."""
+        code = 'TEST\n S $ZSTE="code"\n Q'
+        result = generate_python(code)
+        assert "pass  # SET $ZSTEP no-op" in result
+
+    def test_set_zstep_in_tuple_set(self):
+        """SET ($ZSTEP,X)="val" — tuple SET with $ZSTEP."""
+        code = 'TEST\n S ($ZSTEP,X)="val"\n Q'
+        result = generate_python(code)
+        assert "pass  # SET $ZSTEP no-op" in result
+        import ast
+
+        ast.parse(result)
+
+    def test_set_zstep_compiles_and_runs(self):
+        """SET $ZSTEP generates compilable, runnable code."""
+        code = 'TEST\n S $ZSTEP="D ZSTEP^ZSY"\n W "ok",!\n Q'
+        result = generate_python(code)
+
+        from m2py.runtime import MUMPSRuntime, run_with_goto_support
+
+        ns = {}
+        exec(result, ns)
+        rt = MUMPSRuntime()
+        rt._capture_output = True
+        rt._current_routine = "TEST"
+        rt._current_source_lines = ns.get("_source_lines", [])
+        rt._current_label_lines = ns.get("_label_lines", {})
+        run_with_goto_support(ns["TEST"], rt, {})
+        assert rt.get_output() == "ok\n"
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZcoAliasCodegen:
+    """$ZCO is an abbreviation for $ZCONVERT."""
+
+    def test_zco_transpiles(self):
+        """$ZCO(X,"U") generates m_zconvert() call."""
+        code = 'TEST\n S X=$ZCO("hello","U")\n Q'
+        result = generate_python(code)
+        assert "m_zconvert" in result
+
+    def test_zco_execute(self):
+        """$ZCO("hello","U") returns "HELLO"."""
+        code = 'TEST\n W $ZCO("hello","U"),!\n Q'
+        result = generate_python(code)
+
+        from m2py.runtime import MUMPSRuntime, run_with_goto_support
+
+        ns = {}
+        exec(result, ns)
+        rt = MUMPSRuntime()
+        rt._capture_output = True
+        rt._current_routine = "TEST"
+        rt._current_source_lines = ns.get("_source_lines", [])
+        rt._current_label_lines = ns.get("_label_lines", {})
+        run_with_goto_support(ns["TEST"], rt, {})
+        assert rt.get_output() == "HELLO\n"
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZsigprocCodegen:
+    """$ZSIGPROC stub returns "1"."""
+
+    def test_zsigproc_transpiles(self):
+        """$ZSIGPROC(pid, signal) transpiles to stub."""
+        code = "TEST\n S %=$ZSIGPROC(1234,15)\n Q"
+        result = generate_python(code)
+        import ast
+
+        ast.parse(result)
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestReadGlobalWithIncrementCodegen:
+    """Phase 14C: READ with $INCREMENT in global subscript."""
+
+    def test_read_global_simple_timeout(self):
+        """R ^TMP($J,$I(^TMP($J))):0 generates valid Python."""
+        code = """TEST
+ K ^TMP(1)
+ R ^TMP(1,$I(^TMP(1))):0
+ Q
+"""
+        result = generate_python(code)
+        # Should use _rt.globals.set() instead of assignment to generate_expr()
+        assert "_rt.globals.set(" in result
+        import ast
+
+        ast.parse(result)
+
+    def test_read_global_loop_pattern(self):
+        """F  R ^TMP($J,$I(^TMP($J))):0 Q:... — the ZOSVGUT3 pattern."""
+        code = """TEST
+ K ^TMP(1)
+ F  R ^TMP(1,$I(^TMP(1))):0 Q:1
+ Q
+"""
+        result = generate_python(code)
+        assert "_rt.globals.set(" in result
+        import ast
+
+        ast.parse(result)
+
+    def test_read_global_no_subscript(self):
+        """R ^TMP:0 — global without subscripts."""
+        code = """TEST
+ R ^TMP:0
+ Q
+"""
+        result = generate_python(code)
+        assert "_rt.globals.set(" in result
+        import ast
+
+        ast.parse(result)
+
+    def test_read_local_variable_still_works(self):
+        """R X:0 — local variable should still use direct assignment."""
+        code = """TEST
+ R X:0
+ Q
+"""
+        result = generate_python(code)
+        # Should NOT use _rt.globals.set() for locals
+        assert "_rt.globals.set(" not in result
+        import ast
+
+        ast.parse(result)
+
+    def test_read_global_basic(self):
+        """R ^TMP — basic global read (no timeout)."""
+        code = """TEST
+ R ^TMP
+ Q
+"""
+        result = generate_python(code)
+        assert "_rt.globals.set(" in result
+        import ast
+
+        ast.parse(result)
+
+    def test_read_global_maxlen(self):
+        """R ^TMP#5 — global with maxlen."""
+        code = """TEST
+ R ^TMP(1)#5
+ Q
+"""
+        result = generate_python(code)
+        assert "_rt.globals.set(" in result
+        import ast
+
+        ast.parse(result)
+
+    def test_read_global_char_read(self):
+        """R *^X — character read into global (uncommon but valid)."""
+        # Note: R *^X reads a single char code into a global
+        # This may not be a common pattern but should be valid
+        code = """TEST
+ R *^TMP
+ Q
+"""
+        result = generate_python(code)
+        assert "_rt.globals.set(" in result
+        import ast
+
+        ast.parse(result)
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestPhase14BatchTranspilation:
+    """Phase 14: Batch transpilation of target routines."""
+
+    TRANSPILABLE_ROUTINES = [
+        pytest.param("Kernel/Routines/ZOSVGTM.m", "ZOSVGTM", id="ZOSVGTM-zbitstr"),
+        pytest.param("Uncategorized/Routines/ZSY.m", "ZSY", id="ZSY-zstep"),
+        pytest.param("Kernel/Routines/ZOSVGUT3.m", "ZOSVGUT3", id="ZOSVGUT3-read-incr"),
+    ]
+
+    @pytest.mark.parametrize("rel_path, routine_name", TRANSPILABLE_ROUTINES)
+    def test_routine_transpiles(self, rel_path, routine_name):
+        """Each Phase 14 target routine should transpile without error."""
+        import ast
+        import warnings
+        from pathlib import Path
+
         project_root = Path(__file__).resolve().parents[5]
         routine_path = project_root / "VistA-VEHU-M" / "Packages" / rel_path
         if not routine_path.exists():

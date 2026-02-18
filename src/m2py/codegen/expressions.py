@@ -2943,6 +2943,7 @@ def _gen_zconvert(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
 INTRINSIC_GENERATORS["ZCONVERT"] = _gen_zconvert
 INTRINSIC_GENERATORS["ZCVT"] = _gen_zconvert
+INTRINSIC_GENERATORS["ZCO"] = _gen_zconvert  # Abbreviation of $ZCONVERT
 
 
 # =============================================================================
@@ -3573,6 +3574,38 @@ def _gen_zbitnot(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
 
 INTRINSIC_GENERATORS["ZBITNOT"] = _gen_zbitnot
+
+
+def _gen_zbitstr(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZBITSTR — create a bitstring of n bits.
+
+    $ZBITSTR(len[,truthval]) creates a YDB-format bitstring:
+    1-byte header + ceil(len/8) data bytes.
+    """
+    args = getattr(expr, "arguments", [])
+    if len(args) >= 2:
+        s1 = generate_expr(args[0], ctx)
+        s2 = generate_expr(args[1], ctx)
+        return f"m_zbitstr(m_str({s1}), m_str({s2}))"
+    elif args:
+        s1 = generate_expr(args[0], ctx)
+        return f"m_zbitstr(m_str({s1}))"
+    return '"\\x00"'
+
+
+INTRINSIC_GENERATORS["ZBITSTR"] = _gen_zbitstr
+
+
+def _gen_zsigproc(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZSIGPROC — send signal to process. Stub returns '1' (success).
+
+    $ZSIGPROC(pid, signal) sends a signal to a process.
+    Used by ZSY (debugger). In transpiled code, this is a no-op stub.
+    """
+    return '"1"'
+
+
+INTRINSIC_GENERATORS["ZSIGPROC"] = _gen_zsigproc
 
 
 def _gen_zgetdvi(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:

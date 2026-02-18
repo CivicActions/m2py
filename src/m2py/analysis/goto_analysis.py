@@ -228,7 +228,9 @@ def _classify_single_goto(
                 stmt.goto_type = GotoType.EXTERNAL
                 continue
             # Same routine explicit reference - treat as resolved if label exists
-            if call.name in label_positions:
+            # G ^ROUTINENAME (empty label) means "restart from entry label"
+            effective_name = call.name if call.name else routine.name
+            if effective_name in label_positions:
                 # Continue to classify as regular GOTO within routine
                 pass
             else:
@@ -245,7 +247,9 @@ def _classify_single_goto(
             target_label = call.target
         else:
             # Same-routine explicit call - look up label by name
-            target_label = routine.get_label(call.name)
+            # G ^ROUTINENAME (empty label) defaults to routine entry label
+            effective_name = call.name if call.name else routine.name
+            target_label = routine.get_label(effective_name)
             if not target_label:
                 stmt.goto_type = GotoType.UNRESOLVED
                 continue

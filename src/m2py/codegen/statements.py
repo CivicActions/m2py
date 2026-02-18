@@ -839,7 +839,9 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     elif isinstance(stmt, MZPrintStatement):
         _generate_zprint(stmt, ctx)
     elif isinstance(stmt, MZStepStatement):
-        raise NotImplementedError("LIM-015: ZSTEP command not supported")
+        # ZSTEP is a debugger-only command (single-step control).
+        # No runtime impact on program output — emit as no-op.
+        ctx.emitter.line("pass  # ZSTEP command no-op (debugger)")
     elif isinstance(stmt, MZSystemStatement):
         _generate_zsystem(stmt, ctx)
     elif isinstance(stmt, MZTriggerStatement):
@@ -1051,6 +1053,8 @@ def _generate_single_assignment_with_preeval_subs(
         elif svar_name in ("ZDIRECTORY", "ZD"):
             ctx.emitter.line("import os")
             ctx.emitter.line(f"os.chdir(str({value_var}))")
+        elif svar_name in ("ZSTEP", "ZSTE"):
+            ctx.emitter.line("pass  # SET $ZSTEP no-op (debugger intrinsic)")
         else:
             raise NotImplementedError(
                 f"SET ${assignment.target.name} not supported in tuple SET"
@@ -1227,6 +1231,10 @@ def _generate_single_assignment(
             # so subsequent reads of $TEST via int(_test) see the new value.
             ctx.emitter.line(f"_rt._test = bool(m_truth({value_expr}))")
             ctx.emitter.line("_test = _rt._test")
+        elif svar_name in ("ZSTEP", "ZSTE"):
+            # $ZSTEP is a debugger intrinsic — SET $ZSTEP="code" defines
+            # the step action.  No runtime impact; emit as no-op.
+            ctx.emitter.line("pass  # SET $ZSTEP no-op (debugger intrinsic)")
         else:
             raise NotImplementedError(f"SET ${assignment.target.name} not supported")
         return
@@ -5448,6 +5456,7 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         ctx: Generator context
     """
     from m2py.asg.expressions import MIndirection as MIndirectionType
+    from m2py.asg.expressions import MGlobal
     from m2py.codegen.indirection import generate_name_indirection_write
 
     if target.variable is None:
@@ -5503,6 +5512,10 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         return
 
     # Get the target variable name and determine storage location
+    is_global_target = isinstance(target.variable, MGlobal)
+    global_name = ""
+    subs_tuple_str = "()"
+
     if isinstance(target.variable, MVariable):
         var_name = translate_name(target.variable.name)
         # Determine how to store the variable based on strategy
@@ -5518,68 +5531,67 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
             # TRAMPOLINE var not in state_vars — store in _scope for
             # cross-routine visibility and to avoid F841 bare-local lint
             storage_target = f"_scope.setdefault({var_name!r}, MArray()).value"
+    elif is_global_target:
+        # Global variable target (e.g., R ^TMP($J,$I(^TMP($J)))):
+        # Pre-evaluate subscripts into temp vars, then use _rt.globals.set()
+        # to store. This avoids generate_expr() producing a non-assignable LHS
+        # (e.g., _rt.globals.get('TMP', (...)) or '' = value is not valid Python).
+        global_var: MGlobal = target.variable  # type: ignore[assignment]
+        global_name = global_var.name
+        # Pre-evaluate each subscript into a temp variable so side effects
+        # (like $INCREMENT) happen exactly once and in order
+        sub_temps: list[str] = []
+        for i, sub_expr in enumerate(global_var.subscripts or []):
+            sub_code = generate_expr(sub_expr, ctx, subscript_context=True)
+            temp = f"_rsub{i}"
+            ctx.emitter.line(f"{temp} = {sub_code}")
+            sub_temps.append(temp)
+        if sub_temps:
+            subs_tuple = f"({', '.join(sub_temps)},)"
+        else:
+            subs_tuple = "()"
+        subs_tuple_str = subs_tuple
+        storage_target = None  # Marker: use _rt.globals.set() below
     else:
-        # Could be array subscript or global - generate expression
+        # Could be array subscript - generate expression
         storage_target = generate_expr(target.variable, ctx)
 
     if target.fixed_length is not None and target.timeout is not None:
         # R X#n:t — maxlen + timeout
         maxlen_expr = generate_expr(target.fixed_length, ctx)
         timeout_expr = generate_expr(target.timeout, ctx)
-        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            ctx.emitter.line(
-                f"_read_val, _read_key, _test = _rt.read_maxlen_timeout("
-                f"int({maxlen_expr}), {timeout_expr})"
-            )
-            ctx.emitter.line("_rt._test = _test")
-            ctx.emitter.line("_rt._current_device.key = _read_key")
-            ctx.emitter.line(f"{storage_target} = _read_val")
-        else:
-            ctx.emitter.line(
-                f"_read_val, _read_key, _test = _rt.read_maxlen_timeout("
-                f"int({maxlen_expr}), {timeout_expr})"
-            )
-            ctx.emitter.line("_rt._test = _test")
-            ctx.emitter.line("_rt._current_device.key = _read_key")
-            ctx.emitter.line(f"{storage_target} = _read_val")
+        ctx.emitter.line(
+            f"_read_val, _read_key, _test = _rt.read_maxlen_timeout("
+            f"int({maxlen_expr}), {timeout_expr})"
+        )
+        ctx.emitter.line("_rt._test = _test")
+        ctx.emitter.line("_rt._current_device.key = _read_key")
     elif target.fixed_length is not None:
         # R X#n — maxlen read
         maxlen_expr = generate_expr(target.fixed_length, ctx)
-        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            ctx.emitter.line(
-                f"_read_val, _read_key = _rt.read_maxlen(int({maxlen_expr}))"
-            )
-            ctx.emitter.line("_rt._current_device.key = _read_key")
-            ctx.emitter.line(f"{storage_target} = _read_val")
-        else:
-            ctx.emitter.line(
-                f"_read_val, _read_key = _rt.read_maxlen(int({maxlen_expr}))"
-            )
-            ctx.emitter.line("_rt._current_device.key = _read_key")
-            ctx.emitter.line(f"{storage_target} = _read_val")
+        ctx.emitter.line(f"_read_val, _read_key = _rt.read_maxlen(int({maxlen_expr}))")
+        ctx.emitter.line("_rt._current_device.key = _read_key")
     elif target.timeout is not None:
         # Timeout read: R X:n
         timeout_expr = generate_expr(target.timeout, ctx)
-        # Use runtime method for timeout read - returns (value, test_flag)
-        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Need to unpack properly for scope storage
-            ctx.emitter.line(
-                f"_read_val, _test = _rt.read_line_timeout({timeout_expr})"
-            )
-            ctx.emitter.line("_rt._test = _test")
-            ctx.emitter.line(f"{storage_target} = _read_val")
-        else:
-            ctx.emitter.line(
-                f"_read_val, _test = _rt.read_line_timeout({timeout_expr})"
-            )
-            ctx.emitter.line("_rt._test = _test")
-            ctx.emitter.line(f"{storage_target} = _read_val")
+        ctx.emitter.line(f"_read_val, _test = _rt.read_line_timeout({timeout_expr})")
+        ctx.emitter.line("_rt._test = _test")
     elif target.is_char_read:
         # Single character read: R *X
-        ctx.emitter.line(f"{storage_target} = _rt.read_char()")
+        ctx.emitter.line("_read_val = _rt.read_char()")
     else:
         # Basic read: R X
-        ctx.emitter.line(f"{storage_target} = _rt.read_line()")
+        ctx.emitter.line("_read_val = _rt.read_line()")
+
+    # Store the read value into the target
+    if is_global_target:
+        # Use _rt.globals.set() for global targets — avoids non-assignable LHS
+        # from generate_expr() (e.g., `_rt.globals.get(...) or ''`)
+        ctx.emitter.line(
+            f"_rt.globals.set({global_name!r}, {subs_tuple_str}, m_str(_read_val))"
+        )
+    else:
+        ctx.emitter.line(f"{storage_target} = _read_val")
 
 
 # =============================================================================
@@ -7029,7 +7041,13 @@ def _generate_zgoto(stmt: MZGotoStatement, ctx: "GeneratorContext") -> None:
 
         if arg.target is not None:
             # ZGOTO level:label - unwind and transfer
-            target_expr = generate_expr(arg.target, ctx)
+            # arg.target may be an MCall (label reference) — extract name as string
+            from m2py.asg.elements import MCall as MCallType
+
+            if isinstance(arg.target, MCallType):
+                target_expr = repr(arg.target.name or "")
+            else:
+                target_expr = generate_expr(arg.target, ctx)
             ctx.emitter.line(
                 f"raise _rt.ZGotoException({level_expr}, {target_expr})  # ZGOTO"
             )
