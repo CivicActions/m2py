@@ -249,18 +249,18 @@
 
 #### Function Aliases (map to existing implementations)
 
-- [ ] T053 [P] Register function aliases in INTRINSIC_GENERATORS for: `ZS`→ZSEARCH (6 rtn: ZBCK, ZRODSM, ZRRBAC1, ZTMS, ZU, ZUGTM), `ZP`→ORDER with -1 ($ZPREVIOUS), `ZCHAR`/`ZCH`→CHAR, `ZJOB`→existing zjob SVN, `LISTGET`/`LG`→LIST stub in src/m2py/codegen/expressions.py
+- [X] T053 [P] Register function aliases in INTRINSIC_GENERATORS for: `ZS`→ZSEARCH (6 rtn: ZBCK, ZRODSM, ZRRBAC1, ZTMS, ZU, ZUGTM), `ZP`→ORDER with -1 ($ZPREVIOUS), `ZCHAR`/`ZCH`→CHAR, `ZJOB`→existing zjob SVN, `LISTGET`/`LG`→LIST stub in src/m2py/codegen/expressions.py
 
 #### DSM/VMS Function Stubs ($ZC/$ZCALL — 33 routines)
 
-- [ ] T054 [P] Register `ZC` and `ZCALL` as intrinsic function stubs returning `m_zcall_stub("$ZC")` / `m_zcall_stub("$ZCALL")` in INTRINSIC_GENERATORS (27+6=33 routines: KMPDUTL1, XML1CRC, A3AFLBK, etc.) in src/m2py/codegen/expressions.py
+- [X] T054 [P] Register `ZC` and `ZCALL` as intrinsic function stubs returning `m_zcall_stub("$ZC")` / `m_zcall_stub("$ZCALL")` in INTRINSIC_GENERATORS (27+6=33 routines: KMPDUTL1, XML1CRC, A3AFLBK, etc.) in src/m2py/codegen/expressions.py
 
 #### YDB/GT.M Function Stubs
 
-- [ ] T055 [P] Add `$ZHOROLOG`/`$ZH` as intrinsic function stub returning `str(time.time())` (6 routines: A1BFDBWR, DINVVXD, ORPDMP, ORRDI1, XWBTCPMT, ZOSVKSD) — also add as SVN reader for no-args case in src/m2py/codegen/expressions.py
+- [X] T055 [P] Add `$ZHOROLOG`/`$ZH` as intrinsic function stub returning `str(time.time())` (6 routines: A1BFDBWR, DINVVXD, ORPDMP, ORRDI1, XWBTCPMT, ZOSVKSD) — also add as SVN reader for no-args case in src/m2py/codegen/expressions.py
   - Note: $ZH with args is $ZHOROLOG (timer), $ZH without args is also $ZHOROLOG SVN
 
-- [ ] T056 [P] Add remaining vendor function stubs as INTRINSIC_GENERATORS entries in src/m2py/codegen/expressions.py — each returns `m_zcall_stub("$FUNCNAME")` or a simple default:
+- [X] T056 [P] Add remaining vendor function stubs as INTRINSIC_GENERATORS entries in src/m2py/codegen/expressions.py — each returns `m_zcall_stub("$FUNCNAME")` or a simple default:
   - `ZIO` → `_rt.io()` (6 rtn), `PD` → `"1"` (5 rtn), `ZDEV` → `""` (5 rtn)
   - `ZO`/`ZORDER` → `""` (3 rtn), `ZTIMESTAMP` → $H-format UTC string (3 rtn)
   - `ZTRNLNM` → `os.environ.get(arg, "")` (3 rtn: HLCSGTM, XLFIPV, ZOSVGTM)
@@ -281,11 +281,11 @@
 
 #### SVN Readers
 
-- [ ] T057 [P] Add `$ZCMDLINE` SVN reader returning `""` in generate_special_variable() in src/m2py/codegen/expressions.py (3 routines: DECOMMENT, ZFOO, ZJFOO)
+- [X] T057 [P] Add `$ZCMDLINE` SVN reader returning `""` in generate_special_variable() in src/m2py/codegen/expressions.py (3 routines: DECOMMENT, ZFOO, ZJFOO)
 
 ### Validation for Phase 10
 
-- [ ] T058 Write tests for Phase 10 stubs and aliases in tests/unit/codegen/test_phase10_vendor_stubs.py
+- [X] T058 Write tests for Phase 10 stubs and aliases in tests/unit/codegen/extensions/ydb/test_zfunctions.py (76 new tests added to existing file)
 
 ---
 

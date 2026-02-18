@@ -2378,3 +2378,107 @@ def m_zconvert(string: str, mode: str) -> str:
         # Word case: capitalize first letter of each word
         return string.title()
     return string
+
+
+# =============================================================================
+# Phase 10: Vendor Runtime Helpers (024-vista-transpilation-fixes)
+# =============================================================================
+
+
+def _rt_os_environ_get(name: str) -> str:
+    """Get environment variable value, returning "" if not set.
+
+    Used by $ZTRNLNM (VMS/YDB translate logical name).
+    """
+    import os
+
+    return os.environ.get(name, "")
+
+
+def m_zgetjpi(pid: str, item: str) -> str:
+    """Implement $ZGETJPI — get job/process information (YDB).
+
+    Common usage: $ZGETJPI(pid, "ISPROCALIVE") — returns "1" if process is alive.
+
+    Args:
+        pid: Process ID ("" for current process)
+        item: Info item name (e.g., "ISPROCALIVE")
+
+    Returns:
+        String result
+    """
+    import os
+    import signal
+
+    item_upper = item.upper()
+
+    if item_upper == "ISPROCALIVE":
+        if pid == "" or pid == "0":
+            return "1"  # Current process is always alive
+        try:
+            os.kill(int(pid), signal.SIG_DFL)
+            return "1"
+        except (ProcessLookupError, ValueError):
+            return "0"
+        except PermissionError:
+            return "1"  # Process exists but we can't signal it
+
+    # For unknown items, return empty string
+    warnings.warn(f"$ZGETJPI item {item!r} not implemented, returning empty string")
+    return ""
+
+
+def m_zparse(path: str, item: str = "") -> str:
+    """Implement $ZPARSE — file path parsing (YDB/GT.M).
+
+    $ZPARSE(path[,item]) parses file paths.
+    item can be: "DIRECTORY", "NAME", "TYPE", "NODE", "DEVICE"
+    If item is empty, returns the full expanded path.
+
+    Args:
+        path: File path to parse
+        item: Component to extract
+
+    Returns:
+        Requested path component as string
+    """
+    import os
+
+    item_upper = item.upper()
+
+    if not item or item_upper == "FULL":
+        return os.path.abspath(path) if path else ""
+
+    if item_upper == "DIRECTORY":
+        return os.path.dirname(path)
+    elif item_upper == "NAME":
+        base = os.path.basename(path)
+        name, _ = os.path.splitext(base)
+        return name
+    elif item_upper in ("TYPE", "EXTENSION"):
+        base = os.path.basename(path)
+        _, ext = os.path.splitext(base)
+        return ext
+    elif item_upper in ("NODE", "DEVICE"):
+        return ""  # No network/device on Unix
+
+    return path
+
+
+def m_zbitand(s1: str, s2: str) -> str:
+    """Implement $ZBITAND — bitwise AND on byte strings.
+
+    Performs byte-by-byte AND on two strings. Result length = min of both.
+
+    Args:
+        s1: First byte string
+        s2: Second byte string
+
+    Returns:
+        Result of bitwise AND
+    """
+    b1 = s1.encode("latin-1") if s1 else b""
+    b2 = s2.encode("latin-1") if s2 else b""
+    min_len = min(len(b1), len(b2))
+    result = bytes(b1[i] & b2[i] for i in range(min_len))
+    return result.decode("latin-1")

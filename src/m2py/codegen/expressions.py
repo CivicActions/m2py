@@ -763,6 +763,19 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name in ("ZINTERRUPT", "ZINT"):
         return "_rt.zinterrupt()"
 
+    # $ZHOROLOG / $ZH - high-resolution timestamp (microseconds since epoch)
+    # As SVN, $ZH returns the current timestamp value
+    if name in ("ZHOROLOG", "ZH"):
+        return "str(int(time.time() * 1000000))"
+
+    # $ZCMDLINE - command line arguments (returns "" in transpiled context)
+    if name == "ZCMDLINE":
+        return '""'
+
+    # $ZMODE - process mode (INTERACTIVE, OTHER, etc.)
+    if name == "ZMODE":
+        return '"OTHER"'
+
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 
@@ -2978,3 +2991,419 @@ def _gen_svn_zerr(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
 
 INTRINSIC_GENERATORS["ZERR"] = _gen_svn_zerr
+
+
+# =============================================================================
+# Phase 10: Vendor Function Aliases & Stubs (024-vista-transpilation-fixes)
+# =============================================================================
+
+
+# --- T053: Function Aliases ---
+
+# $ZS → alias for $ZSEARCH (6 routines: ZBCK, ZRODSM, ZRRBAC1, ZTMS, ZU, ZUGTM)
+# NOTE: $ZS as an SVN is $ZSTATUS (handled in _generate_special_variable()).
+# When $ZS is used with arguments (i.e., as a function), INTRINSIC_GENERATORS
+# takes priority, so this correctly dispatches $ZS(x) → ZSEARCH.
+INTRINSIC_GENERATORS["ZS"] = _gen_zsearch
+
+# $ZCHAR/$ZCH → alias for $CHAR (DSM/MSM vendors)
+INTRINSIC_GENERATORS["ZCHAR"] = _gen_char
+INTRINSIC_GENERATORS["ZCH"] = _gen_char
+
+
+def _gen_zprevious(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZPREVIOUS/$ZP function.
+
+    $ZPREVIOUS(var) is equivalent to $ORDER(var,-1).
+    We delegate to _gen_order after injecting a -1 direction argument.
+    """
+    from m2py.asg.expressions import MLiteral
+
+    args = list(getattr(expr, "arguments", []))
+    if args:
+        # If no direction argument, inject -1
+        if len(args) < 2:
+            neg1 = MLiteral(value="-1", literal_type=LiteralType.INTEGER)
+            args.append(neg1)
+        # Create a shallow copy of expr with modified arguments
+        import copy
+
+        modified = copy.copy(expr)
+        modified.arguments = args
+        return _gen_order(modified, ctx)
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZPREVIOUS"] = _gen_zprevious
+# $ZP as function → $ZPREVIOUS. As SVN, $ZP is $ZPOSITION (handled elsewhere).
+INTRINSIC_GENERATORS["ZP"] = _gen_zprevious
+
+
+def _gen_svn_zjob_func(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZJOB as no-args intrinsic function (returns last JOB'd process PID)."""
+    return "_rt.zjob()"
+
+
+INTRINSIC_GENERATORS["ZJOB"] = _gen_svn_zjob_func
+INTRINSIC_GENERATORS["ZJ"] = _gen_svn_zjob_func
+
+
+# IRIS $LIST functions — stub returning ""
+def _gen_list_stub(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Stub for IRIS $LIST/$LISTBUILD/$LISTGET etc.
+
+    These are IRIS-specific serialization functions with no Python equivalent.
+    Returns "" for all invocations.
+    """
+    return '""'
+
+
+INTRINSIC_GENERATORS["LIST"] = _gen_list_stub
+INTRINSIC_GENERATORS["LI"] = _gen_list_stub
+INTRINSIC_GENERATORS["LISTBUILD"] = _gen_list_stub
+INTRINSIC_GENERATORS["LB"] = _gen_list_stub
+INTRINSIC_GENERATORS["LISTGET"] = _gen_list_stub
+INTRINSIC_GENERATORS["LG"] = _gen_list_stub
+INTRINSIC_GENERATORS["LISTLENGTH"] = _gen_list_stub
+INTRINSIC_GENERATORS["LL"] = _gen_list_stub
+
+
+# --- T054: $ZC/$ZCALL stubs (DSM/VMS — 33 routines) ---
+
+
+def _gen_zcall(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZC/$ZCALL function (DSM/VMS).
+
+    $ZCALL invokes external library routines — not available in Python.
+    Returns "" and emits a runtime warning via m_zcall_stub().
+    """
+    args = getattr(expr, "arguments", [])
+    arg_exprs = ", ".join(f"m_str({generate_expr(a, ctx)})" for a in args)
+    if arg_exprs:
+        return f'm_zcall_stub("$ZCALL", {arg_exprs})'
+    return 'm_zcall_stub("$ZCALL")'
+
+
+INTRINSIC_GENERATORS["ZC"] = _gen_zcall
+INTRINSIC_GENERATORS["ZCALL"] = _gen_zcall
+
+
+# --- T055: $ZHOROLOG/$ZH function + SVN ---
+
+
+def _gen_zhorolog(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZHOROLOG/$ZH function.
+
+    $ZHOROLOG returns a high-resolution timestamp (microseconds since epoch).
+    In YDB, $ZH with no args returns "$ZHOROLOG" as an ISV.
+    With args, it's the function form.
+
+    We return str(time.time()) for both cases since the function is typically
+    called with zero args anyway.
+    """
+    return "str(int(time.time() * 1000000))"
+
+
+INTRINSIC_GENERATORS["ZHOROLOG"] = _gen_zhorolog
+INTRINSIC_GENERATORS["ZH"] = _gen_zhorolog
+
+
+# --- T056: Remaining vendor function stubs ---
+
+
+def _gen_zio(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZIO — current I/O device. Alias for $IO."""
+    return "_rt.io()"
+
+
+INTRINSIC_GENERATORS["ZIO"] = _gen_zio
+
+
+def _gen_pd(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$PD — IRIS padding function. Returns "1" (enabled)."""
+    return '"1"'
+
+
+INTRINSIC_GENERATORS["PD"] = _gen_pd
+
+
+def _gen_zdev(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZDEV — DSM device info. Stub returning empty string."""
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZDEV"] = _gen_zdev
+
+
+def _gen_zorder(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZO/$ZORDER — DSM/MSM order variant. Stub returning empty string."""
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZO"] = _gen_zorder
+INTRINSIC_GENERATORS["ZORDER"] = _gen_zorder
+
+
+def _gen_ztimestamp(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZTIMESTAMP — YDB $H-format UTC timestamp.
+
+    Returns "days,seconds" in $HOROLOG format based on UTC time.
+    """
+    return "_rt.horolog()"
+
+
+INTRINSIC_GENERATORS["ZTIMESTAMP"] = _gen_ztimestamp
+INTRINSIC_GENERATORS["ZTS"] = _gen_ztimestamp
+INTRINSIC_GENERATORS["ZTSTAMP"] = _gen_ztimestamp
+INTRINSIC_GENERATORS["ZUT"] = _gen_ztimestamp
+
+
+def _gen_ztrnlnm(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZTRNLNM — translate logical name (VMS/YDB).
+
+    $ZTRNLNM(name) returns the value of an environment variable.
+    Maps to os.environ.get(name, "").
+    """
+    args = getattr(expr, "arguments", [])
+    if args:
+        name_expr = generate_expr(args[0], ctx)
+        return f"_rt_os_environ_get(m_str({name_expr}))"
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZTRNLNM"] = _gen_ztrnlnm
+
+
+def _gen_zname(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZN/$ZNAME — routine name function. Stub returning empty string."""
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZN"] = _gen_zname
+INTRINSIC_GENERATORS["ZNAME"] = _gen_zname
+
+
+def _gen_zclose(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZCLOSE — close device. Returns "0" (success)."""
+    return '"0"'
+
+
+INTRINSIC_GENERATORS["ZCLOSE"] = _gen_zclose
+
+
+def _gen_zgetjpi(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZGETJPI — get job/process info (YDB).
+
+    When first arg is "" and second arg is "ISPROCALIVE", checks if
+    current process is alive. Otherwise returns stub.
+    """
+    args = getattr(expr, "arguments", [])
+    if len(args) >= 2:
+        pid_expr = generate_expr(args[0], ctx)
+        item_expr = generate_expr(args[1], ctx)
+        return f"m_zgetjpi(m_str({pid_expr}), m_str({item_expr}))"
+    if len(args) == 1:
+        pid_expr = generate_expr(args[0], ctx)
+        return f'm_zgetjpi(m_str({pid_expr}), "")'
+    return 'm_zgetjpi("", "")'
+
+
+INTRINSIC_GENERATORS["ZGETJPI"] = _gen_zgetjpi
+
+
+def _gen_zios(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZIOS — I/O status. Returns "0" (no error)."""
+    return '"0"'
+
+
+INTRINSIC_GENERATORS["ZIOS"] = _gen_zios
+
+
+def _gen_zver(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZVER — version string (MSM). Returns empty string."""
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZVER"] = _gen_zver
+
+
+def _gen_zparse(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZPARSE — file path parsing (YDB/GT.M).
+
+    $ZPARSE(expr[,item[,default[,type]]]) parses file paths.
+    Maps to os.path operations for basic usage.
+    """
+    args = getattr(expr, "arguments", [])
+    if not args:
+        return '""'
+    path_expr = generate_expr(args[0], ctx)
+    if len(args) >= 2:
+        item_expr = generate_expr(args[1], ctx)
+        return f"m_zparse(m_str({path_expr}), m_str({item_expr}))"
+    return f"m_zparse(m_str({path_expr}))"
+
+
+INTRINSIC_GENERATORS["ZPARSE"] = _gen_zparse
+
+
+def _gen_zlength(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZL/$ZLENGTH — byte length of string.
+
+    $ZLENGTH(string) returns the byte length (not character length).
+    """
+    args = getattr(expr, "arguments", [])
+    if args:
+        str_expr = generate_expr(args[0], ctx)
+        return f'str(len(m_str({str_expr}).encode("utf-8")))'
+    return '"0"'
+
+
+INTRINSIC_GENERATORS["ZL"] = _gen_zlength
+INTRINSIC_GENERATORS["ZLENGTH"] = _gen_zlength
+
+
+def _gen_roles(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ROLES — IRIS security roles. Returns "%All"."""
+    return '"%All"'
+
+
+INTRINSIC_GENERATORS["ROLES"] = _gen_roles
+
+
+def _gen_zdefnsp(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZDEFNSP/$ZNSPACE — default namespace. Returns "VISTA"."""
+    return '"VISTA"'
+
+
+INTRINSIC_GENERATORS["ZDEFNSP"] = _gen_zdefnsp
+INTRINSIC_GENERATORS["ZNSPACE"] = _gen_zdefnsp
+
+
+def _gen_number(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$NUM/$NUMBER — format number. Delegates to m_num for canonical form."""
+    args = getattr(expr, "arguments", [])
+    if args:
+        num_expr = generate_expr(args[0], ctx)
+        return f"m_str(m_num({num_expr}))"
+    return '"0"'
+
+
+INTRINSIC_GENERATORS["NUM"] = _gen_number
+INTRINSIC_GENERATORS["NUMBER"] = _gen_number
+
+
+def _gen_zdateh(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZDATEH — date to $H conversion. Stub returning empty string."""
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZDATEH"] = _gen_zdateh
+
+
+def _gen_zbitand(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZBITAND — bitwise AND on bit strings.
+
+    $ZBITAND(str1, str2) performs bitwise AND.
+    """
+    args = getattr(expr, "arguments", [])
+    if len(args) >= 2:
+        s1 = generate_expr(args[0], ctx)
+        s2 = generate_expr(args[1], ctx)
+        return f"m_zbitand(m_str({s1}), m_str({s2}))"
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZBITAND"] = _gen_zbitand
+
+
+def _gen_zdatetime(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZDATETIME — date/time formatting. Stub returning empty string."""
+    args = getattr(expr, "arguments", [])
+    if args:
+        h_expr = generate_expr(args[0], ctx)
+        return f'm_zcall_stub("$ZDATETIME", m_str({h_expr}))'
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZDATETIME"] = _gen_zdatetime
+INTRINSIC_GENERATORS["ZDT"] = _gen_zdatetime
+
+
+def _gen_eref(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$EREF — extended reference. Stub returning empty string."""
+    return '""'
+
+
+INTRINSIC_GENERATORS["EREF"] = _gen_eref
+
+
+def _gen_zos(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZOS — operating system info. Stub returning empty string."""
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZOS"] = _gen_zos
+
+
+def _gen_zdevspeed(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$zdevspeed — device speed. Stub returning empty string."""
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZDEVSPEED"] = _gen_zdevspeed
+
+
+def _gen_zeo(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZEO — end of file (DSM variant of $ZEOF). Returns "0"."""
+    return '"0"'
+
+
+INTRINSIC_GENERATORS["ZEO"] = _gen_zeo
+
+
+def _gen_zwa(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZWA — write-after count. Returns "0"."""
+    return '"0"'
+
+
+INTRINSIC_GENERATORS["ZWA"] = _gen_zwa
+
+
+def _gen_zmode(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZMODE — process mode. Returns "OTHER"."""
+    return '"OTHER"'
+
+
+INTRINSIC_GENERATORS["ZMODE"] = _gen_zmode
+
+
+def _gen_zuci(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZUCI — UCI (User Class Identification). Stub returning empty string."""
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZUCI"] = _gen_zuci
+
+
+def _gen_zcmd(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZCMD — last command. Stub returning empty string."""
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZCMD"] = _gen_zcmd
+
+
+def _gen_zgd(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZGD — global directory. Stub returning empty string."""
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZGD"] = _gen_zgd
+
+# Additional vendor aliases discovered during validation:
+# $ZEXTRACT/$ZE → alias for $EXTRACT (DSM/IRIS)
+INTRINSIC_GENERATORS["ZEXTRACT"] = _gen_extract
+INTRINSIC_GENERATORS["ZE"] = _gen_extract
+
+# $ZLENGTH as function already registered above,
+# but $ZL also used for $ZLENGTH (already registered)
