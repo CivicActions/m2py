@@ -110,13 +110,13 @@
 
 ### Implementation for User Story 3
 
-- [ ] T019 [P] [US3] Add sys.setrecursionlimit(5000) in transpilation entry point, restore afterward, in src/m2py/cli/ or main.py
-- [ ] T020 [P] [US3] Add MZLoadStatement dispatch routing to existing _generate_zlink() at statement dispatcher (~L811-812) in src/m2py/codegen/statements.py
-- [ ] T021 [P] [US3] Add encoding fallback (try UTF-8, then Latin-1 with errors='replace') in .m file reading code
+- [X] T019 [P] [US3] Add sys.setrecursionlimit(5000) in transpilation entry point, restore afterward, in src/m2py/cli/ or main.py
+- [X] T020 [P] [US3] Add MZLoadStatement dispatch routing to existing _generate_zlink() at statement dispatcher (~L811-812) in src/m2py/codegen/statements.py
+- [X] T021 [P] [US3] Add encoding fallback (try UTF-8, then Latin-1 with errors='replace') in .m file reading code
 
 ### Validation for User Story 3
 
-- [ ] T022 [US3] Write tests for Contracts 10-11 (RecursionError prevention, ZLOAD handling) in tests/functional/
+- [X] T022 [US3] Write tests for Contracts 10-11 (RecursionError prevention, ZLOAD handling) in tests/functional/
 
 **Checkpoint**: US1-3 complete — ~2,361 failures resolved, success rate ~99.4%
 

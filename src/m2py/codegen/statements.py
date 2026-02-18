@@ -70,6 +70,7 @@ from m2py.asg.statements import (
     MZHaltStatement,
     MZKillStatement,
     MZLinkStatement,
+    MZLoadStatement,
     MZShowStatement,
     MZWithdrawStatement,
     MZWriteStatement,
@@ -810,6 +811,8 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_zkill(stmt, ctx)
     elif isinstance(stmt, MZLinkStatement):
         _generate_zlink(stmt, ctx)
+    elif isinstance(stmt, MZLoadStatement):
+        _generate_zload(stmt, ctx)
     elif isinstance(stmt, MZShowStatement):
         _generate_zshow(stmt, ctx)
     elif isinstance(stmt, MZGotoStatement):
@@ -6840,6 +6843,29 @@ def _generate_zlink(stmt: MZLinkStatement, ctx: "GeneratorContext") -> None:
     """
     if not stmt.args:
         ctx.emitter.line("pass  # ZLINK (no args)")
+        return
+
+    for arg in stmt.args:
+        routine_expr = generate_expr(arg, ctx)
+        ctx.emitter.line(f"_rt.zlink({routine_expr})")
+
+
+def _generate_zload(stmt: MZLoadStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZLOAD command.
+
+    ZLOAD loads a routine into the routine buffer for editing.
+    In transpiler context, we treat it the same as ZLINK since
+    both load a routine; editing semantics don't apply in Python.
+
+    Example:
+        ZL "MYROUTINE"
+
+    Args:
+        stmt: MZLoadStatement node
+        ctx: Generator context
+    """
+    if not stmt.args:
+        ctx.emitter.line("pass  # ZLOAD (no args)")
         return
 
     for arg in stmt.args:

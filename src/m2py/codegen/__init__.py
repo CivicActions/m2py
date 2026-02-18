@@ -6,6 +6,7 @@ Provides the public API for generating executable Python code from MUMPS source.
 from __future__ import annotations
 
 import ast
+import sys
 from typing import TYPE_CHECKING
 
 from m2py.parser import MUMPSParser
@@ -158,6 +159,25 @@ def generate_python(
         from m2py.codegen.helpers import m_str, m_num, m_truth, m_compare
         ...
     """
+    # Raise the recursion limit for deeply-nested MUMPS expressions
+    # (e.g., VistA routine PSXRECV) and restore it afterwards.
+    old_limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(max(old_limit, 5000))
+    try:
+        return _generate_python_inner(
+            source, routine_name=routine_name, validate=validate
+        )
+    finally:
+        sys.setrecursionlimit(old_limit)
+
+
+def _generate_python_inner(
+    source: str,
+    *,
+    routine_name: str | None = None,
+    validate: bool = True,
+) -> str:
+    """Inner implementation of generate_python (called with raised recursion limit)."""
     # Parse MUMPS source
     parser = MUMPSParser()
     routine = parser.parse(source, filename=routine_name)

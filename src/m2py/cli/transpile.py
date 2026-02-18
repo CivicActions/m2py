@@ -314,8 +314,11 @@ def transpile_file(
     routine_name = input_path.stem.upper()
 
     try:
-        # Read source
-        source = input_path.read_text(encoding="utf-8")
+        # Read source (try UTF-8 first, fall back to Latin-1 for legacy files)
+        try:
+            source = input_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            source = input_path.read_text(encoding="latin-1")
     except OSError as e:
         return TranspileResult(
             input_path=input_path,
@@ -428,7 +431,10 @@ def transpile_paths(
     for input_path, base_dir in m_files:
         output_path = _compute_output_path(input_path, base_dir, out_dir)
         try:
-            source = input_path.read_text(encoding="utf-8")
+            try:
+                source = input_path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                source = input_path.read_text(encoding="latin-1")
             file_specs.append((input_path, output_path, source))
         except OSError as e:
             results.append(

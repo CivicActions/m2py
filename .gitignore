@@ -58,10 +58,10 @@ MANIFEST
 .worktrees
 
 # Reference directories
-mumps-reference
-proleap-research
-textX-reference
-YDBTest
+/mumps-reference
+/proleap-research
+/textX-reference
+/YDBTest
 /Vista-*
-IRISDoc
-YDB*
+/IRISDoc
+/YDB*

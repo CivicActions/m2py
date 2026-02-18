@@ -339,7 +339,9 @@ def _classify_single_goto(
             for for_stmt in enclosing_fors:
                 for_stmt.has_internal_goto = True
                 # Add this GOTO to the FOR's exit_points (bidirectional link)
-                if stmt not in for_stmt.exit_points:
+                # Use identity check (any()) to avoid deep __eq__ recursion
+                # on ASG nodes with heavily nested expressions.
+                if not any(stmt is ep for ep in for_stmt.exit_points):
                     for_stmt.exit_points.append(stmt)
 
             # Pre-compute FOR fields for codegen
