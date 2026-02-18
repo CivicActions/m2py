@@ -1681,6 +1681,13 @@ class MUMPSRuntime:
         # $TEST value for tracking IF/ELSE condition results
         # This is synced from/to generated code via execute_mumps
         self._test: bool = False
+        # IRIS/Caché special variables (024-vista-transpilation-fixes, US4)
+        # $ZA — last I/O activity status (read-only, default 0)
+        self._za: int = 0
+        # $ZREFERENCE / $ZR — last global reference (read+set)
+        self._zreference: str = ""
+        # $NAMESPACE — current namespace (read+set+NEW, default "VISTA")
+        self._namespace: str = "VISTA"
         # JOB command support: virtual process ID for child processes
         # None = use os.getpid() (main process). Set to a unique ID for child processes.
         self._job_id: int | None = None
@@ -2763,6 +2770,44 @@ class MUMPSRuntime:
             *params: Optional parameters
         """
         pass  # Stub — full implementation in Phase 3 (US5)
+
+    # -----------------------------------------------------------------
+    # IRIS/Caché special variable accessors (024-vista-transpilation-fixes)
+    # -----------------------------------------------------------------
+
+    def zversion(self) -> str:
+        """Return $ZVERSION — transpiler version string.
+
+        IRIS returns something like ``"IRIS for UNIX (Ubuntu Server LTS for x86-64) ..."``.
+        We return an M2PY marker so ``$L($ZV)>0`` is true.
+        """
+        import platform
+
+        return f"M2PY for Python 1.0 ({platform.system()} {platform.machine()})"
+
+    def za(self) -> int:
+        """Return $ZA — last I/O activity status (read-only, default 0)."""
+        return self._za
+
+    def zreference(self) -> str:
+        """Return $ZREFERENCE ($ZR) — last global reference.
+
+        Delegates to the global storage backend which tracks references
+        automatically on every get/set/kill operation.
+        """
+        return self._globals.last_global_ref
+
+    def set_zreference(self, value: str) -> None:
+        """Set $ZREFERENCE ($ZR)."""
+        self._zreference = str(value)
+
+    def namespace(self) -> str:
+        """Return $NAMESPACE."""
+        return self._namespace
+
+    def set_namespace(self, value: str) -> None:
+        """Set $NAMESPACE."""
+        self._namespace = str(value)
 
     def zeof(self) -> int:
         """Return end-of-file indicator ($ZEOF).

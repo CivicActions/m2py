@@ -1038,6 +1038,8 @@ def _generate_single_assignment_with_preeval_subs(
             ctx.emitter.line(f"_rt.set_x({value_var})")
         elif svar_name == "Y":
             ctx.emitter.line(f"_rt.set_y({value_var})")
+        elif svar_name in ("NAMESPACE", "NSPACE"):
+            ctx.emitter.line(f"_rt.set_namespace({value_var})")
         else:
             raise NotImplementedError(
                 f"SET ${assignment.target.name} not supported in tuple SET"
@@ -1195,6 +1197,8 @@ def _generate_single_assignment(
             ctx.emitter.line(f"_rt.set_x({value_expr})")
         elif svar_name == "Y":
             ctx.emitter.line(f"_rt.set_y({value_expr})")
+        elif svar_name in ("NAMESPACE", "NSPACE"):
+            ctx.emitter.line(f"_rt.set_namespace({value_expr})")
         else:
             raise NotImplementedError(f"SET ${assignment.target.name} not supported")
         return

@@ -143,6 +143,16 @@ class GlobalStorageBackend(Protocol):
         """
         ...
 
+    @property
+    def last_global_ref(self) -> str:
+        """Return the last global reference string ($ZREFERENCE).
+
+        Returns:
+            Formatted reference like "^NAME(sub1,sub2)" or "" if no
+            global has been accessed yet.
+        """
+        ...
+
     def set_order_naked(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Pre-set naked indicator for $ORDER evaluation ordering.
 
@@ -456,6 +466,9 @@ class InMemoryGlobalStorage:
         self._tlevel: int = 0
         self._transaction_snapshots: list[dict[str, MArray]] = []
 
+        # $ZREFERENCE — last global reference string (e.g. "^ZZTEST(1,2)")
+        self._last_global_ref: str = ""
+
     @property
     def _naked_indicator(self) -> tuple[str, tuple[str, ...]] | None:
         """Naked indicator for global reference resolution."""
@@ -464,6 +477,11 @@ class InMemoryGlobalStorage:
     @_naked_indicator.setter
     def _naked_indicator(self, value: tuple[str, tuple[str, ...]] | None) -> None:
         self._naked_indicator_value = value
+
+    @property
+    def last_global_ref(self) -> str:
+        """Return the last global reference string ($ZREFERENCE)."""
+        return self._last_global_ref
 
     def _canonicalize_subscript(self, subscript: str | int | float) -> str:
         """Convert subscript to MUMPS canonical string form.
@@ -489,6 +507,8 @@ class InMemoryGlobalStorage:
     def _update_naked_indicator(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Update naked indicator after global access.
 
+        Also updates $ZREFERENCE (last global reference string).
+
         Args:
             name: Global name
             subscripts: Full subscript path
@@ -498,6 +518,15 @@ class InMemoryGlobalStorage:
         the naked indicator becomes None (naked refs are illegal after
         accessing a global with no subscripts).
         """
+        # Update $ZREFERENCE — format as ^NAME or ^NAME(sub1,sub2,...)
+        if subscripts:
+            subs_str = ",".join(
+                f'"{s}"' if not s.lstrip("-").isdigit() else s for s in subscripts
+            )
+            self._last_global_ref = f"^{name}({subs_str})"
+        else:
+            self._last_global_ref = f"^{name}"
+
         if subscripts:
             # After ^G(1,2,3): indicator = ("G", ("1", "2"))
             self._naked_indicator = (name, subscripts[:-1])

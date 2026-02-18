@@ -723,6 +723,24 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name == "ZEOF":
         return "_rt.zeof()"
 
+    # IRIS/Caché Special Variables
+
+    # $ZVERSION / $ZV - IRIS version string
+    if name in ("ZVERSION", "ZV"):
+        return "_rt.zversion()"
+
+    # $ZA - last I/O activity status (read-only, default 0)
+    if name == "ZA":
+        return "str(_rt.za())"
+
+    # $ZREFERENCE / $ZR - last global reference
+    if name in ("ZREFERENCE", "ZR"):
+        return "_rt.zreference()"
+
+    # $NAMESPACE / $NSPACE - current namespace
+    if name in ("NAMESPACE", "NSPACE"):
+        return "_rt.namespace()"
+
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 
@@ -1084,31 +1102,24 @@ def _generate_external_function(
     External C functions call native code linked into the MUMPS runtime.
     These are implementation-specific and cannot be directly transpiled to Python.
 
-    Examples:
-        $&RAND(1)                          - Simple external function
-        $&ydbposix.signalval("SIGTERM",.x) - Package-qualified external function
-
-    For Python transpilation, these raise NotImplementedError since they require
-    native C bindings that don't exist in the pure Python runtime.
+    For Python transpilation, these return a stub that issues a warning and
+    returns empty string, rather than raising NotImplementedError which would
+    halt transpilation of routines that reference external functions.
 
     Args:
         expr: MExternalFunction node with package, name, and arguments
         ctx: Generator context
 
-    Raises:
-        NotImplementedError: External C functions are not supported in Python transpilation
+    Returns:
+        Python expression calling m_zcall_stub() with identifier
     """
-    # Build function identifier for error message
+    # Build function identifier for warning message
     if expr.package:
         func_id = f"$&{expr.package}.{expr.name}"
     else:
         func_id = f"$&{expr.name}"
 
-    raise NotImplementedError(
-        f"External C function '{func_id}' not supported. "
-        f"External functions ($&) call native C code linked into the MUMPS runtime "
-        f"and cannot be transpiled to pure Python."
-    )
+    return f"m_zcall_stub({func_id!r})"
 
 
 def _generate_extrinsic_arguments_with_byref(
@@ -2722,3 +2733,202 @@ def _gen_zro(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
 INTRINSIC_GENERATORS["ZRO"] = _gen_zro
 INTRINSIC_GENERATORS["ZROUTINES"] = _gen_zro
+
+
+# =============================================================================
+# IRIS/Caché Vendor Functions
+# =============================================================================
+
+
+def _gen_replace(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $REPLACE function (IRIS/Caché).
+
+    $REPLACE(string, search, replace[, start[, count[, case]]])
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 3-6 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression calling m_replace()
+    """
+    args = getattr(expr, "arguments", [])
+    if len(args) < 3:
+        return '""'
+
+    str_expr = generate_expr(args[0], ctx)
+    search_expr = generate_expr(args[1], ctx)
+    replace_expr = generate_expr(args[2], ctx)
+
+    parts = [f"m_str({str_expr})", f"m_str({search_expr})", f"m_str({replace_expr})"]
+
+    if len(args) >= 4:
+        parts.append(f"int(m_num({generate_expr(args[3], ctx)}))")
+    if len(args) >= 5:
+        parts.append(f"int(m_num({generate_expr(args[4], ctx)}))")
+    if len(args) >= 6:
+        parts.append(f"int(m_num({generate_expr(args[5], ctx)}))")
+
+    return f"m_replace({', '.join(parts)})"
+
+
+INTRINSIC_GENERATORS["REPLACE"] = _gen_replace
+
+
+def _gen_zboolean(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZBOOLEAN/$ZB function (IRIS/Caché).
+
+    $ZBOOLEAN(arg1, arg2, op) — 16-operation bitwise Boolean.
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 3 arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression calling m_zboolean()
+    """
+    args = getattr(expr, "arguments", [])
+    if len(args) < 3:
+        return '""'
+
+    arg1 = generate_expr(args[0], ctx)
+    arg2 = generate_expr(args[1], ctx)
+    op = generate_expr(args[2], ctx)
+
+    return f"m_zboolean(m_str({arg1}), m_str({arg2}), int(m_num({op})))"
+
+
+INTRINSIC_GENERATORS["ZBOOLEAN"] = _gen_zboolean
+INTRINSIC_GENERATORS["ZB"] = _gen_zboolean
+
+
+def _gen_zu(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZU function (IRIS/Caché).
+
+    $ZU(code[, args...]) — utility dispatch.
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1+ arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression calling m_zu()
+    """
+    args = getattr(expr, "arguments", [])
+    if not args:
+        return '""'
+
+    code_expr = generate_expr(args[0], ctx)
+    extra_args = ", ".join(f"m_str({generate_expr(a, ctx)})" for a in args[1:])
+
+    if extra_args:
+        return f"m_zu(int(m_num({code_expr})), {extra_args})"
+    return f"m_zu(int(m_num({code_expr})))"
+
+
+INTRINSIC_GENERATORS["ZU"] = _gen_zu
+INTRINSIC_GENERATORS["ZUTIL"] = _gen_zu
+
+
+def _gen_zf(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZF function (IRIS/Caché).
+
+    $ZF(code[, args...]) — subprocess/VMS function dispatch.
+
+    Args:
+        expr: MIntrinsicFunction ASG node with 1+ arguments
+        ctx: Generator context
+
+    Returns:
+        Python expression calling m_zf()
+    """
+    args = getattr(expr, "arguments", [])
+    if not args:
+        return '""'
+
+    code_expr = generate_expr(args[0], ctx)
+    extra_args = ", ".join(f"m_str({generate_expr(a, ctx)})" for a in args[1:])
+
+    if extra_args:
+        return f"m_zf(int(m_num({code_expr})), {extra_args})"
+    return f"m_zf(int(m_num({code_expr})))"
+
+
+INTRINSIC_GENERATORS["ZF"] = _gen_zf
+
+
+def _gen_view_func(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $VIEW/$V function.
+
+    Stub — returns "" for all arguments.
+    """
+    return "m_view_func_stub()"
+
+
+INTRINSIC_GENERATORS["VIEW"] = _gen_view_func
+INTRINSIC_GENERATORS["V"] = _gen_view_func
+
+
+def _gen_zconvert(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Generate Python code for $ZCONVERT/$ZCVT function (IRIS/Caché).
+
+    $ZCONVERT(string, mode) — string case conversion.
+    mode: "U" (upper), "L" (lower), "T" (title)
+
+    Falls through to m_zconvert() helper.
+    """
+    args = getattr(expr, "arguments", [])
+    if len(args) < 2:
+        return '""'
+
+    str_expr = generate_expr(args[0], ctx)
+    mode_expr = generate_expr(args[1], ctx)
+
+    return f"m_zconvert(m_str({str_expr}), m_str({mode_expr}))"
+
+
+INTRINSIC_GENERATORS["ZCONVERT"] = _gen_zconvert
+INTRINSIC_GENERATORS["ZCVT"] = _gen_zconvert
+
+
+# =============================================================================
+# IRIS/Caché Special Variables as No-Args Intrinsic Functions
+# =============================================================================
+# The parser's SVARNAME regex doesn't include IRIS-specific SVNs like $ZV, $ZR,
+# $ZA, $NAMESPACE. These get parsed as IntrinsicFunctionNoArgs. We handle them
+# here in the dispatch table so they work from both paths.
+
+
+def _gen_svn_zversion(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZVERSION/$ZV as no-args intrinsic function."""
+    return "_rt.zversion()"
+
+
+INTRINSIC_GENERATORS["ZVERSION"] = _gen_svn_zversion
+INTRINSIC_GENERATORS["ZV"] = _gen_svn_zversion
+
+
+def _gen_svn_za(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZA as no-args intrinsic function."""
+    return "str(_rt.za())"
+
+
+INTRINSIC_GENERATORS["ZA"] = _gen_svn_za
+
+
+def _gen_svn_zreference(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZREFERENCE/$ZR as no-args intrinsic function."""
+    return "_rt.zreference()"
+
+
+INTRINSIC_GENERATORS["ZREFERENCE"] = _gen_svn_zreference
+INTRINSIC_GENERATORS["ZR"] = _gen_svn_zreference
+
+
+def _gen_svn_namespace(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$NAMESPACE/$NSPACE as no-args intrinsic function."""
+    return "_rt.namespace()"
+
+
+INTRINSIC_GENERATORS["NAMESPACE"] = _gen_svn_namespace
+INTRINSIC_GENERATORS["NSPACE"] = _gen_svn_namespace

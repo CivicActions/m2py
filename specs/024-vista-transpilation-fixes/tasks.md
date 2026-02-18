@@ -132,29 +132,29 @@
 
 #### Runtime Functions (src/m2py/runtime/helpers.py)
 
-- [ ] T023 [P] [US4] Implement m_replace(string, search, replace, start, count, case) per data-model.md in src/m2py/runtime/helpers.py
-- [ ] T024 [US4] Implement m_zboolean(arg1, arg2, op) with 16-op truth table for int and string modes in src/m2py/runtime/helpers.py
-- [ ] T025 [US4] Implement m_zu(code, *args) dispatch table for ~12 VistA-used codes per data-model.md in src/m2py/runtime/helpers.py
-- [ ] T026 [US4] Implement m_zf(code, *args) with subprocess calls ($ZF-1/-2/-100) and VMS stubs in src/m2py/runtime/helpers.py
-- [ ] T027 [US4] Add m_zcall_stub() and m_view_func_stub() returning "" with warning in src/m2py/runtime/helpers.py
+- [X] T023 [P] [US4] Implement m_replace(string, search, replace, start, count, case) per data-model.md in src/m2py/runtime/helpers.py
+- [X] T024 [US4] Implement m_zboolean(arg1, arg2, op) with 16-op truth table for int and string modes in src/m2py/runtime/helpers.py
+- [X] T025 [US4] Implement m_zu(code, *args) dispatch table for ~12 VistA-used codes per data-model.md in src/m2py/runtime/helpers.py
+- [X] T026 [US4] Implement m_zf(code, *args) with subprocess calls ($ZF-1/-2/-100) and VMS stubs in src/m2py/runtime/helpers.py
+- [X] T027 [US4] Add m_zcall_stub() and m_view_func_stub() returning "" with warning in src/m2py/runtime/helpers.py
 
 #### Runtime Special Variables (src/m2py/runtime/__init__.py)
 
-- [ ] T028 [P] [US4] Add $ZV/$ZVERSION (read-only, "M2PY for Python 1.0"), $ZA (read-only, default 0), $ZR/$ZREFERENCE (read+set), $NAMESPACE (read+set+NEW, default "VISTA") properties and setters to MRuntime in src/m2py/runtime/__init__.py
+- [X] T028 [P] [US4] Add $ZV/$ZVERSION (read-only, "M2PY for Python 1.0"), $ZA (read-only, default 0), $ZR/$ZREFERENCE (read+set), $NAMESPACE (read+set+NEW, default "VISTA") properties and setters to MRuntime in src/m2py/runtime/__init__.py
 
 #### Global Reference Tracking
 
-- [ ] T029 [P] [US4] Update global get/set/kill operations to set $ZREFERENCE after each operation in src/m2py/runtime/globals.py
+- [X] T029 [P] [US4] Update global get/set/kill operations to set $ZREFERENCE after each operation in src/m2py/runtime/globals.py
 
 #### Codegen Dispatch Wiring
 
-- [ ] T030 [US4] Wire $REPLACE, $ZBOOLEAN, $ZU, $ZF intrinsic function dispatch and $ZC/$VIEW stubs in src/m2py/codegen/expressions.py
-- [ ] T031 [US4] Wire $ZV, $ZA, $ZR, $NAMESPACE SVN readers in codegen expressions dispatcher in src/m2py/codegen/expressions.py
-- [ ] T032 [US4] Add $NAMESPACE to SET special variable dispatch in src/m2py/codegen/statements.py
+- [X] T030 [US4] Wire $REPLACE, $ZBOOLEAN, $ZU, $ZF intrinsic function dispatch and $ZC/$VIEW stubs in src/m2py/codegen/expressions.py
+- [X] T031 [US4] Wire $ZV, $ZA, $ZR, $NAMESPACE SVN readers in codegen expressions dispatcher in src/m2py/codegen/expressions.py
+- [X] T032 [US4] Add $NAMESPACE to SET special variable dispatch in src/m2py/codegen/statements.py
 
 ### Validation for User Story 4
 
-- [ ] T033 [US4] Write tests for Contracts 12-19 ($REPLACE, $ZBOOLEAN, $ZV, $ZF, $ZA, $ZR, $NAMESPACE, $ZU) in tests/functional/
+- [X] T033 [US4] Write tests for Contracts 12-19 ($REPLACE, $ZBOOLEAN, $ZV, $ZF, $ZA, $ZR, $NAMESPACE, $ZU) in tests/unit/codegen/test_iris_vendor.py
 
 **Checkpoint**: US1-4 complete — ~2,467 failures resolved, success rate ~99.7%
 
