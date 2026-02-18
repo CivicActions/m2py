@@ -193,10 +193,12 @@
 
 ### Implementation for User Story 6
 
-- [ ] T039 [US6] Add LIM-017 (Partial IRIS/Caché Support) entry with supported/stubbed/unsupported function table in src/m2py/limitations.py
-- [ ] T040 [US6] Review and remove/update limitation entries for now-supported features (>=/<= operators, vendor functions) in src/m2py/limitations.py
-- [ ] T041 [US6] Regenerate docs/limitations.md by running utils/rebuild_docs.py
-- [ ] T042 [US6] Verify LIM-003 (MWAPI SSVNs) remains correctly documented in docs/limitations.md
+- [X] T039 [US6] Add LIM-017 (Partial IRIS/Caché Support) entry with supported/stubbed/unsupported function table in src/m2py/limitations.py
+- [X] T040 [US6] Review and remove/update limitation entries for now-supported features (>=/<= operators, vendor functions) in src/m2py/limitations.py
+  > Updated LIM-012 to reference IRIS/Caché extensions. Updated LIM-015 to separate implemented Z-features (ZLINK, ZSHOW, ZPRINT, ZMESSAGE, ZGOTO, ZWRITE, ZHALT, ZKILL, $ZVERSION, $ZTRAP, $ZSTATUS, $ZDATE, etc.) from stubs and unimplemented features. Removed extensions_ydb_zmessage and extensions_ydb_zprint from sections (now implemented).
+- [X] T041 [US6] Regenerate docs/limitations.md by running utils/rebuild_docs.py
+- [X] T042 [US6] Verify LIM-003 (MWAPI SSVNs) remains correctly documented in docs/limitations.md
+  > LIM-003 present with full detail, ^$EVENT/^$WINDOW/^$DISPLAY documented, behavior unchanged.
 
 **Checkpoint**: Documentation accurate — all implemented features reflected, partial IRIS scope documented
 

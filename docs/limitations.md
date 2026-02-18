@@ -36,6 +36,7 @@ for traceability to test files.
 | LIM-014 | ANSI Standard Library Functions (Annex I) | Parses OK | ~60 library functions with zero VistA usage |
 | LIM-015 | YDB-Specific Features | Parses OK | YDB-specific commands, functions, and behaviors |
 | LIM-016 | Zero-VistA-Usage Deferred Features | Parses OK | Features with confirmed zero VistA usage |
+| LIM-017 | Partial IRIS/Caché Support | Parses OK | Subset of IRIS/Caché vendor functions used by VistA |
 | LIM-019 | Arithmetic Precision Edge Cases | Parses OK | Minor precision differences in 18-digit boundary cases |
 
 ---
@@ -102,14 +103,21 @@ and VA VistA codebase.
 **Type**: Parse Error
 
 Per the MUMPS standard, all names beginning with 'Z' are reserved for
-vendor-specific extensions (FR-017). M2PY implements support for common
-YottaDB Z-commands (ZBREAK, ZCOMPILE, ZGOTO, ZHALT, ZHELP, ZKILL, ZLINK,
-ZMESSAGE, ZPRINT, ZSHOW, ZSTEP, ZSYSTEM, ZTRIGGER, ZWRITE, ZALLOCATE,
-ZDEALLOCATE) and Z-functions ($ZDATE, $ZSEARCH, etc.).
+vendor-specific extensions (FR-017). M2PY implements support for:
 
-**M2PY Behavior**: Known YottaDB Z-extensions are fully parsed and produce ASG nodes. Unknown
-Z-commands or Z-functions from other MUMPS implementations (InterSystems
-Caché/IRIS, MicroM, DSM) raise `MUMPSParseError`.
+**YottaDB Z-commands**: ZBREAK, ZCOMPILE, ZGOTO, ZHALT, ZHELP, ZKILL, ZLINK,
+ZLOAD, ZMESSAGE, ZPRINT, ZSHOW, ZSTEP, ZSYSTEM, ZTRIGGER, ZWRITE, ZALLOCATE,
+ZDEALLOCATE.
+
+**YottaDB Z-functions**: $ZDATE, $ZSEARCH, $ZVERSION, $ZREFERENCE, etc.
+
+**IRIS/Caché functions** (partial, see LIM-017): $ZBOOLEAN, $ZCONVERT/$ZCVT,
+$ZF(-1/-2/-100), $ZU (selected codes). These are parsed and produce working
+generated code for the subset of features used by VA VistA.
+
+**M2PY Behavior**: Known YottaDB and IRIS/Caché Z-extensions are parsed and produce ASG nodes.
+Unknown Z-commands or Z-functions from other MUMPS implementations (MicroM,
+DSM, etc.) raise `MUMPSParseError`. See LIM-017 for IRIS/Caché support scope.
 
 ### LIM-013: ASSIGN Command
 
@@ -297,37 +305,56 @@ instead of ANSI standard library routines.
 
 **Type**: Parses OK
 
-YDB-specific features that are parsed but not implemented in codegen. Some of
-these have non-trivial VistA usage and may warrant future implementation.
+YDB-specific features. Some are fully implemented, some are parsed but produce
+stub codegen, and some require YDB infrastructure not available in transpiled code.
 
-**Z-Commands with VistA usage:**
+**Implemented Z-Commands** (generate working Python code):
 
-| Command/Function | Description | VistA Files |
-|------------------|-------------|-------------|
-| ZLINK | Compile and link routines | 16 |
-| ZSYSTEM | Execute OS command | ~6 |
-| ZBREAK | Set breakpoints | 4 |
-| ZSHOW | Display environment info | 5 |
-| ZPRINT | Print routine source | 4 |
-| ZGOTO | Non-local goto with level | 2 |
-| ZMESSAGE | Signal error condition | 1 |
-| ZSTEP | Single-step debug | 1 |
-| ZWRITE | Write local variables | 12 (mostly in comments; ~2 real) |
+| Command | Description | Codegen |
+|---------|-------------|--------|
+| ZLINK / ZLOAD | Compile and link routines | No-op stub (pass) |
+| ZSHOW | Display environment info | Full implementation for I/S/D |
+| ZPRINT | Print routine source | No-op stub (pass) |
+| ZMESSAGE | Signal error condition | raise RuntimeError |
+| ZGOTO | Non-local goto with level | Full trampoline support |
+| ZWRITE | Write local variables | Full implementation |
+| ZHALT | Halt with exit code | Full implementation |
+| ZKILL | Kill exclusive | Full implementation |
 
-**Z-Functions / Z-Special Variables with VistA usage:**
+**Stub Z-Commands** (parsed, generate no-op or error):
+
+| Command | Description | VistA Files | Codegen |
+|---------|-------------|-------------|--------|
+| ZSYSTEM | Execute OS command | ~6 | No-op stub |
+| ZBREAK | Set breakpoints | 4 | No-op stub |
+| ZSTEP | Single-step debug | 1 | No-op stub |
+
+**Implemented Z-Functions / Z-Special Variables:**
+
+| Function/Variable | Description | Status |
+|-------------------|-------------|--------|
+| $ZVERSION/$ZV | Version string | Returns M2PY version |
+| $ZTRAP/$ZT | Error trapping | Full implementation |
+| $ZSTATUS/$ZS | Last error status | Full implementation |
+| $ZDATE | Date formatting | Full implementation |
+| $ZPOSITION/$ZPO | Error location | Full implementation |
+| $ZEOF | End-of-file flag | Full implementation |
+| $ZJOB | Job/process info | Full implementation |
+| $ZSEARCH | File search | Full implementation |
+| $ZREFERENCE/$ZR | Last global reference | Full implementation |
+| $ZERROR/$ZE | Last error string | Full implementation |
+| $ZINTERRUPT/$ZINT | Interrupt handler | SET and read supported |
+| $ZSOURCE/$ZSO | Source file name | SET and read supported |
+| $ZGBLDIR | Global directory | SET and read supported |
+| $DEVICE/$D | Device status | Read-only, returns "" |
+| $REFERENCE/$R | Last global reference | Read-only, alias for $ZR |
+| $ZMESSAGE | Error message lookup | Full implementation |
+
+**Not Implemented Z-Functions / Z-Special Variables:**
 
 | Function/Variable | Description | VistA Files |
 |-------------------|-------------|-------------|
-| $ZVERSION | YDB version string | 51 |
-| $ZTRAP | Error trapping mechanism | 45 |
-| $ZSTATUS | Last error status | 42 |
-| $ZDATE | Date formatting | 26 |
-| $ZPOSITION | Error location | 17 |
-| $ZEOF | End-of-file flag | 13 |
-| $ZJOB | Job/process info | 12 |
-| $ZSEARCH | File search | 11 |
 | $ZRO | Routine search path | 10 |
-| $ZMESSAGE | Error message lookup | 7 |
 | $ZWIDTH | String width | 1 |
 | $ZLEVEL | Stack level | 1 |
 
@@ -358,13 +385,12 @@ these have non-trivial VistA usage and may warrant future implementation.
 | Device parameters | YDB-specific OPEN/USE device parameters | N/A |
 | Test harness infrastructure | JOBLABOFF, pre-populated databases | N/A |
 
-These features are recognized to support complete YDB compatibility. Features
-with significant VistA usage ($ZVERSION, $ZTRAP, $ZSTATUS, $ZDATE, $ZPOSITION,
-ZLINK) may warrant implementation in future waves; features with zero usage
-are deferred indefinitely.
+Features with zero VistA usage are deferred indefinitely.
 
 **M2PY Behavior**: Parser accepts Z-commands (valid YDB grammar). ASG produces appropriate nodes.
-Codegen raises `NotImplementedError("LIM-015: {feature} not supported")`.
+Implemented features generate working Python code. Stub features generate no-op
+or error-signaling code. Unimplemented features raise
+`NotImplementedError("LIM-015: {feature} not supported")`.
 YDB-specific runtime behaviors are not implemented.
 
 ## LIM-016: Zero-VistA-Usage Deferred Features
@@ -388,6 +414,72 @@ implement. Since m2py targets YDB compatibility, these commands raise NotImpleme
 
 **M2PY Behavior**: Parser accepts syntax. ASG produces appropriate nodes. Codegen raises
 `NotImplementedError("LIM-016: {feature} not supported")`.
+
+## LIM-017: Partial IRIS/Caché Support
+
+**Type**: Parses OK
+
+M2PY implements partial support for InterSystems Caché/IRIS vendor-specific functions
+as used by VA VistA. This covers the subset of IRIS features actually used in
+VistA-VEHU-M routines. IRIS features not used by VistA are not supported.
+
+### Fully Implemented
+
+| Function | Description | Semantics |
+|----------|-------------|-----------|
+| `$REPLACE` | String replacement | Full IRIS-compatible (start, count, case params) |
+| `$ZBOOLEAN` | 16-op bitwise Boolean | Integer and string modes |
+| `$ZCONVERT`/`$ZCVT` | String case conversion | U, L, S, W, T modes |
+| `$ZF(-1)` | Execute OS command | subprocess.run, returns exit code |
+| `$ZF(-2)` | Launch background process | subprocess.Popen, returns 0 |
+| `$ZF(-100)` | Execute with flags | subprocess.run with flag parsing |
+
+### Read-Only Special Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `$ZVERSION`/`$ZV` | Version string | "M2PY for Python 1.0..." |
+| `$ZA` | I/O activity status | 0 |
+| `$ZREFERENCE`/`$ZR` | Last global reference | "" (tracks SET/GET/KILL) |
+| `$DEVICE`/`$D` | Device status | "" |
+| `$REFERENCE`/`$R` | Last global reference (alias for $ZR) | "" |
+
+### Settable Special Variables
+
+| Variable | Read | SET | NEW |
+|----------|------|-----|-----|
+| `$NAMESPACE` | ✓ | ✓ | ✓ |
+| `$ZREFERENCE`/`$ZR` | ✓ | ✓ | ✗ |
+| `$ZINTERRUPT`/`$ZINT` | ✓ | ✓ | ✗ |
+| `$ZSOURCE`/`$ZSO` | ✓ | ✓ | ✗ |
+| `$ZGBLDIR` | ✓ | ✓ | ✗ |
+
+### Dispatch Tables
+
+| Function | Implemented Codes | Description |
+|----------|-------------------|-------------|
+| `$ZU` | 0, 5, 12, 53, 56, 68, 140, 168, 190 | VistA-used utility codes |
+
+### Stubs (return "" with warning)
+
+| Function | Description |
+|----------|-------------|
+| `$&`/`$ZCALL` | External C function calls |
+| `$VIEW`/`$V` (function form) | Implementation-defined view |
+
+### Not Implemented
+
+| Feature | Description |
+|---------|-------------|
+| Other `$ZU` codes | Unrecognized codes raise warning, return "" |
+| `$ZF("GETSYM"/"GETJPI"/"TRNLNM")` | VMS-specific stubs, return "" |
+| IRIS class methods | `##class(...)` syntax not supported |
+| IRIS SQL embedding | Embedded SQL not supported |
+
+**M2PY Behavior**: Implemented IRIS features generate working Python code with correct semantics.
+Stub features return empty string with a warning. Unrecognized `$ZU` codes
+log a warning and return empty string. IRIS-specific language extensions
+(class methods, SQL embedding) are not supported and raise parse errors.
 
 ## LIM-019: Arithmetic Precision Edge Cases
 
