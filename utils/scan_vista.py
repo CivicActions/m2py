@@ -3,10 +3,13 @@
 
 Usage:
     uv run python utils/scan_vista.py [--output-dir DIR] [--source-dir DIR]
+    uv run python utils/scan_vista.py --update-reference  # Create reference JSON
+    uv run python utils/scan_vista.py --limit 100         # Test with 100 files
 
 Defaults:
     --source-dir  VistA-VEHU-M
     --output-dir  tmp/baseline-scan
+    --reference   utils/scan_vista_reference.json
 """
 
 from __future__ import annotations
@@ -22,7 +25,10 @@ from pathlib import Path
 # Ensure src is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from m2py.cli.transpile import transpile_sources
+from m2py.cli.transpile import transpile_sources_with_warnings
+
+# Default reference file path
+DEFAULT_REFERENCE = Path(__file__).parent / "scan_vista_reference.json"
 
 
 def discover_m_files(source_dir: Path) -> list[Path]:
@@ -100,15 +106,32 @@ def categorize_error(error: str) -> str:
     return "Unknown"
 
 
-def run_scan(source_dir: Path, output_dir: Path, batch_size: int = 2000) -> dict:
+def run_scan(
+    source_dir: Path,
+    output_dir: Path,
+    batch_size: int = 2000,
+    limit: int | None = None,
+) -> dict:
     """Run transpilation scan and return metrics.
 
     Processes in batches to avoid OOM with large corpora.
+    Uses parallel execution with per-worker warning capture.
+
+    Args:
+        source_dir: Directory containing .m files
+        output_dir: Output directory for reports
+        batch_size: Number of files per batch
+        limit: If set, only process this many files (for testing)
     """
     print(f"Discovering .m files in {source_dir}...", flush=True)
     m_files = discover_m_files(source_dir)
     total = len(m_files)
     print(f"Found {total:,} .m files", flush=True)
+
+    if limit is not None and limit < total:
+        print(f"Limiting to first {limit:,} files (--limit)", flush=True)
+        m_files = m_files[:limit]
+        total = limit
 
     print("Reading source files...", flush=True)
     t0 = time.time()
@@ -121,10 +144,11 @@ def run_scan(source_dir: Path, output_dir: Path, batch_size: int = 2000) -> dict
     failures: list[dict] = []
     error_categories: Counter[str] = Counter()
     error_details: dict[str, list[str]] = {}
+    all_warnings: list[dict] = []
 
     n_batches = (len(sources) + batch_size - 1) // batch_size
     print(
-        f"Transpiling {len(sources):,} routines in {n_batches} batches of {batch_size}...",
+        f"Transpiling {len(sources):,} routines in {n_batches} batches of {batch_size} (parallel with warning capture)...",
         flush=True,
     )
     t0 = time.time()
@@ -135,9 +159,11 @@ def run_scan(source_dir: Path, output_dir: Path, batch_size: int = 2000) -> dict
         batch = sources[start:end]
 
         items = [(src, name) for src, name, _ in batch]
-        results = transpile_sources(items)
+        # Use transpile_sources_with_warnings for parallel execution
+        # with per-worker warning capture
+        results = transpile_sources_with_warnings(items)
 
-        for (src, name, path), (code, error) in zip(batch, results):
+        for (_src, name, path), (code, error, routine_warnings) in zip(batch, results):
             if error is None:
                 successes.append(name)
             else:
@@ -145,6 +171,21 @@ def run_scan(source_dir: Path, output_dir: Path, batch_size: int = 2000) -> dict
                 cat = categorize_error(error)
                 error_categories[cat] += 1
                 error_details.setdefault(cat, []).append(name)
+
+            # Collect warnings from this routine
+            for warn_msg in routine_warnings:
+                # Try to extract routine name from warning message
+                routine_match = re.search(r"routine (\w+)", warn_msg)
+                routine = routine_match.group(1) if routine_match else name
+                all_warnings.append(
+                    {
+                        "routine": routine,
+                        "category": "UserWarning",
+                        "message": warn_msg[:200],
+                    }
+                )
+                # Also print to stderr for visibility
+                print(f"  Warning: {warn_msg}", file=sys.stderr, flush=True)
 
         done = end
         pct = done / len(sources) * 100
@@ -174,6 +215,8 @@ def run_scan(source_dir: Path, output_dir: Path, batch_size: int = 2000) -> dict
             k: sorted(v) for k, v in sorted(error_details.items())
         },
         "failures": failures,
+        "warnings": all_warnings,
+        "warning_count": len(all_warnings),
     }
 
     return report
@@ -242,6 +285,7 @@ def print_summary(report: dict) -> None:
     print(f"Total:     {report['total_routines']:,}")
     print(f"Succeeded: {report['succeeded']:,}")
     print(f"Failed:    {report['failed']:,}")
+    print(f"Warnings:  {report.get('warning_count', 0):,}")
     print(f"Rate:      {report['success_rate_pct']}%")
     print(f"Time:      {report['transpile_time_secs']}s")
     print()
@@ -251,6 +295,123 @@ def print_summary(report: dict) -> None:
     ]:
         print(f"  {count:>5,}  {cat}")
     print("=" * 60)
+
+
+def create_reference(report: dict, reference_path: Path) -> None:
+    """Create reference JSON file from scan results.
+
+    The reference contains:
+    - failed_routines: sorted list of routine names that failed
+    - warning_routines: sorted list of unique routines with warnings
+    - warning_messages: sorted list of unique warning messages
+    """
+    failed_routines = sorted(f["routine"] for f in report["failures"])
+    warning_routines = sorted(set(w["routine"] for w in report.get("warnings", [])))
+    warning_messages = sorted(set(w["message"] for w in report.get("warnings", [])))
+
+    reference = {
+        "description": "Reference baseline for VistA-VEHU-M transpilation scan",
+        "created": report["timestamp"],
+        "total_routines": report["total_routines"],
+        "expected_failures": len(failed_routines),
+        "expected_warnings": len(warning_messages),
+        "failed_routines": failed_routines,
+        "warning_routines": warning_routines,
+        "warning_messages": warning_messages,
+    }
+
+    reference_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(reference_path, "w") as f:
+        json.dump(reference, f, indent=2)
+    print(f"\nReference file created: {reference_path}")
+    print(f"  Failed routines: {len(failed_routines)}")
+    print(f"  Warning routines: {len(warning_routines)}")
+    print(f"  Unique warnings: {len(warning_messages)}")
+
+
+def compare_with_reference(report: dict, reference_path: Path) -> bool:
+    """Compare scan results with reference and report differences.
+
+    Returns True if results match reference (PASS), False otherwise (FAIL).
+    """
+    if not reference_path.exists():
+        print(f"\n[SKIP] Reference file not found: {reference_path}")
+        print("       Run with --update-reference to create it.")
+        return True  # Don't fail if no reference exists
+
+    with open(reference_path) as f:
+        reference = json.load(f)
+
+    print("\n" + "=" * 60)
+    print("REFERENCE COMPARISON")
+    print("=" * 60)
+
+    # Extract current state
+    current_failed = set(f["routine"] for f in report["failures"])
+    current_warnings = set(w["message"] for w in report.get("warnings", []))
+
+    ref_failed = set(reference.get("failed_routines", []))
+    ref_warnings = set(reference.get("warning_messages", []))
+
+    # Calculate differences
+    new_failures = current_failed - ref_failed
+    fixed_failures = ref_failed - current_failed
+    new_warnings = current_warnings - ref_warnings
+    fixed_warnings = ref_warnings - current_warnings
+
+    is_pass = True
+
+    # Report failure changes
+    if new_failures:
+        print(f"\n[REGRESSION] {len(new_failures)} new failures:")
+        for r in sorted(new_failures)[:10]:
+            print(f"  - {r}")
+        if len(new_failures) > 10:
+            print(f"  ... and {len(new_failures) - 10} more")
+        is_pass = False
+
+    if fixed_failures:
+        print(f"\n[IMPROVEMENT] {len(fixed_failures)} failures fixed:")
+        for r in sorted(fixed_failures)[:10]:
+            print(f"  + {r}")
+        if len(fixed_failures) > 10:
+            print(f"  ... and {len(fixed_failures) - 10} more")
+        # Fixed failures are OK, don't fail
+
+    # Report warning changes
+    if new_warnings:
+        print(f"\n[REGRESSION] {len(new_warnings)} new warning types:")
+        for w in sorted(new_warnings)[:5]:
+            print(f"  - {w[:80]}")
+        if len(new_warnings) > 5:
+            print(f"  ... and {len(new_warnings) - 5} more")
+        is_pass = False
+
+    if fixed_warnings:
+        print(f"\n[IMPROVEMENT] {len(fixed_warnings)} warning types resolved:")
+        for w in sorted(fixed_warnings)[:5]:
+            print(f"  + {w[:80]}")
+        if len(fixed_warnings) > 5:
+            print(f"  ... and {len(fixed_warnings) - 5} more")
+        # Fixed warnings are OK, don't fail
+
+    # Summary
+    if (
+        not new_failures
+        and not fixed_failures
+        and not new_warnings
+        and not fixed_warnings
+    ):
+        print("\nNo changes from reference baseline.")
+
+    print()
+    if is_pass:
+        print("[PASS] Results match or improve on reference baseline.")
+    else:
+        print("[FAIL] Results have regressions from reference baseline.")
+    print("=" * 60)
+
+    return is_pass
 
 
 def main():
@@ -265,18 +426,42 @@ def main():
         default="tmp/baseline-scan",
         help="Output directory for results (default: tmp/baseline-scan)",
     )
+    parser.add_argument(
+        "--reference",
+        default=str(DEFAULT_REFERENCE),
+        help=f"Reference JSON file (default: {DEFAULT_REFERENCE})",
+    )
+    parser.add_argument(
+        "--update-reference",
+        action="store_true",
+        help="Create/update reference JSON file from scan results",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Limit to first N files (for testing)",
+    )
     args = parser.parse_args()
 
     source_dir = Path(args.source_dir).resolve()
     output_dir = Path(args.output_dir).resolve()
+    reference_path = Path(args.reference).resolve()
 
     if not source_dir.exists():
         print(f"ERROR: Source directory not found: {source_dir}", file=sys.stderr)
         sys.exit(1)
 
-    report = run_scan(source_dir, output_dir)
+    report = run_scan(source_dir, output_dir, limit=args.limit)
     write_report(report, output_dir)
     print_summary(report)
+
+    if args.update_reference:
+        create_reference(report, reference_path)
+    else:
+        is_pass = compare_with_reference(report, reference_path)
+        if not is_pass:
+            sys.exit(1)
 
 
 if __name__ == "__main__":
