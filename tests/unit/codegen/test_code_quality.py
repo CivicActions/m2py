@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -27,6 +28,14 @@ from m2py.core.names import NameTranslator
 
 
 @pytest.mark.codegen
+@pytest.mark.skipif(
+    subprocess.run(
+        [sys.executable, "-m", "pyright", "--version"],
+        capture_output=True,
+    ).returncode
+    != 0,
+    reason="pyright not available via python -m pyright",
+)
 class TestPyrightBasicValidation:
     """Transpiled code passes pyright basic with zero errors."""
 
@@ -60,7 +69,7 @@ class TestPyrightBasicValidation:
         (pyright_dir / f"{name}.py").write_text(code)
 
         result = subprocess.run(
-            ["pyright", "--project", str(pyright_dir)],
+            [sys.executable, "-m", "pyright", "--project", str(pyright_dir)],
             capture_output=True,
             text=True,
         )
@@ -169,7 +178,7 @@ class TestPyrightBasicValidation:
             (pyright_dir / f"{name}.py").write_text(code)
 
         result = subprocess.run(
-            ["pyright", "--project", str(pyright_dir)],
+            [sys.executable, "-m", "pyright", "--project", str(pyright_dir)],
             capture_output=True,
             text=True,
         )
@@ -283,6 +292,14 @@ class TestArithmeticHelperCodegen:
 
 @pytest.mark.slow
 @pytest.mark.codegen
+@pytest.mark.skipif(
+    subprocess.run(
+        [sys.executable, "-m", "pyright", "--version"],
+        capture_output=True,
+    ).returncode
+    != 0,
+    reason="pyright not available via python -m pyright",
+)
 class TestPyrightAllFunctionalFiles:
     """ALL transpiled MUMPS functional test files pass pyright basic (T025o).
 
@@ -373,7 +390,7 @@ class TestPyrightAllFunctionalFiles:
 
         # Run pyright on all transpiled files at once
         result = subprocess.run(
-            ["pyright", "--project", str(tmp_path)],
+            [sys.executable, "-m", "pyright", "--project", str(tmp_path)],
             capture_output=True,
             text=True,
             timeout=300,

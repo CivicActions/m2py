@@ -2395,6 +2395,16 @@ def _rt_os_environ_get(name: str) -> str:
     return os.environ.get(name, "")
 
 
+def _rt_os_getcwd() -> str:
+    """Get current working directory.
+
+    Used by $ZDIR (GT.M/YDB current directory function).
+    """
+    import os
+
+    return os.getcwd()
+
+
 def m_zgetjpi(pid: str, item: str) -> str:
     """Implement $ZGETJPI — get job/process information (YDB).
 
@@ -2482,3 +2492,159 @@ def m_zbitand(s1: str, s2: str) -> str:
     min_len = min(len(b1), len(b2))
     result = bytes(b1[i] & b2[i] for i in range(min_len))
     return result.decode("latin-1")
+
+
+def m_zbitor(s1: str, s2: str) -> str:
+    """Implement $ZBITOR — bitwise OR on byte strings.
+
+    Performs byte-by-byte OR on two strings. Result length = max of both.
+    Shorter string is right-padded with NUL bytes.
+
+    In YDB, $ZBITOR operates on GT.M bit strings (header + data bytes).
+    This implementation handles both raw byte strings and GT.M bit strings
+    by doing byte-by-byte OR with zero-padding.
+
+    Args:
+        s1: First byte string
+        s2: Second byte string
+
+    Returns:
+        Result of bitwise OR
+    """
+    b1 = s1.encode("latin-1") if s1 else b""
+    b2 = s2.encode("latin-1") if s2 else b""
+    max_len = max(len(b1), len(b2))
+    # Pad shorter string with NUL bytes
+    b1 = b1.ljust(max_len, b"\x00")
+    b2 = b2.ljust(max_len, b"\x00")
+    result = bytes(b1[i] | b2[i] for i in range(max_len))
+    return result.decode("latin-1")
+
+
+def m_zbitxor(s1: str, s2: str) -> str:
+    """Implement $ZBITXOR — bitwise XOR on byte strings.
+
+    Performs byte-by-byte XOR on two strings. Result length = max of both.
+    Shorter string is right-padded with NUL bytes.
+
+    Args:
+        s1: First byte string
+        s2: Second byte string
+
+    Returns:
+        Result of bitwise XOR
+    """
+    b1 = s1.encode("latin-1") if s1 else b""
+    b2 = s2.encode("latin-1") if s2 else b""
+    max_len = max(len(b1), len(b2))
+    b1 = b1.ljust(max_len, b"\x00")
+    b2 = b2.ljust(max_len, b"\x00")
+    result = bytes(b1[i] ^ b2[i] for i in range(max_len))
+    return result.decode("latin-1")
+
+
+def m_zbitnot(s1: str) -> str:
+    """Implement $ZBITNOT — bitwise NOT on byte strings.
+
+    Performs byte-by-byte NOT (complement) on a string.
+
+    Args:
+        s1: Byte string
+
+    Returns:
+        Result of bitwise NOT
+    """
+    b1 = s1.encode("latin-1") if s1 else b""
+    result = bytes(~b & 0xFF for b in b1)
+    return result.decode("latin-1")
+
+
+def m_zabs(value: str) -> str:
+    """Implement $ZABS — absolute value.
+
+    IRIS-specific function that returns the absolute value of a numeric expression.
+    Non-numeric strings are coerced to 0 via m_num().
+
+    Args:
+        value: String representation of the number
+
+    Returns:
+        String representation of the absolute value
+    """
+    from m2py.core.values import m_num, m_str
+
+    n = m_num(value)
+    return m_str(abs(n))
+
+
+def m_now() -> str:
+    """Implement $NOW — current timestamp in $HOROLOG format with fractional seconds.
+
+    Returns a string in the format "days,seconds.fraction" where:
+    - days = number of days since December 31, 1840
+    - seconds = seconds since midnight with microsecond precision
+
+    This is similar to $HOROLOG but with fractional seconds.
+
+    Returns:
+        $HOROLOG-format timestamp with fractional seconds
+    """
+    import datetime
+
+    # MUMPS epoch: December 31, 1840
+    mumps_epoch = datetime.date(1840, 12, 31)
+    now = datetime.datetime.now()
+    today = now.date()
+
+    days = (today - mumps_epoch).days
+    # Seconds since midnight with fractional part
+    seconds_since_midnight = (
+        now.hour * 3600 + now.minute * 60 + now.second + now.microsecond / 1_000_000
+    )
+    # Format: remove trailing zeros but keep at least one decimal
+    sec_str = f"{seconds_since_midnight:.6f}".rstrip("0").rstrip(".")
+
+    return f"{days},{sec_str}"
+
+
+def m_ztime(seconds: str) -> str:
+    """Implement $ZTIME/$ZT — format seconds as HH:MM:SS.
+
+    Converts a number of seconds (like $HOROLOG second part) to
+    a time string in HH:MM:SS format.
+
+    Args:
+        seconds: String representation of seconds since midnight
+
+    Returns:
+        Formatted time string "HH:MM:SS"
+    """
+    from m2py.core.values import m_num
+
+    total = int(m_num(seconds))
+    if total < 0:
+        total = 0
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def m_zgetsyi(keyword: str) -> str:
+    """Implement $ZGETSYI — system information query.
+
+    Returns system information based on keyword.
+    GT.M/YDB specific function.
+
+    Args:
+        keyword: Information keyword (e.g., "NODENAME")
+
+    Returns:
+        Requested system information, or empty string for unknown keywords
+    """
+    import platform
+
+    kw = keyword.upper().strip('"')
+    if kw == "NODENAME":
+        return platform.node()
+    return ""

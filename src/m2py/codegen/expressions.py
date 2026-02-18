@@ -776,6 +776,21 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name == "ZMODE":
         return '"OTHER"'
 
+    # $ZGLD - global directory path (SVN form, no args)
+    if name == "ZGLD":
+        return '""'
+
+    # $ZLEVEL / $ZL - stack depth (stub: always 1)
+    # Note: $ZL with args → $ZLENGTH (function form) via INTRINSIC_GENERATORS
+    if name in ("ZLEVEL", "ZLEV", "ZL"):
+        return '"1"'
+
+    # $ZDIRECTORY / $ZD - current working directory
+    # Note: Only hits SVN dispatch if grammar adds ZD/ZDIRECTORY to SVARNAME;
+    # otherwise goes through IntrinsicFunctionNoArgs → INTRINSIC_GENERATORS
+    if name in ("ZDIRECTORY", "ZD"):
+        return "_rt_os_getcwd()"
+
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 
@@ -2993,6 +3008,55 @@ def _gen_svn_zerr(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 INTRINSIC_GENERATORS["ZERR"] = _gen_svn_zerr
 
 
+# --- Phase 12B/C: Additional SVN-as-intrinsic shims ---
+
+
+def _gen_svn_ztimezone(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZTIMEZONE — seconds west of UTC (integer).
+
+    YDB: positive for west of UTC (e.g., 18000 for EST = UTC-5).
+    """
+    return "str(time.timezone)"
+
+
+INTRINSIC_GENERATORS["ZTIMEZONE"] = _gen_svn_ztimezone
+
+
+def _gen_svn_zdirectory(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZDIRECTORY/$ZD — current working directory (no-args form)."""
+    return "_rt_os_getcwd()"
+
+
+INTRINSIC_GENERATORS["ZDIRECTORY"] = _gen_svn_zdirectory
+
+# NOTE: Do NOT register ZD → _gen_svn_zdirectory here.
+# ZD with args is $ZDATE (already registered at line ~2539).
+# ZD without args is $ZDIRECTORY. We use _gen_zd_dispatch to handle both.
+
+
+def _gen_zd_dispatch(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """Dispatch $ZD: with args → $ZDATE, without args → $ZDIRECTORY."""
+    args = getattr(expr, "arguments", None)
+    if args:
+        return _gen_zdate(expr, ctx)
+    return "_rt_os_getcwd()"
+
+
+INTRINSIC_GENERATORS["ZD"] = _gen_zd_dispatch
+
+
+def _gen_svn_zlevel(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZLEVEL — stack depth (stub: always 1).
+
+    Note: $ZL with args is $ZLENGTH (function form), already registered.
+    This handles the case where $ZLEVEL appears as IntrinsicFunctionNoArgs.
+    """
+    return '"1"'
+
+
+INTRINSIC_GENERATORS["ZLEVEL"] = _gen_svn_zlevel
+
+
 # =============================================================================
 # Phase 10: Vendor Function Aliases & Stubs (024-vista-transpilation-fixes)
 # =============================================================================
@@ -3009,6 +3073,9 @@ INTRINSIC_GENERATORS["ZS"] = _gen_zsearch
 # $ZCHAR/$ZCH → alias for $CHAR (DSM/MSM vendors)
 INTRINSIC_GENERATORS["ZCHAR"] = _gen_char
 INTRINSIC_GENERATORS["ZCH"] = _gen_char
+
+# $ZPIECE → alias for $PIECE (GT.M/YDB vendor alias)
+INTRINSIC_GENERATORS["ZPIECE"] = _gen_piece
 
 
 def _gen_zprevious(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -3407,3 +3474,184 @@ INTRINSIC_GENERATORS["ZE"] = _gen_extract
 
 # $ZLENGTH as function already registered above,
 # but $ZL also used for $ZLENGTH (already registered)
+
+
+# =============================================================================
+# Phase 12A: Remaining Vendor Functions (T065-T073)
+# =============================================================================
+
+
+def _gen_zsort(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZSORT — DSM/VMS collation-aware $ORDER equivalent.
+
+    $ZSORT(@Y) iterates through local/global subscripts exactly like $ORDER.
+    Used by VistA FileMan (DINVVXD), Kernel (ZOSVVXD, ZTER1).
+
+    Maps directly to the existing $ORDER implementation.
+    """
+    return _gen_order(expr, ctx)
+
+
+INTRINSIC_GENERATORS["ZSORT"] = _gen_zsort
+
+
+def _gen_zabs(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZABS — absolute value function.
+
+    $ZABS(expr) returns the absolute value. Non-numeric strings coerce to 0.
+    Used by Capacity Management (KMPTCMRT).
+    """
+    args = getattr(expr, "arguments", [])
+    if args:
+        val = generate_expr(args[0], ctx)
+        return f"m_zabs(m_str({val}))"
+    return '"0"'
+
+
+INTRINSIC_GENERATORS["ZABS"] = _gen_zabs
+
+
+def _gen_now(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$NOW — current timestamp in $HOROLOG format with fractional seconds.
+
+    $NOW() returns "days,seconds.fraction" where days = days since 1840-12-31
+    and seconds = seconds since midnight with microsecond precision.
+    Used by MASH Utilities (ut.m).
+    """
+    return "m_now()"
+
+
+INTRINSIC_GENERATORS["NOW"] = _gen_now
+
+
+def _gen_zbitor(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZBITOR — bitwise OR on byte strings.
+
+    $ZBITOR(str1, str2) performs byte-by-byte bitwise OR.
+    Shorter string is padded with NUL bytes.
+    Used by Kernel (XLFSHAN) in the GT.M branch for SHA routines.
+    """
+    args = getattr(expr, "arguments", [])
+    if len(args) >= 2:
+        s1 = generate_expr(args[0], ctx)
+        s2 = generate_expr(args[1], ctx)
+        return f"m_zbitor(m_str({s1}), m_str({s2}))"
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZBITOR"] = _gen_zbitor
+
+
+def _gen_zbitxor(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZBITXOR — bitwise XOR on byte strings.
+
+    $ZBITXOR(str1, str2) performs byte-by-byte bitwise XOR.
+    Shorter string is padded with NUL bytes.
+    Used by Kernel (XLFSHAN) in the GT.M branch.
+    """
+    args = getattr(expr, "arguments", [])
+    if len(args) >= 2:
+        s1 = generate_expr(args[0], ctx)
+        s2 = generate_expr(args[1], ctx)
+        return f"m_zbitxor(m_str({s1}), m_str({s2}))"
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZBITXOR"] = _gen_zbitxor
+
+
+def _gen_zbitnot(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZBITNOT — bitwise NOT on byte strings.
+
+    $ZBITNOT(str1) performs byte-by-byte bitwise complement.
+    """
+    args = getattr(expr, "arguments", [])
+    if args:
+        s1 = generate_expr(args[0], ctx)
+        return f"m_zbitnot(m_str({s1}))"
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZBITNOT"] = _gen_zbitnot
+
+
+def _gen_zgetdvi(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZGETDVI — DSM/VMS device information query. Stub returns "".
+
+    $ZGETDVI(device, keyword) queries device properties.
+    Used by Kernel (ZIS4GTM).
+    """
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZGETDVI"] = _gen_zgetdvi
+
+
+def _gen_zgetsyi(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZGETSYI — system information query.
+
+    $ZGETSYI("NODENAME") returns the hostname.
+    Other keywords return "".
+    Used by Kernel (ZOSVGTM).
+    """
+    args = getattr(expr, "arguments", [])
+    if args:
+        kw = generate_expr(args[0], ctx)
+        return f"m_zgetsyi(m_str({kw}))"
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZGETSYI"] = _gen_zgetsyi
+
+
+def _gen_ztime(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZT/$ZTIME — format seconds as HH:MM:SS time string.
+
+    $ZT(seconds) converts a number of seconds (from $HOROLOG second part)
+    into a formatted time string.
+    Used by Kernel (ZOSVKRO).
+
+    Note: $ZT without args is $ZTRAP SVN (already handled separately).
+    $ZT(expr) is the function form handled here.
+    """
+    args = getattr(expr, "arguments", [])
+    if args:
+        sec = generate_expr(args[0], ctx)
+        return f"m_ztime(m_str({sec}))"
+    # No args — this shouldn't happen (SVN dispatch handles $ZT without args)
+    return '""'
+
+
+INTRINSIC_GENERATORS["ZTIME"] = _gen_ztime
+# NOTE: $ZT as function (with args) vs $ZT as SVN (without args):
+# The textX parser routes $ZT(expr) through intrinsic function dispatch,
+# and $ZT (no args) through SVN dispatch. We register ZT here for the
+# function form. The SVN form is handled in _generate_special_variable().
+INTRINSIC_GENERATORS["ZT"] = _gen_ztime
+
+
+def _gen_zdir(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZDIR — current directory (GT.M/YDB function form).
+
+    Returns the current working directory path.
+    Distinct from $ZDIRECTORY SVN (Phase 12C).
+    Used by Kernel (ZISHGTM).
+    """
+    return "_rt_os_getcwd()"
+
+
+INTRINSIC_GENERATORS["ZDIR"] = _gen_zdir
+
+
+def _gen_zgld(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZGLD — global directory path.
+
+    Returns the current global directory file path.
+    In transpiled context, returns empty string.
+    Used by ZSY.
+    """
+    return '""'
+
+
+# Override the existing _gen_zgd stub to also cover ZGLD
+INTRINSIC_GENERATORS["ZGLD"] = _gen_zgld

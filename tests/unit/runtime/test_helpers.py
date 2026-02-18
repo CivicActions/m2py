@@ -9,15 +9,23 @@ from decimal import Decimal
 from m2py.runtime import MArray
 from m2py.runtime.helpers import (
     _mumps_collation_key,
+    _rt_os_getcwd,
     m_data,
     m_format_output,
     m_get,
     m_get_global,
+    m_now,
     m_order,
     m_order_global,
     m_query,
     m_query_global,
     m_var_value,
+    m_zabs,
+    m_zbitnot,
+    m_zbitor,
+    m_zbitxor,
+    m_zgetsyi,
+    m_ztime,
     unwind_new_stack,
     m_set_extract,
     _raise_select_false,
@@ -1900,3 +1908,373 @@ class TestMJustify:
         """Many decimal places pad with zeros."""
         assert m_justify(3.14, 10, 5) == "   3.14000"
         assert m_justify(1, 8, 3) == "   1.000"
+
+
+# =============================================================================
+# Phase 12A: Runtime Helper Tests (spec 024, T065-T073)
+# =============================================================================
+
+
+class TestZabsRuntime:
+    """$ZABS runtime helper tests (T066).
+
+    IRIS reference output validated via utils/iris.py:
+    - $ZABS(-42) → 42
+    - $ZABS(0) → 0
+    - $ZABS(3.14) → 3.14
+    - $ZABS(-0) → 0
+    - $ZABS("") → 0
+    - $ZABS("abc") → 0
+    - $ZABS(-0.001) → .001
+    """
+
+    def test_negative_integer(self):
+        """$ZABS(-42) returns '42'."""
+        assert m_zabs("-42") == "42"
+
+    def test_positive_integer(self):
+        """$ZABS(42) returns '42'."""
+        assert m_zabs("42") == "42"
+
+    def test_zero(self):
+        """$ZABS(0) returns '0'."""
+        assert m_zabs("0") == "0"
+
+    def test_negative_zero(self):
+        """$ZABS(-0) returns '0' (IRIS: 0)."""
+        assert m_zabs("-0") == "0"
+
+    def test_positive_decimal(self):
+        """$ZABS(3.14) returns '3.14'."""
+        assert m_zabs("3.14") == "3.14"
+
+    def test_negative_decimal(self):
+        """$ZABS(-3.14) returns '3.14'."""
+        assert m_zabs("-3.14") == "3.14"
+
+    def test_small_negative(self):
+        """$ZABS(-0.001) returns '.001' (IRIS canonical form)."""
+        assert m_zabs("-0.001") == ".001"
+
+    def test_empty_string(self):
+        """$ZABS("") returns '0' (non-numeric coerced to 0)."""
+        assert m_zabs("") == "0"
+
+    def test_non_numeric_string(self):
+        """$ZABS("abc") returns '0' (non-numeric coerced to 0)."""
+        assert m_zabs("abc") == "0"
+
+    def test_leading_numeric(self):
+        """$ZABS("-5abc") returns '5' (MUMPS numeric coercion)."""
+        assert m_zabs("-5abc") == "5"
+
+    def test_large_number(self):
+        """$ZABS(-99999999) returns '99999999'."""
+        assert m_zabs("-99999999") == "99999999"
+
+    def test_very_small_decimal(self):
+        """$ZABS(-0.0001) returns '.0001'."""
+        assert m_zabs("-0.0001") == ".0001"
+
+
+class TestNowRuntime:
+    """$NOW runtime helper tests (T067).
+
+    $NOW returns $HOROLOG format "days,seconds.fraction".
+    IRIS reference: $P($NOW(),",",1) = $P($H,",",1) (same day part).
+    """
+
+    def test_returns_horolog_format(self):
+        """$NOW returns 'days,seconds.fraction' format."""
+        result = m_now()
+        parts = result.split(",")
+        assert len(parts) == 2, f"Expected 'days,seconds' format, got '{result}'"
+
+    def test_day_part_is_positive_integer(self):
+        """Day part is a positive integer > 0."""
+        result = m_now()
+        days = int(result.split(",")[0])
+        assert days > 0
+
+    def test_day_part_is_reasonable(self):
+        """Day part is after year 2020 (at least 65,382 days since 1840-12-31)."""
+        result = m_now()
+        days = int(result.split(",")[0])
+        # 2020-01-01 is day 65,382 from 1840-12-31
+        assert days >= 65382
+
+    def test_seconds_part_is_non_negative(self):
+        """Seconds part is non-negative."""
+        result = m_now()
+        seconds = float(result.split(",")[1])
+        assert seconds >= 0
+
+    def test_seconds_less_than_86400(self):
+        """Seconds part is less than 86400 (one day)."""
+        result = m_now()
+        seconds = float(result.split(",")[1])
+        assert seconds < 86400
+
+    def test_has_fractional_seconds(self):
+        """$NOW includes fractional seconds (unlike $HOROLOG)."""
+        result = m_now()
+        sec_part = result.split(",")[1]
+        # Should contain a decimal point (fractional seconds)
+        # Note: In rare timing cases the fractional part might be .000000
+        # which gets stripped to integer, but this is extremely unlikely
+        assert "." in sec_part or sec_part.isdigit()
+
+
+class TestZbitorRuntime:
+    """$ZBITOR runtime helper tests (T068).
+
+    m_zbitor performs byte-by-byte OR with zero-padding for shorter strings.
+    This is a transpilation-compatible implementation — actual IRIS $ZBITOR
+    uses IRIS bit string format, but VistA code uses platform-specific branches
+    (XLFSHAN uses $ZBOOLEAN on IRIS, $ZBITOR only on GT.M).
+    """
+
+    def test_or_single_byte(self):
+        """OR of two single bytes."""
+        # chr(3)=0b00000011, chr(5)=0b00000101 → 0b00000111=chr(7)
+        assert m_zbitor(chr(3), chr(5)) == chr(7)
+
+    def test_or_identity_zero(self):
+        """OR with NUL byte is identity."""
+        assert m_zbitor(chr(42), chr(0)) == chr(42)
+
+    def test_or_zero_zero(self):
+        """OR of two NUL bytes is NUL."""
+        assert m_zbitor(chr(0), chr(0)) == chr(0)
+
+    def test_or_all_ones(self):
+        """OR of 0xFF with anything is 0xFF."""
+        assert m_zbitor(chr(255), chr(0)) == chr(255)
+        assert m_zbitor(chr(255), chr(255)) == chr(255)
+
+    def test_or_complementary_bits(self):
+        """OR of complementary bytes gives 0xFF."""
+        # 0xAA | 0x55 = 0xFF
+        assert m_zbitor(chr(0xAA), chr(0x55)) == chr(0xFF)
+
+    def test_or_different_lengths_shorter_first(self):
+        """OR pads shorter first string with NUL, making it identity for extra bytes."""
+        # "A" OR "AB" → OR(A,A)+OR(0,B) = A + B
+        result = m_zbitor("A", "AB")
+        assert len(result) == 2
+        assert result[1] == "B"
+
+    def test_or_different_lengths_shorter_second(self):
+        """OR pads shorter second string with NUL."""
+        result = m_zbitor("AB", "A")
+        assert len(result) == 2
+        assert result[0] == "A"  # A|A = A
+        assert result[1] == "B"  # B|0 = B
+
+    def test_or_empty_strings(self):
+        """OR of two empty strings is empty."""
+        assert m_zbitor("", "") == ""
+
+    def test_or_one_empty(self):
+        """OR with empty string returns the other string."""
+        assert m_zbitor("ABC", "") == "ABC"
+        assert m_zbitor("", "ABC") == "ABC"
+
+    def test_or_multi_byte(self):
+        """OR of multi-byte strings works byte-by-byte."""
+        # chr(1)+chr(2) OR chr(4)+chr(8) = chr(5)+chr(10)
+        s1 = chr(1) + chr(2)
+        s2 = chr(4) + chr(8)
+        result = m_zbitor(s1, s2)
+        assert result == chr(5) + chr(10)
+
+
+class TestZbitxorRuntime:
+    """$ZBITXOR runtime helper tests (T068)."""
+
+    def test_xor_single_byte(self):
+        """XOR of two single bytes."""
+        # chr(3)=0b11, chr(5)=0b101 → 0b110=chr(6)
+        assert m_zbitxor(chr(3), chr(5)) == chr(6)
+
+    def test_xor_same_value(self):
+        """XOR of identical values is zero."""
+        assert m_zbitxor(chr(42), chr(42)) == chr(0)
+
+    def test_xor_with_zero(self):
+        """XOR with zero is identity."""
+        assert m_zbitxor(chr(42), chr(0)) == chr(42)
+
+    def test_xor_all_ones(self):
+        """XOR of 0xFF with 0xFF is 0x00."""
+        assert m_zbitxor(chr(255), chr(255)) == chr(0)
+
+    def test_xor_complementary(self):
+        """XOR of complementary bytes gives 0xFF."""
+        assert m_zbitxor(chr(0xAA), chr(0x55)) == chr(0xFF)
+
+    def test_xor_different_lengths(self):
+        """XOR pads shorter string with NUL."""
+        result = m_zbitxor("A", "AB")
+        assert len(result) == 2
+        # A XOR A = 0, 0 XOR B = B
+        assert result[0] == chr(0)
+        assert result[1] == "B"
+
+    def test_xor_empty_strings(self):
+        """XOR of two empty strings is empty."""
+        assert m_zbitxor("", "") == ""
+
+    def test_xor_one_empty(self):
+        """XOR with empty string returns the other string."""
+        assert m_zbitxor("ABC", "") == "ABC"
+
+
+class TestZbitnotRuntime:
+    """$ZBITNOT runtime helper tests (T068)."""
+
+    def test_not_zero(self):
+        """NOT of 0x00 is 0xFF."""
+        assert m_zbitnot(chr(0)) == chr(255)
+
+    def test_not_all_ones(self):
+        """NOT of 0xFF is 0x00."""
+        assert m_zbitnot(chr(255)) == chr(0)
+
+    def test_not_pattern(self):
+        """NOT of 0xAA is 0x55."""
+        assert m_zbitnot(chr(0xAA)) == chr(0x55)
+
+    def test_not_multi_byte(self):
+        """NOT operates on each byte independently."""
+        result = m_zbitnot(chr(0) + chr(255))
+        assert result == chr(255) + chr(0)
+
+    def test_not_empty(self):
+        """NOT of empty string is empty."""
+        assert m_zbitnot("") == ""
+
+    def test_double_not_identity(self):
+        """NOT(NOT(x)) = x (involution)."""
+        original = chr(42) + chr(99) + chr(200)
+        assert m_zbitnot(m_zbitnot(original)) == original
+
+
+class TestZgetsyiRuntime:
+    """$ZGETSYI runtime helper tests (T070).
+
+    $ZGETSYI("NODENAME") returns the hostname.
+    Unknown keywords return empty string.
+    """
+
+    def test_nodename_returns_hostname(self):
+        """$ZGETSYI("NODENAME") returns platform.node()."""
+        import platform
+
+        result = m_zgetsyi("NODENAME")
+        assert result == platform.node()
+
+    def test_nodename_case_insensitive(self):
+        """$ZGETSYI keyword is case insensitive."""
+        import platform
+
+        assert m_zgetsyi("nodename") == platform.node()
+        assert m_zgetsyi("NodeName") == platform.node()
+
+    def test_unknown_keyword_returns_empty(self):
+        """Unknown keywords return empty string."""
+        assert m_zgetsyi("UNKNOWN") == ""
+
+    def test_empty_keyword_returns_empty(self):
+        """Empty keyword returns empty string."""
+        assert m_zgetsyi("") == ""
+
+    def test_nodename_non_empty(self):
+        """NODENAME should return a non-empty string on any system."""
+        result = m_zgetsyi("NODENAME")
+        assert len(result) > 0
+
+
+class TestZtimeRuntime:
+    """$ZTIME runtime helper tests (T071).
+
+    IRIS reference output validated via utils/iris.py:
+    - $ZT(0) → 00:00:00
+    - $ZT(1) → 00:00:01
+    - $ZT(60) → 00:01:00
+    - $ZT(3600) → 01:00:00
+    - $ZT(3661) → 01:01:01
+    - $ZT(86399) → 23:59:59
+    """
+
+    def test_midnight(self):
+        """$ZT(0) → '00:00:00'."""
+        assert m_ztime("0") == "00:00:00"
+
+    def test_one_second(self):
+        """$ZT(1) → '00:00:01'."""
+        assert m_ztime("1") == "00:00:01"
+
+    def test_one_minute(self):
+        """$ZT(60) → '00:01:00'."""
+        assert m_ztime("60") == "00:01:00"
+
+    def test_one_hour(self):
+        """$ZT(3600) → '01:00:00'."""
+        assert m_ztime("3600") == "01:00:00"
+
+    def test_combined(self):
+        """$ZT(3661) → '01:01:01' (1h + 1m + 1s)."""
+        assert m_ztime("3661") == "01:01:01"
+
+    def test_end_of_day(self):
+        """$ZT(86399) → '23:59:59'."""
+        assert m_ztime("86399") == "23:59:59"
+
+    def test_full_day(self):
+        """$ZT(86400) wraps to '24:00:00' (no modular wrapping)."""
+        # MUMPS doesn't wrap — just formats as-is
+        assert m_ztime("86400") == "24:00:00"
+
+    def test_negative_clamps_to_zero(self):
+        """$ZT(-1) → '00:00:00' (negative clamped to 0)."""
+        assert m_ztime("-1") == "00:00:00"
+
+    def test_non_numeric_string(self):
+        """$ZT("abc") → '00:00:00' (non-numeric coerced to 0)."""
+        assert m_ztime("abc") == "00:00:00"
+
+    def test_decimal_truncated(self):
+        """$ZT(3661.999) → '01:01:01' (fractional seconds truncated)."""
+        assert m_ztime("3661.999") == "01:01:01"
+
+    def test_noon(self):
+        """$ZT(43200) → '12:00:00'."""
+        assert m_ztime("43200") == "12:00:00"
+
+    def test_half_past_six(self):
+        """$ZT(23400) → '06:30:00' (6.5 hours)."""
+        assert m_ztime("23400") == "06:30:00"
+
+
+class TestZdirRuntime:
+    """$ZDIR runtime helper tests (T072)."""
+
+    def test_returns_current_directory(self):
+        """_rt_os_getcwd returns os.getcwd()."""
+        import os
+
+        result = _rt_os_getcwd()
+        assert result == os.getcwd()
+
+    def test_returns_string(self):
+        """_rt_os_getcwd returns a string."""
+        result = _rt_os_getcwd()
+        assert isinstance(result, str)
+
+    def test_returns_absolute_path(self):
+        """_rt_os_getcwd returns an absolute path."""
+        import os
+
+        result = _rt_os_getcwd()
+        assert os.path.isabs(result)

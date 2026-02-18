@@ -1048,6 +1048,9 @@ def _generate_single_assignment_with_preeval_subs(
             ctx.emitter.line(f"_rt.set_zsource({value_var})")
         elif svar_name == "ZGBLDIR":
             ctx.emitter.line(f"_rt.set_zgbldir({value_var})")
+        elif svar_name in ("ZDIRECTORY", "ZD"):
+            ctx.emitter.line("import os")
+            ctx.emitter.line(f"os.chdir(str({value_var}))")
         else:
             raise NotImplementedError(
                 f"SET ${assignment.target.name} not supported in tuple SET"
@@ -1216,6 +1219,9 @@ def _generate_single_assignment(
             ctx.emitter.line(f"_rt.set_zsource({value_expr})")
         elif svar_name == "ZGBLDIR":
             ctx.emitter.line(f"_rt.set_zgbldir({value_expr})")
+        elif svar_name in ("ZDIRECTORY", "ZD"):
+            ctx.emitter.line("import os")
+            ctx.emitter.line(f"os.chdir(str({value_expr}))")
         elif svar_name in ("TEST", "T"):
             # SET $TEST: update both _rt._test (runtime) and _test (module global)
             # so subsequent reads of $TEST via int(_test) see the new value.

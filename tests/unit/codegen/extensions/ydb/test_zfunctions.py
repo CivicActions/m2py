@@ -617,3 +617,635 @@ class TestPhase10VistaRoutineSmoke:
         code = f'TEST\n S X={routine}("arg")\n Q'
         result = generate_python(code)
         assert function.split(".")[-1] in result.lower() or function in result
+
+
+# =============================================================================
+# Phase 12A: Vendor Function Stubs (Spec 024, T065-T073)
+# =============================================================================
+
+
+# ── T065: $ZSORT ─────────────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZsortCodegen:
+    """$ZSORT is a DSM alias for $ORDER (T065)."""
+
+    def test_zsort_generates_order_call(self):
+        """$ZSORT generates the same code as $ORDER."""
+        code = "TEST\n S X=$ZSORT(^A(1))\n Q"
+        result = generate_python(code)
+        # Should delegate to $ORDER codegen, producing m_order_global
+        assert "m_order_global" in result
+
+    def test_zsort_with_direction(self):
+        """$ZSORT with direction argument works like $ORDER(x,dir)."""
+        code = "TEST\n S X=$ZSORT(^A(1),-1)\n Q"
+        result = generate_python(code)
+        assert "m_order_global" in result
+
+    def test_zsort_local_variable(self):
+        """$ZSORT on a local variable generates m_order."""
+        code = "TEST\n S X=$ZSORT(A(1))\n Q"
+        result = generate_python(code)
+        assert "m_order" in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZsortExecution:
+    """$ZSORT runtime behavior matches $ORDER (T065)."""
+
+    def test_zsort_traverses_array(self, execute_mumps):
+        """$ZSORT traverses subscripts like $ORDER."""
+        result = execute_mumps(
+            'TEST\n S A(1)="a",A(3)="c",A(5)="e"\n'
+            ' S X="" F  S X=$ZSORT(A(X)) Q:X=""  W X,!\n Q'
+        )
+        assert result.output == "1\n3\n5\n"
+
+    def test_zsort_reverse(self, execute_mumps):
+        """$ZSORT with -1 traverses in reverse."""
+        result = execute_mumps(
+            'TEST\n S A(1)="a",A(3)="c",A(5)="e"\n'
+            ' S X="" F  S X=$ZSORT(A(X),-1) Q:X=""  W X,!\n Q'
+        )
+        assert result.output == "5\n3\n1\n"
+
+    def test_zsort_empty_array(self, execute_mumps):
+        """$ZSORT on empty array returns empty string."""
+        result = execute_mumps('TEST\n K A S X=$ZSORT(A("")) W X="",!\n Q')
+        assert result.output == "1\n"
+
+
+# ── T066: $ZABS ──────────────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZabsCodegen:
+    """$ZABS generates m_zabs() call (T066)."""
+
+    def test_zabs_generates_helper_call(self):
+        """$ZABS(expr) generates m_zabs() call."""
+        code = "TEST\n S X=$ZABS(-42)\n Q"
+        result = generate_python(code)
+        assert "m_zabs" in result
+
+    def test_zabs_in_write(self):
+        """$ZABS in WRITE generates correct code."""
+        code = "TEST\n W $ZABS(-5)\n Q"
+        result = generate_python(code)
+        assert "m_zabs" in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZabsExecution:
+    """$ZABS end-to-end execution tests (T066)."""
+
+    def test_zabs_write_negative(self, execute_mumps):
+        """W $ZABS(-42) outputs '42'."""
+        result = execute_mumps("TEST\n W $ZABS(-42)\n Q")
+        assert result.output == "42"
+
+    def test_zabs_write_zero(self, execute_mumps):
+        """W $ZABS(0) outputs '0'."""
+        result = execute_mumps("TEST\n W $ZABS(0)\n Q")
+        assert result.output == "0"
+
+    def test_zabs_write_positive_decimal(self, execute_mumps):
+        """W $ZABS(3.14) outputs '3.14'."""
+        result = execute_mumps("TEST\n W $ZABS(3.14)\n Q")
+        assert result.output == "3.14"
+
+    def test_zabs_in_expression(self, execute_mumps):
+        """$ZABS can be used inside arithmetic expressions."""
+        result = execute_mumps("TEST\n W $ZABS(-10)+$ZABS(-20)\n Q")
+        assert result.output == "30"
+
+
+# ── T067: $NOW ────────────────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestNowCodegen:
+    """$NOW generates m_now() call (T067)."""
+
+    def test_now_generates_helper_call(self):
+        """$NOW() generates m_now() call."""
+        code = "TEST\n S X=$NOW()\n Q"
+        result = generate_python(code)
+        assert "m_now" in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestNowExecution:
+    """$NOW end-to-end execution tests (T067)."""
+
+    def test_now_day_matches_horolog(self, execute_mumps):
+        """$P($NOW(),',',1) equals $P($H,',',1) — same day part."""
+        result = execute_mumps('TEST\n W $P($NOW(),",",1)=$P($H,",",1)\n Q')
+        assert result.output == "1"
+
+    def test_now_has_two_parts(self, execute_mumps):
+        """$NOW returns comma-separated format."""
+        result = execute_mumps('TEST\n S X=$NOW() W $L(X,",")\n Q')
+        assert result.output == "2"
+
+
+# ── T068: $ZBITOR / $ZBITXOR / $ZBITNOT ──────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZbitorCodegen:
+    """$ZBITOR generates m_zbitor() call (T068)."""
+
+    def test_zbitor_generates_helper_call(self):
+        """$ZBITOR generates m_zbitor() call."""
+        code = 'TEST\n S X=$ZBITOR("A","B")\n Q'
+        result = generate_python(code)
+        assert "m_zbitor" in result
+
+    def test_zbitxor_generates_helper_call(self):
+        """$ZBITXOR generates m_zbitxor() call."""
+        code = 'TEST\n S X=$ZBITXOR("A","B")\n Q'
+        result = generate_python(code)
+        assert "m_zbitxor" in result
+
+    def test_zbitnot_generates_helper_call(self):
+        """$ZBITNOT generates m_zbitnot() call."""
+        code = 'TEST\n S X=$ZBITNOT("A")\n Q'
+        result = generate_python(code)
+        assert "m_zbitnot" in result
+
+
+# ── T069: $ZGETDVI ───────────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZgetdviCodegen:
+    """$ZGETDVI generates empty string stub (T069)."""
+
+    def test_zgetdvi_generates_code(self):
+        """$ZGETDVI generates empty string literal."""
+        code = 'TEST\n S X=$ZGETDVI("TTA0:","DEVNAM")\n Q'
+        result = generate_python(code)
+        # Should generate '""' (empty string)
+        assert '""' in result
+
+    def test_zgetdvi_does_not_raise(self):
+        """$ZGETDVI no longer raises NotImplementedError."""
+        code = 'TEST\n S X=$ZGETDVI("TTA0:","DEVNAM")\n Q'
+        # Should not raise — it's a stub
+        generate_python(code)
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZgetdviExecution:
+    """$ZGETDVI end-to-end execution (T069)."""
+
+    def test_zgetdvi_returns_empty(self, execute_mumps):
+        """$ZGETDVI returns empty string at runtime."""
+        result = execute_mumps('TEST\n W $ZGETDVI("TTA0:","DEVNAM")=""\n Q')
+        assert result.output == "1"
+
+
+# ── T070: $ZGETSYI ───────────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZgetsyiCodegen:
+    """$ZGETSYI generates m_zgetsyi() call (T070)."""
+
+    def test_zgetsyi_generates_helper_call(self):
+        """$ZGETSYI generates m_zgetsyi() call."""
+        code = 'TEST\n S X=$ZGETSYI("NODENAME")\n Q'
+        result = generate_python(code)
+        assert "m_zgetsyi" in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZgetsyiExecution:
+    """$ZGETSYI end-to-end execution (T070)."""
+
+    def test_zgetsyi_nodename_nonempty(self, execute_mumps):
+        """$ZGETSYI("NODENAME") returns a non-empty string."""
+        result = execute_mumps('TEST\n W $ZGETSYI("NODENAME")\n Q')
+        assert len(result.output) > 0
+
+    def test_zgetsyi_unknown_empty(self, execute_mumps):
+        """$ZGETSYI("BOGUS") returns empty string."""
+        result = execute_mumps('TEST\n W $ZGETSYI("BOGUS")=""\n Q')
+        assert result.output == "1"
+
+
+# ── T071: $ZTIME / $ZT ──────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZtimeCodegen:
+    """$ZTIME/$ZT generates m_ztime() call (T071)."""
+
+    def test_ztime_generates_helper_call(self):
+        """$ZTIME(expr) generates m_ztime() call."""
+        code = "TEST\n S X=$ZTIME(3661)\n Q"
+        result = generate_python(code)
+        assert "m_ztime" in result
+
+    def test_zt_generates_helper_call(self):
+        """$ZT(expr) generates m_ztime() call (short form)."""
+        code = "TEST\n S X=$ZT(3661)\n Q"
+        result = generate_python(code)
+        assert "m_ztime" in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZtimeExecution:
+    """$ZTIME end-to-end execution tests (T071)."""
+
+    def test_zt_midnight(self, execute_mumps):
+        """W $ZT(0) outputs '00:00:00'."""
+        result = execute_mumps("TEST\n W $ZT(0)\n Q")
+        assert result.output == "00:00:00"
+
+    def test_zt_combined(self, execute_mumps):
+        """W $ZT(3661) outputs '01:01:01'."""
+        result = execute_mumps("TEST\n W $ZT(3661)\n Q")
+        assert result.output == "01:01:01"
+
+    def test_zt_end_of_day(self, execute_mumps):
+        """W $ZT(86399) outputs '23:59:59'."""
+        result = execute_mumps("TEST\n W $ZT(86399)\n Q")
+        assert result.output == "23:59:59"
+
+    def test_ztime_long_form(self, execute_mumps):
+        """W $ZTIME(3600) outputs '01:00:00'."""
+        result = execute_mumps("TEST\n W $ZTIME(3600)\n Q")
+        assert result.output == "01:00:00"
+
+    def test_zt_from_horolog(self, execute_mumps):
+        """$ZT applied to $P($H,',',2) produces valid time string."""
+        result = execute_mumps('TEST\n S T=$ZT($P($H,",",2)) W T?2N1":"2N1":"2N\n Q')
+        assert result.output == "1"
+
+
+# ── T072: $ZDIR ─────────────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZdirCodegen:
+    """$ZDIR generates _rt_os_getcwd() call (T072)."""
+
+    def test_zdir_generates_code(self):
+        """$ZDIR() generates _rt_os_getcwd() call."""
+        code = "TEST\n S X=$ZDIR()\n Q"
+        result = generate_python(code)
+        assert "_rt_os_getcwd" in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZdirExecution:
+    """$ZDIR end-to-end execution (T072)."""
+
+    def test_zdir_returns_nonempty(self, execute_mumps):
+        """$ZDIR returns a non-empty string."""
+        result = execute_mumps("TEST\n W $ZDIR()\n Q")
+        assert len(result.output) > 0
+
+    def test_zdir_returns_absolute_path(self, execute_mumps):
+        """$ZDIR returns a path starting with /."""
+        result = execute_mumps("TEST\n W $ZDIR()\n Q")
+        assert result.output.startswith("/")
+
+
+# ── T073: $ZGLD ──────────────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZgldCodegen:
+    """$ZGLD generates empty string stub (T073)."""
+
+    def test_zgld_function_generates_code(self):
+        """$ZGLD() function call generates empty string."""
+        code = "TEST\n S X=$ZGLD()\n Q"
+        result = generate_python(code)
+        assert '""' in result
+
+    def test_zgld_svn_generates_code(self):
+        """$ZGLD as special variable generates empty string."""
+        code = "TEST\n S X=$ZGLD\n Q"
+        result = generate_python(code)
+        assert '""' in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZgldExecution:
+    """$ZGLD end-to-end execution (T073)."""
+
+    def test_zgld_returns_empty(self, execute_mumps):
+        """$ZGLD returns empty string."""
+        result = execute_mumps('TEST\n W $ZGLD=""\n Q')
+        assert result.output == "1"
+
+
+# ── Cross-function integration tests ─────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestPhase12ACrossFunctionIntegration:
+    """Integration tests combining multiple Phase 12A functions."""
+
+    def test_zabs_with_ztime(self, execute_mumps):
+        """$ZABS and $ZTIME can be used together."""
+        result = execute_mumps("TEST\n W $ZT($ZABS(-3661))\n Q")
+        assert result.output == "01:01:01"
+
+    def test_multiple_functions_in_one_line(self, execute_mumps):
+        """Multiple Phase 12A functions in a single WRITE."""
+        result = execute_mumps('TEST\n W $ZABS(-5)," ",$ZT(60)\n Q')
+        assert result.output == "5 00:01:00"
+
+
+# =============================================================================
+# Phase 12B/C: SVN Readers & SET $ZD (024-vista-transpilation-fixes)
+# =============================================================================
+
+
+# ── $ZTIMEZONE (T074) ─────────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZtimezoneCodegen:
+    """$ZTIMEZONE SVN reader codegen (T074)."""
+
+    def test_ztimezone_generates_time_timezone(self):
+        """$ZTIMEZONE generates time.timezone reference."""
+        code = "TEST\n S X=$ZTIMEZONE\n Q"
+        result = generate_python(code)
+        assert "time.timezone" in result
+
+    def test_ztimezone_in_expression(self):
+        """$ZTIMEZONE can be used in arithmetic expressions."""
+        code = "TEST\n W $ZTIMEZONE/60\n Q"
+        result = generate_python(code)
+        assert "time.timezone" in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZtimezoneExecution:
+    """$ZTIMEZONE end-to-end execution (T074)."""
+
+    def test_ztimezone_returns_integer(self, execute_mumps):
+        """$ZTIMEZONE returns an integer (seconds west of UTC)."""
+        result = execute_mumps("TEST\n W $ZTIMEZONE\\1\n Q")
+        val = int(result.output)
+        # Timezone offset should be between -12*3600 and +14*3600
+        assert -43200 <= val <= 50400
+
+    def test_ztimezone_division(self, execute_mumps):
+        """$ZTIMEZONE/60 gives minutes west of UTC."""
+        result = execute_mumps("TEST\n W $ZTIMEZONE/60\\1\n Q")
+        val = int(result.output)
+        assert -720 <= val <= 840
+
+
+# ── $ZTIMESTAMP (T074) ─────────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZtimestampCodegen:
+    """$ZTIMESTAMP SVN reader codegen (T074)."""
+
+    def test_ztimestamp_generates_code(self):
+        """$ZTIMESTAMP generates $HOROLOG-format UTC timestamp code."""
+        code = "TEST\n S X=$ZTIMESTAMP\n Q"
+        result = generate_python(code)
+        # Uses _rt.horolog() as the generator for $ZTIMESTAMP
+        assert "_rt.horolog()" in result
+
+    def test_ztimestamp_function_form(self):
+        """$ZTIMESTAMP() function form generates code."""
+        code = "TEST\n W $ZTIMESTAMP\n Q"
+        result = generate_python(code)
+        assert "_rt.horolog()" in result
+
+
+# ── $ZLEVEL (T075) ─────────────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZlevelCodegen:
+    """$ZLEVEL/$ZL SVN reader codegen (T075)."""
+
+    def test_zlevel_generates_stub(self):
+        """$ZLEVEL generates stack depth stub."""
+        code = "TEST\n S X=$ZLEVEL\n Q"
+        result = generate_python(code)
+        assert '"1"' in result
+
+    def test_zl_abbreviation(self):
+        """$ZL as SVN (no args) generates $ZLEVEL stub."""
+        # $ZL without args = $ZLEVEL SVN; $ZL(x) = $ZLENGTH function
+        code = "TEST\n S X=$ZL\n Q"
+        result = generate_python(code)
+        assert '"1"' in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZlevelExecution:
+    """$ZLEVEL end-to-end execution (T075)."""
+
+    def test_zlevel_returns_one(self, execute_mumps):
+        """$ZLEVEL returns 1 (stub)."""
+        result = execute_mumps("TEST\n W $ZLEVEL\n Q")
+        assert result.output == "1"
+
+    def test_zlevel_in_arithmetic(self, execute_mumps):
+        """$ZLEVEL can be used in arithmetic."""
+        result = execute_mumps("TEST\n W $ZLEVEL+10\n Q")
+        assert result.output == "11"
+
+
+# ── GET $ZD/$ZDIRECTORY (T076) ─────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZdirectoryGetCodegen:
+    """GET $ZD/$ZDIRECTORY codegen (T076)."""
+
+    def test_zd_generates_getcwd(self):
+        """$ZD generates os.getcwd() wrapper."""
+        code = "TEST\n W $ZD\n Q"
+        result = generate_python(code)
+        assert "_rt_os_getcwd" in result
+
+    def test_zdirectory_full_name(self):
+        """$ZDIRECTORY full name generates same code."""
+        code = "TEST\n W $ZDIRECTORY\n Q"
+        result = generate_python(code)
+        assert "_rt_os_getcwd" in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZdirectoryGetExecution:
+    """GET $ZD/$ZDIRECTORY end-to-end execution (T076)."""
+
+    def test_zd_returns_nonempty_path(self, execute_mumps):
+        """$ZD returns a non-empty directory path."""
+        result = execute_mumps("TEST\n W $L($ZD)>0\n Q")
+        assert result.output == "1"
+
+    def test_zdirectory_returns_nonempty_path(self, execute_mumps):
+        """$ZDIRECTORY returns a non-empty directory path."""
+        result = execute_mumps("TEST\n W $L($ZDIRECTORY)>0\n Q")
+        assert result.output == "1"
+
+
+# ── SET $ZD/$ZDIRECTORY (T076) ─────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZdirectorySetCodegen:
+    """SET $ZD/$ZDIRECTORY codegen (T076)."""
+
+    def test_set_zd_generates_chdir(self):
+        """SET $ZD generates os.chdir() call."""
+        code = 'TEST\n S $ZD="/tmp"\n Q'
+        result = generate_python(code)
+        assert "os.chdir" in result
+
+    def test_set_zdirectory_generates_chdir(self):
+        """SET $ZDIRECTORY generates os.chdir() call."""
+        code = 'TEST\n S $ZDIRECTORY="/tmp"\n Q'
+        result = generate_python(code)
+        assert "os.chdir" in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZdirectorySetExecution:
+    """SET $ZD/$ZDIRECTORY end-to-end execution (T076)."""
+
+    def test_set_and_get_zd(self, execute_mumps):
+        """SET $ZD changes directory, GET $ZD reads it back."""
+        result = execute_mumps('TEST\n S $ZD="/tmp" W $ZD\n Q')
+        assert result.output == "/tmp"
+
+    def test_set_zdirectory_changes_dir(self, execute_mumps):
+        """SET $ZDIRECTORY changes directory."""
+        result = execute_mumps('TEST\n S $ZDIRECTORY="/tmp" W $ZD\n Q')
+        assert result.output == "/tmp"
+
+
+# ── $ZPIECE alias ─────────────────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZpieceCodegen:
+    """$ZPIECE as alias for $PIECE codegen."""
+
+    def test_zpiece_generates_m_piece(self):
+        """$ZPIECE generates m_piece() call."""
+        code = 'TEST\n W $ZPIECE("A^B^C","^",2)\n Q'
+        result = generate_python(code)
+        assert "m_piece" in result
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestZpieceExecution:
+    """$ZPIECE end-to-end execution."""
+
+    def test_zpiece_extracts_piece(self, execute_mumps):
+        """$ZPIECE extracts delimited pieces like $PIECE."""
+        result = execute_mumps('TEST\n W $ZPIECE("A^B^C","^",2)\n Q')
+        assert result.output == "B"
+
+    def test_zpiece_range(self, execute_mumps):
+        """$ZPIECE with range extracts multiple pieces."""
+        result = execute_mumps('TEST\n W $ZPIECE("A^B^C","^",2,3)\n Q')
+        assert result.output == "B^C"
+
+
+# ── Batch transpilation (T078) ─────────────────────────────────────────
+
+
+@pytest.mark.codegen
+@pytest.mark.ydb
+class TestPhase12BatchTranspilation:
+    """Batch transpilation test for Phase 12 VistA routines (T078).
+
+    Verifies that all routines unblocked by Phase 12A/B/C transpile
+    without error. 3 routines have known non-Phase-12 blockers:
+    - ZOSVGTM: $ZBITSTR not implemented
+    - ZSY: SET $ZSTEP not supported
+    - ZOSVGUT3: READ with $INCREMENT subscript (pre-existing)
+    """
+
+    TRANSPILABLE_ROUTINES = [
+        # Phase 12A: intrinsic function stubs
+        pytest.param("VA FileMan/Routines/DINVVXD.m", "DINVVXD", id="DINVVXD"),
+        pytest.param("Kernel/Routines/ZOSVVXD.m", "ZOSVVXD", id="ZOSVVXD"),
+        pytest.param("Kernel/Routines/ZTER1.m", "ZTER1", id="ZTER1"),
+        pytest.param(
+            "Capacity Management/Routines/KMPTCMRT.m", "KMPTCMRT", id="KMPTCMRT"
+        ),
+        pytest.param("Kernel/Routines/XLFSHAN.m", "XLFSHAN", id="XLFSHAN"),
+        pytest.param("Kernel/Routines/ZIS4GTM.m", "ZIS4GTM", id="ZIS4GTM"),
+        pytest.param("Kernel/Routines/ZOSVKRO.m", "ZOSVKRO", id="ZOSVKRO"),
+        pytest.param("Kernel/Routines/ZISHGTM.m", "ZISHGTM", id="ZISHGTM"),
+        pytest.param("MASH Utilities/Routines/ut.m", "ut", id="ut"),
+        # Phase 12B: SVN readers
+        pytest.param("Capacity Management/Routines/KMPUTLW.m", "KMPUTLW", id="KMPUTLW"),
+        pytest.param(
+            "Scheduling/Routines/SCANTYPEDEFS.m", "SCANTYPEDEFS", id="SCANTYPEDEFS"
+        ),
+        # Phase 12C: SET/GET $ZD
+        pytest.param("Kernel/Routines/XPDOS.m", "XPDOS", id="XPDOS"),
+        pytest.param("Kernel/Routines/ZISHGUX.m", "ZISHGUX", id="ZISHGUX"),
+    ]
+
+    @pytest.mark.parametrize("rel_path, routine_name", TRANSPILABLE_ROUTINES)
+    def test_routine_transpiles(self, rel_path, routine_name):
+        """Each Phase 12 routine should transpile without error."""
+        import ast
+        import warnings
+        from pathlib import Path
+
+        # Use project root to build absolute path
+        project_root = Path(__file__).resolve().parents[5]
+        routine_path = project_root / "VistA-VEHU-M" / "Packages" / rel_path
+        if not routine_path.exists():
+            pytest.skip(f"VistA routine not found: {routine_path}")
+
+        source = routine_path.read_text(encoding="utf-8", errors="replace")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source, routine_name=routine_name)
+        assert result
+        ast.parse(result)
