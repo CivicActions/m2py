@@ -163,8 +163,8 @@ DEADCODE
         # DEADCODE label should still be generated (for external callers)
         assert "def DEADCODE(" in result
 
-    def test_unresolved_goto_in_reachable_label_blocked(self):
-        """Unresolved GOTO in reachable code should raise error."""
+    def test_unresolved_goto_in_reachable_label_produces_runtime_error(self):
+        """Unresolved GOTO in reachable code should compile but raise at runtime."""
         source = """TEST
  D PROBLEM
  Q
@@ -172,11 +172,19 @@ PROBLEM
  G NONEXISTENT
  Q
 """
-        # This SHOULD raise UnsupportedFeatureError
-        from m2py.codegen import UnsupportedFeatureError
+        # Should now transpile successfully (no compile-time rejection)
+        import warnings
 
-        with pytest.raises(UnsupportedFeatureError, match="UNRESOLVED GOTO"):
-            generate_python(source)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source)
+
+        # Generated code should contain LabelNotFoundError at the GOTO site
+        assert 'raise LabelNotFoundError("NONEXISTENT"' in result
+        # The routine should still compile as valid Python
+        import ast
+
+        ast.parse(result)
 
     def test_v1nst1_pattern_transpiles(self):
         """V1NST1-like routine with unreachable GOTO section should transpile."""
@@ -197,3 +205,382 @@ GOTO
         result = generate_python(source)
         assert "def V1NST1(" in result
         assert "def SUB(" in result
+
+
+@pytest.mark.codegen
+class TestUnresolvedGotoFallback:
+    """Phase 11: UNRESOLVED GOTO fallback — compile-time rejection → runtime error."""
+
+    def test_simple_unresolved_goto_compiles(self):
+        """A routine with GOTO to a non-existent label should compile."""
+        source = """TEST
+ S X=1
+ I X G EXIT
+ W "done"
+ Q
+"""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source)
+
+        assert 'raise LabelNotFoundError("EXIT"' in result
+        import ast
+
+        ast.parse(result)
+
+    def test_unresolved_goto_warning_emitted(self):
+        """Transpiling a routine with UNRESOLVED GOTO should emit a warning."""
+        source = """TEST
+ D REACHABLE
+ Q
+REACHABLE
+ G MISSING
+ Q
+"""
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            generate_python(source)
+
+        # Expect at least one warning about UNRESOLVED GOTO
+        goto_warnings = [x for x in w if "UNRESOLVED GOTO" in str(x.message)]
+        assert len(goto_warnings) >= 1
+        assert "MISSING" in str(goto_warnings[0].message)
+        assert "LabelNotFoundError" in str(goto_warnings[0].message)
+
+    def test_unresolved_goto_with_postcondition_compiles(self):
+        """G EXIT:cond with missing EXIT compiles but raises at runtime."""
+        source = """TEST
+ S X=1
+ G MISSING:X=1
+ W "fell through"
+ Q
+"""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source)
+
+        # The GOTO to MISSING should produce a LabelNotFoundError
+        assert "LabelNotFoundError" in result
+        import ast
+
+        ast.parse(result)
+
+    def test_multi_target_goto_with_unresolved_target(self):
+        """G EXISTING:cond,MISSING:cond2 where MISSING doesn't exist."""
+        source = """TEST
+ N X S X=0
+ G DONE:X=0,MISSING:X=1
+ Q
+DONE
+ W "done"
+ Q
+"""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source)
+
+        # Should compile (MISSING path may never be taken)
+        import ast
+
+        ast.parse(result)
+        # The MISSING target should produce LabelNotFoundError
+        assert "LabelNotFoundError" in result
+
+    def test_xecute_goto_to_existing_label_works(self):
+        """X 'G B' where B is a label in the routine should work (not raise)."""
+        source = """TEST
+ S VCOMP=""
+ X "G B","S VCOMP=VCOMP_7"
+ W VCOMP
+ Q
+A S VCOMP=VCOMP_4 Q
+B S VCOMP=VCOMP_6 Q
+"""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source)
+
+        # Should NOT contain LabelNotFoundError for B
+        # B is a valid label in the routine — reachable via XECUTE
+        assert 'LabelNotFoundError("B"' not in result
+        import ast
+
+        ast.parse(result)
+
+    def test_unresolved_goto_in_unreachable_still_allowed(self):
+        """GOTO to missing label in unreachable code should still transpile."""
+        source = """TEST
+ W "test"
+ Q
+DEAD
+ G NOWHERE
+ Q
+"""
+        # Unreachable labels with unresolved GOTOs should work as before
+        result = generate_python(source)
+        assert "def TEST(" in result
+
+    def test_a1bfjobr_pattern(self):
+        """A1BFJOBR pattern: G EXIT guarded by IF, EXIT not in routine.
+
+        This is the most common VistA pattern — the routine typically
+        calls EXIT from another routine externally but references it
+        locally behind conditions.
+        """
+        source = """A1BFJOBR
+ ;;V1.0
+EN
+ S U="^"
+ I 0 G EXIT
+ W "done"
+ Q
+"""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source)
+
+        assert 'raise LabelNotFoundError("EXIT"' in result
+        import ast
+
+        ast.parse(result)
+
+    def test_multiple_unresolved_gotos_in_same_routine(self):
+        """Routine with multiple UNRESOLVED GOTOs all compile."""
+        source = """TEST
+ D SUB1
+ D SUB2
+ Q
+SUB1
+ I 0 G MISSING1
+ Q
+SUB2
+ I 0 G MISSING2
+ Q
+"""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source)
+
+        assert 'LabelNotFoundError("MISSING1"' in result
+        assert 'LabelNotFoundError("MISSING2"' in result
+        import ast
+
+        ast.parse(result)
+
+    def test_runtime_error_raised_when_unresolved_goto_reached(self):
+        """When the GOTO to a missing label is actually reached, LabelNotFoundError fires."""
+        import warnings
+
+        source = """TEST
+ G MISSING
+ Q
+"""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            code = generate_python(source)
+
+        # Execute the generated code — it should raise LabelNotFoundError
+        from m2py.runtime import MUMPSRuntime, LabelNotFoundError, run_with_goto_support
+
+        ns = {}
+        exec(code, ns)
+        rt = MUMPSRuntime()
+        rt._capture_output = True
+        rt._current_routine = "TEST"
+        rt._current_source_lines = ns.get("_source_lines", [])
+        rt._current_label_lines = ns.get("_label_lines", {})
+
+        with pytest.raises(LabelNotFoundError, match="MISSING"):
+            run_with_goto_support(ns["TEST"], rt, {})
+
+    def test_unreached_unresolved_goto_does_not_error(self):
+        """When the GOTO to a missing label is NOT reached, no error occurs."""
+        import warnings
+
+        source = """TEST
+ W "OK"
+ Q
+DEAD
+ G MISSING
+ Q
+"""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            code = generate_python(source)
+
+        # Execute — should succeed (DEAD label is never reached)
+        from m2py.runtime import MUMPSRuntime, run_with_goto_support
+
+        ns = {}
+        exec(code, ns)
+        rt = MUMPSRuntime()
+        rt._capture_output = True
+        rt._current_routine = "TEST"
+        rt._current_source_lines = ns.get("_source_lines", [])
+        rt._current_label_lines = ns.get("_label_lines", {})
+
+        # Should not raise
+        run_with_goto_support(ns["TEST"], rt, {})
+        assert rt.get_output() == "OK"
+
+    def test_guarded_unresolved_goto_not_reached(self):
+        """G MISSING:0 — postcondition is false, GOTO not taken, no error."""
+        import warnings
+
+        source = """TEST
+ S X=0
+ I X G MISSING
+ W "OK"
+ Q
+"""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            code = generate_python(source)
+
+        from m2py.runtime import MUMPSRuntime, run_with_goto_support
+
+        ns = {}
+        exec(code, ns)
+        rt = MUMPSRuntime()
+        rt._capture_output = True
+        rt._current_routine = "TEST"
+        rt._current_source_lines = ns.get("_source_lines", [])
+        rt._current_label_lines = ns.get("_label_lines", {})
+
+        # The IF X is 0 (false), so GOTO MISSING is never taken
+        run_with_goto_support(ns["TEST"], rt, {})
+        assert rt.get_output() == "OK"
+
+
+# =============================================================================
+# Phase 14D: G ^SELF (GOTO self-routine restart) resolution
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestGotoSelfRoutineRestart:
+    """Tests for 'G ^ROUTINENAME' within ROUTINENAME itself.
+
+    This idiom restarts the routine from the top — it's NOT an external call.
+    Phase 14 fixes resolver.py and goto_analysis.py to handle this correctly
+    by defaulting empty call.name to routine.name and using case-insensitive
+    routine name comparison.
+    """
+
+    def test_goto_self_no_warning(self):
+        """G ^MYRTN within MYRTN should NOT produce UNRESOLVED GOTO warning."""
+        import warnings
+
+        source = """MYRTN
+ S X=1
+ I X=0 G ^MYRTN
+ W X,!
+ Q
+"""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            _code = generate_python(source, routine_name="MYRTN")  # noqa: F841
+        # Should not have UNRESOLVED GOTO warnings
+        unresolved = [x for x in w if "UNRESOLVED" in str(x.message)]
+        assert len(unresolved) == 0, (
+            f"Got unexpected UNRESOLVED warnings: {[str(x.message) for x in unresolved]}"
+        )
+
+    def test_goto_self_case_insensitive(self):
+        """G ^myrtn within MYRTN — case-insensitive match."""
+        import warnings
+
+        source = """MYRTN
+ I 0 G ^myrtn
+ Q
+"""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            _code = generate_python(source, routine_name="MYRTN")  # noqa: F841
+        unresolved = [x for x in w if "UNRESOLVED" in str(x.message)]
+        assert len(unresolved) == 0
+
+    def test_goto_self_transpiles_and_compiles(self):
+        """G ^SELF resolves to internal GOTO, transpiles to valid Python."""
+        import ast
+
+        source = """MYTEST
+ S X=1
+ I X=0 G ^MYTEST
+ W "done",!
+ Q
+"""
+        code = generate_python(source, routine_name="MYTEST")
+        assert code
+        ast.parse(code)
+
+    def test_goto_self_executes(self):
+        """G ^SELF correctly restarts the routine."""
+        import warnings
+
+        source = """SELFGOTO
+ S X=$G(X)+1
+ I X<3 G ^SELFGOTO
+ W X,!
+ Q
+"""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            code = generate_python(source, routine_name="SELFGOTO")
+
+        from m2py.runtime import MUMPSRuntime, run_with_goto_support
+
+        ns = {}
+        exec(code, ns)
+        rt = MUMPSRuntime()
+        rt._capture_output = True
+        rt._current_routine = "SELFGOTO"
+        rt._current_source_lines = ns.get("_source_lines", [])
+        rt._current_label_lines = ns.get("_label_lines", {})
+        run_with_goto_support(ns["SELFGOTO"], rt, {})
+        assert rt.get_output() == "3\n"
+
+    def test_goto_self_with_label(self):
+        """G LABEL^SELF — explicit label within own routine, no warning."""
+        import warnings
+
+        source = """MYRTN
+ G SUB^MYRTN
+ Q
+SUB
+ W "hi",!
+ Q
+"""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            _code = generate_python(source, routine_name="MYRTN")  # noqa: F841
+        unresolved = [x for x in w if "UNRESOLVED" in str(x.message)]
+        assert len(unresolved) == 0
+
+    def test_goto_external_still_unresolved(self):
+        """G ^OTHERRTN should still generate GotoExternal (not resolved locally)."""
+        import warnings
+
+        source = """MYRTN
+ G ^OTHERRTN
+ Q
+"""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            code = generate_python(source, routine_name="MYRTN")
+        # External GOTO should raise GotoExternal, not resolve locally
+        assert "GotoExternal" in code

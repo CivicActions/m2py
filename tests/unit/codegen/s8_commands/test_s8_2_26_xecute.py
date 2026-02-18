@@ -760,5 +760,61 @@ class TestXecuteIndirectionCodegen:
 
 
 # =============================================================================
+# XECUTE parse error string quoting (Phase 9 / T049)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestXecuteParseErrorQuoting:
+    """Tests for safe quoting of XECUTE parse error messages."""
+
+    def test_xecute_with_double_quotes_in_error(self, generate_python):
+        """XECUTE that fails to parse with double quotes in error message."""
+        source = 'TEST\n X "S X=$G(^XTMP(""-M"",1))"\n Q\n'
+        code = generate_python(source)
+        import ast
+
+        ast.parse(code)  # Must not raise SyntaxError
+
+    def test_xecute_with_single_quotes_in_mumps(self, generate_python):
+        """XECUTE with single quotes in MUMPS code."""
+        source = 'TEST\n X "INVALID[+\\-\']SYNTAX"\n Q\n'
+        code = generate_python(source)
+        import ast
+
+        ast.parse(code)
+
+    def test_xecute_with_open_packet_mode(self, generate_python):
+        """XECUTE containing USE with packet mode quoting (HLCSTCP2/XWBVLL pattern)."""
+        source = 'TEST\n X "U IO:(::""-M"")"\n Q\n'
+        code = generate_python(source)
+        assert code
+
+    def test_xecute_with_open_and_conditional(self, generate_python):
+        """XECUTE containing OPEN with quoted flags (XWBTCPM pattern)."""
+        source = 'TEST\n S X="DEV" X "O X:(RECORDSIZE=512)"\n Q\n'
+        code = generate_python(source)
+        assert code
+
+    def test_xecute_with_use_ioerror(self, generate_python):
+        """XECUTE containing USE with ioerror trap (XWBTCPM pattern)."""
+        source = 'TEST\n S X="DEV" X "U X:(nowrap:nodelimiter:ioerror=""TRAP"")"\n Q\n'
+        code = generate_python(source)
+        assert code
+
+    def test_xecute_with_open_recordsize(self, generate_python):
+        """XECUTE containing OPEN with RECORDSIZE (HLCSTCPA pattern)."""
+        source = 'TEST\n X "O IO:(RECORDSIZE=512)"\n Q\n'
+        code = generate_python(source)
+        assert code
+
+    def test_xecute_parse_error_contains_repr(self, generate_python):
+        """Generated code for XECUTE parse error uses safe string escaping."""
+        source = 'TEST\n X "BOGUS COMMAND"\n Q\n'
+        code = generate_python(source)
+        assert "raise SyntaxError" in code
+
+
+# =============================================================================
 # LHS $PIECE / $EXTRACT indirection
 # =============================================================================

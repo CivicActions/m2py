@@ -70,6 +70,7 @@ from m2py.asg.statements import (
     MZHaltStatement,
     MZKillStatement,
     MZLinkStatement,
+    MZLoadStatement,
     MZShowStatement,
     MZWithdrawStatement,
     MZWriteStatement,
@@ -810,6 +811,8 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         _generate_zkill(stmt, ctx)
     elif isinstance(stmt, MZLinkStatement):
         _generate_zlink(stmt, ctx)
+    elif isinstance(stmt, MZLoadStatement):
+        _generate_zload(stmt, ctx)
     elif isinstance(stmt, MZShowStatement):
         _generate_zshow(stmt, ctx)
     elif isinstance(stmt, MZGotoStatement):
@@ -832,11 +835,13 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     elif isinstance(stmt, MZHelpStatement):
         raise NotImplementedError("LIM-015: ZHELP command not supported")
     elif isinstance(stmt, MZMessageStatement):
-        raise NotImplementedError("LIM-015: ZMESSAGE command not supported")
+        _generate_zmessage(stmt, ctx)
     elif isinstance(stmt, MZPrintStatement):
-        raise NotImplementedError("LIM-015: ZPRINT command not supported")
+        _generate_zprint(stmt, ctx)
     elif isinstance(stmt, MZStepStatement):
-        raise NotImplementedError("LIM-015: ZSTEP command not supported")
+        # ZSTEP is a debugger-only command (single-step control).
+        # No runtime impact on program output — emit as no-op.
+        ctx.emitter.line("pass  # ZSTEP command no-op (debugger)")
     elif isinstance(stmt, MZSystemStatement):
         _generate_zsystem(stmt, ctx)
     elif isinstance(stmt, MZTriggerStatement):
@@ -999,7 +1004,11 @@ def _generate_single_assignment_with_preeval_subs(
         value_var: Name of the variable holding the pre-evaluated value
         ctx: Generator context
     """
-    from m2py.asg.expressions import MIndirection as MIndirectionType, MVariable
+    from m2py.asg.expressions import (
+        MIndirection as MIndirectionType,
+        MIntrinsicFunction,
+        MVariable,
+    )
     from m2py.codegen.indirection import generate_name_indirection_write
     from m2py.parser.textx_classes import LocalVariable, GlobalVariable, NakedGlobal
 
@@ -1010,6 +1019,103 @@ def _generate_single_assignment_with_preeval_subs(
     if isinstance(assignment.target, MIndirectionType):
         set_stmt = generate_name_indirection_write(assignment.target, value_var, ctx)
         ctx.emitter.line(set_stmt)
+        return
+
+    # Handle special variable targets in tuple SET: S ($X,$Y)=0
+    if isinstance(assignment.target, MSpecialVariable):
+        svar_name = assignment.target.name.upper()
+        if svar_name in ("ETRAP", "ET"):
+            ctx.emitter.line(f"_rt.set_etrap({value_var})")
+        elif svar_name in ("ECODE", "EC"):
+            ctx.emitter.line(f"_rt.set_ecode({value_var})")
+        elif svar_name in ("ZERROR", "ZE"):
+            ctx.emitter.line(f"_rt.set_zerror({value_var})")
+        elif svar_name in ("ZTRAP", "ZT"):
+            ctx.emitter.line(f"_rt.set_ztrap({value_var})")
+        elif svar_name in ("ZSTATUS", "ZS"):
+            ctx.emitter.line(f"_rt.set_zstatus({value_var})")
+        elif svar_name in ("ZPOSITION", "ZP"):
+            ctx.emitter.line(f"_rt.set_zposition({value_var})")
+        elif svar_name == "X":
+            ctx.emitter.line(f"_rt.set_x({value_var})")
+        elif svar_name == "Y":
+            ctx.emitter.line(f"_rt.set_y({value_var})")
+        elif svar_name in ("NAMESPACE", "NSPACE"):
+            ctx.emitter.line(f"_rt.set_namespace({value_var})")
+        elif svar_name in ("ZINTERRUPT", "ZINT"):
+            ctx.emitter.line(f"_rt.set_zinterrupt({value_var})")
+        elif svar_name == "ZERR":
+            ctx.emitter.line(f"_rt.set_zerror({value_var})")
+        elif svar_name in ("ZSOURCE", "ZSO"):
+            ctx.emitter.line(f"_rt.set_zsource({value_var})")
+        elif svar_name == "ZGBLDIR":
+            ctx.emitter.line(f"_rt.set_zgbldir({value_var})")
+        elif svar_name in ("ZDIRECTORY", "ZD"):
+            ctx.emitter.line("import os")
+            ctx.emitter.line(f"os.chdir(str({value_var}))")
+        elif svar_name in ("ZSTEP", "ZSTE"):
+            ctx.emitter.line("pass  # SET $ZSTEP no-op (debugger intrinsic)")
+        else:
+            raise NotImplementedError(
+                f"SET ${assignment.target.name} not supported in tuple SET"
+            )
+        return
+
+    # Handle $PIECE/$EXTRACT targets in tuple SET: S ($P(X,"^",2),Y)=value
+    if isinstance(assignment.target, MIntrinsicFunction):
+        func = assignment.target
+        func_name = func.name.upper()
+        args = func.arguments
+        if func_name in ("P", "PIECE"):
+            if len(args) < 2:
+                raise ValueError(
+                    f"LHS $PIECE requires at least 2 arguments, got {len(args)}"
+                )
+            first_arg = args[0]
+            getter, setter = _build_lhs_getter_setter(
+                first_arg, ctx, str_wrap_getter=True
+            )
+            delimiter_expr = f"m_str({generate_expr(args[1], ctx)})"
+            if len(args) >= 3:
+                piece_from_expr = f"int(m_num({generate_expr(args[2], ctx)}))"
+            else:
+                piece_from_expr = "1"
+            if len(args) >= 4:
+                arg3 = args[3]
+                assert arg3 is not None
+                piece_to_expr = f"int(m_num({generate_expr(arg3, ctx)}))"
+            else:
+                piece_to_expr = "None"
+            ctx.emitter.line(
+                f"m_set_piece({getter}, {setter}, {delimiter_expr}, "
+                f"{piece_from_expr}, {piece_to_expr}, m_str({value_var}))"
+            )
+        elif func_name in ("E", "EXTRACT"):
+            if len(args) < 1:
+                raise ValueError(
+                    f"LHS $EXTRACT requires at least 1 argument, got {len(args)}"
+                )
+            first_arg = args[0]
+            getter, setter = _build_lhs_getter_setter(first_arg, ctx)
+            if len(args) == 1:
+                from_pos_expr = "1"
+                to_pos_expr = "1"
+            elif len(args) == 2:
+                from_pos_expr = generate_expr(args[1], ctx)
+                to_pos_expr = "None"
+            else:
+                from_pos_expr = generate_expr(args[1], ctx)
+                arg2 = args[2]
+                assert arg2 is not None
+                to_pos_expr = generate_expr(arg2, ctx)
+            ctx.emitter.line(
+                f"m_set_extract({getter}, {setter}, {from_pos_expr}, "
+                f"{to_pos_expr}, {value_var})"
+            )
+        else:
+            raise NotImplementedError(
+                f"Unsupported LHS function in tuple SET: ${func.name}"
+            )
         return
 
     target = assignment.target
@@ -1102,6 +1208,33 @@ def _generate_single_assignment(
             ctx.emitter.line(f"_rt.set_zstatus({value_expr})")
         elif svar_name in ("ZPOSITION", "ZP"):
             ctx.emitter.line(f"_rt.set_zposition({value_expr})")
+        elif svar_name == "X":
+            ctx.emitter.line(f"_rt.set_x({value_expr})")
+        elif svar_name == "Y":
+            ctx.emitter.line(f"_rt.set_y({value_expr})")
+        elif svar_name in ("NAMESPACE", "NSPACE"):
+            ctx.emitter.line(f"_rt.set_namespace({value_expr})")
+        elif svar_name in ("ZINTERRUPT", "ZINT"):
+            ctx.emitter.line(f"_rt.set_zinterrupt({value_expr})")
+        elif svar_name == "ZERR":
+            # $ZERR is a non-standard abbreviation for $ZERROR
+            ctx.emitter.line(f"_rt.set_zerror({value_expr})")
+        elif svar_name in ("ZSOURCE", "ZSO"):
+            ctx.emitter.line(f"_rt.set_zsource({value_expr})")
+        elif svar_name == "ZGBLDIR":
+            ctx.emitter.line(f"_rt.set_zgbldir({value_expr})")
+        elif svar_name in ("ZDIRECTORY", "ZD"):
+            ctx.emitter.line("import os")
+            ctx.emitter.line(f"os.chdir(str({value_expr}))")
+        elif svar_name in ("TEST", "T"):
+            # SET $TEST: update both _rt._test (runtime) and _test (module global)
+            # so subsequent reads of $TEST via int(_test) see the new value.
+            ctx.emitter.line(f"_rt._test = bool(m_truth({value_expr}))")
+            ctx.emitter.line("_test = _rt._test")
+        elif svar_name in ("ZSTEP", "ZSTE"):
+            # $ZSTEP is a debugger intrinsic — SET $ZSTEP="code" defines
+            # the step action.  No runtime impact; emit as no-op.
+            ctx.emitter.line("pass  # SET $ZSTEP no-op (debugger intrinsic)")
         else:
             raise NotImplementedError(f"SET ${assignment.target.name} not supported")
         return
@@ -1473,24 +1606,28 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
     func = assignment.target
     args = func.arguments
 
-    # $EXTRACT(var, from_pos [, to_pos])
-    if len(args) < 2:
-        raise ValueError(f"LHS $EXTRACT requires at least 2 arguments, got {len(args)}")
+    # $EXTRACT(var [, from_pos [, to_pos]])
+    # 1-arg form: $E(X) is shorthand for $E(X,1,1) — replace first character
+    if len(args) < 1:
+        raise ValueError(f"LHS $EXTRACT requires at least 1 argument, got {len(args)}")
 
     # First argument must be a variable (local or global)
     first_arg = args[0]
     getter, setter = _build_lhs_getter_setter(first_arg, ctx)
 
-    # Generate from_pos expression
-    from_pos_expr = generate_expr(args[1], ctx)
-
-    # Generate to_pos expression (optional, 3rd argument)
-    if len(args) >= 3:
+    # Generate from_pos and to_pos expressions
+    if len(args) == 1:
+        # $E(X) = shorthand for $E(X,1,1) — replace first character
+        from_pos_expr = "1"
+        to_pos_expr = "1"
+    elif len(args) == 2:
+        from_pos_expr = generate_expr(args[1], ctx)
+        to_pos_expr = "None"
+    else:
+        from_pos_expr = generate_expr(args[1], ctx)
         arg2 = args[2]
         assert arg2 is not None  # Type narrowing for pyright
         to_pos_expr = generate_expr(arg2, ctx)
-    else:
-        to_pos_expr = "None"
 
     # Generate value expression
     assert assignment.value is not None, "LHS $EXTRACT requires a value"
@@ -1664,11 +1801,21 @@ def _generate_write(stmt: MWriteStatement, ctx: "GeneratorContext") -> None:
     """
     from m2py.asg.expressions import MIndirection
     from m2py.asg.enums import IndirectionType
+    from m2py.asg.expressions import MDeviceControl
 
     for arg in stmt.arguments:
         if isinstance(arg, MFormatControl):
             # Handle format control nodes
             _generate_format_control(arg, ctx)
+        elif isinstance(arg, MDeviceControl):
+            # Device control mnemonics (W /EOF, W /WAIT, etc.)
+            # Stub: emit a runtime call that can be handled per-device
+            keyword = arg.keyword.upper()
+            if arg.params:
+                params_code = ", ".join(generate_expr(p, ctx) for p in arg.params)
+                ctx.emitter.line(f"_rt.device_control({keyword!r}, {params_code})")
+            else:
+                ctx.emitter.line(f"_rt.device_control({keyword!r})")
         elif (
             isinstance(arg, MIndirection)
             and arg.indirection_type == IndirectionType.ARGUMENT
@@ -1953,8 +2100,13 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f"if {cond_expr}:")
         with ctx.emitter.indented():
             if stmt.then_scope and stmt.then_scope.statements:
+                _pre_count = len(ctx.emitter._lines)
                 for body_stmt in stmt.then_scope.statements:
                     generate_statement(body_stmt, ctx)
+                # Guard against body statements that generate no code
+                # (e.g., argumentless DO with body flattened into parent scope)
+                if len(ctx.emitter._lines) == _pre_count:
+                    ctx.emitter.line("pass")
             else:
                 ctx.emitter.line("pass")
         # Sync $TEST to runtime after multi-condition IF
@@ -1965,8 +2117,11 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line("if _test:")
         with ctx.emitter.indented():
             if stmt.then_scope and stmt.then_scope.statements:
+                _pre_count = len(ctx.emitter._lines)
                 for body_stmt in stmt.then_scope.statements:
                     generate_statement(body_stmt, ctx)
+                if len(ctx.emitter._lines) == _pre_count:
+                    ctx.emitter.line("pass")
             else:
                 ctx.emitter.line("pass")
         return
@@ -1978,8 +2133,11 @@ def _generate_if(stmt: MIfStatement, ctx: "GeneratorContext") -> None:
 
     with ctx.emitter.indented():
         if stmt.then_scope and stmt.then_scope.statements:
+            _pre_count = len(ctx.emitter._lines)
             for body_stmt in stmt.then_scope.statements:
                 generate_statement(body_stmt, ctx)
+            if len(ctx.emitter._lines) == _pre_count:
+                ctx.emitter.line("pass")
         else:
             ctx.emitter.line("pass")
 
@@ -1998,8 +2156,11 @@ def _generate_else(stmt: MElseStatement, ctx: "GeneratorContext") -> None:
 
     with ctx.emitter.indented():
         if stmt.body and stmt.body.statements:
+            _pre_count = len(ctx.emitter._lines)
             for body_stmt in stmt.body.statements:
                 generate_statement(body_stmt, ctx)
+            if len(ctx.emitter._lines) == _pre_count:
+                ctx.emitter.line("pass")
         else:
             ctx.emitter.line("pass")
 
@@ -3459,7 +3620,23 @@ def _generate_single_target_goto(
             postcond_ctx.__exit__(None, None, None)
         return
 
-    # Cross-label GOTO: pattern depends on strategy
+    # UNRESOLVED GOTO: target label doesn't exist in this routine.
+    # Generate a runtime error instead of a compile-time rejection so that
+    # routines with dead-code GOTOs to missing labels still compile.
+    # Skip this check inside inline XECUTE blocks — the target may exist
+    # in the enclosing routine's module globals (e.g., X "G B" where B is
+    # a label in the outer routine, not the XECUTE scope).
+    if (
+        not target.is_resolved
+        and target.target is None
+        and not target.routine
+        and not ctx.in_inline_xecute
+    ):
+        target_name = target.name or "unknown"
+        routine_name = ctx.routine.name or "unknown"
+        ctx.emitter.line(f'raise LabelNotFoundError("{target_name}", "{routine_name}")')
+        return
+
     # Cross-label GOTO: pattern depends on strategy
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
         # Inside inline XECUTE, call the label directly instead of returning
@@ -3887,6 +4064,20 @@ def _generate_goto_jump(target: "MCall", ctx: "GeneratorContext") -> None:
             # Different routine - genuine external GOTO
             _generate_external_goto(target, ctx)
             return
+
+    # UNRESOLVED GOTO: target label doesn't exist in this routine.
+    # Generate a runtime error so the routine compiles but errors if reached.
+    # Skip inside inline XECUTE — the target may exist in enclosing routine globals.
+    if (
+        not target.is_resolved
+        and target.target is None
+        and not target.routine
+        and not ctx.in_inline_xecute
+    ):
+        target_name = target.name or "unknown"
+        routine_name = ctx.routine.name or "unknown"
+        ctx.emitter.line(f'raise LabelNotFoundError("{target_name}", "{routine_name}")')
+        return
 
     # Local target - original behavior
     if ctx.strategy == GotoStrategy.TRAMPOLINE:
@@ -4841,9 +5032,28 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                     ctx.emitter.line("for _ind_var in _ind_var_list:")
                     with ctx.emitter.indented():
                         ctx.emitter.line("_scope.pop(_ind_var, None)")
+            elif ctx.strategy == GotoStrategy.TRAMPOLINE:
+                if ctx.uses_dynamic_locals:
+                    # TRAMPOLINE with dynamic locals: split the variable name
+                    # list and push each to state._new_stack for unwind on QUIT
+                    ctx.emitter.line(
+                        f"for _ind_var in _rt._split_argument_list(str({value_expr})):"
+                    )
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            "state._new_stack.append(('var', _ind_var, "
+                            "state._locals.pop(_ind_var, None)))"
+                        )
+                else:
+                    # TRAMPOLINE without dynamic locals: pop from _scope
+                    ctx.emitter.line(
+                        f"for _ind_var in _rt._split_argument_list(str({value_expr})):"
+                    )
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("_scope.pop(_ind_var, None)")
             else:
                 raise NotImplementedError(
-                    "NEW indirection not supported in TRAMPOLINE strategy"
+                    f"NEW indirection not supported for strategy {ctx.strategy}"
                 )
         elif isinstance(var, MSpecialVariable):
             # Handle NEW for special variables ($ETRAP, $ECODE, $ZERROR, etc.)
@@ -5246,6 +5456,7 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         ctx: Generator context
     """
     from m2py.asg.expressions import MIndirection as MIndirectionType
+    from m2py.asg.expressions import MGlobal
     from m2py.codegen.indirection import generate_name_indirection_write
 
     if target.variable is None:
@@ -5301,6 +5512,10 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
         return
 
     # Get the target variable name and determine storage location
+    is_global_target = isinstance(target.variable, MGlobal)
+    global_name = ""
+    subs_tuple_str = "()"
+
     if isinstance(target.variable, MVariable):
         var_name = translate_name(target.variable.name)
         # Determine how to store the variable based on strategy
@@ -5316,68 +5531,67 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
             # TRAMPOLINE var not in state_vars — store in _scope for
             # cross-routine visibility and to avoid F841 bare-local lint
             storage_target = f"_scope.setdefault({var_name!r}, MArray()).value"
+    elif is_global_target:
+        # Global variable target (e.g., R ^TMP($J,$I(^TMP($J)))):
+        # Pre-evaluate subscripts into temp vars, then use _rt.globals.set()
+        # to store. This avoids generate_expr() producing a non-assignable LHS
+        # (e.g., _rt.globals.get('TMP', (...)) or '' = value is not valid Python).
+        global_var: MGlobal = target.variable  # type: ignore[assignment]
+        global_name = global_var.name
+        # Pre-evaluate each subscript into a temp variable so side effects
+        # (like $INCREMENT) happen exactly once and in order
+        sub_temps: list[str] = []
+        for i, sub_expr in enumerate(global_var.subscripts or []):
+            sub_code = generate_expr(sub_expr, ctx, subscript_context=True)
+            temp = f"_rsub{i}"
+            ctx.emitter.line(f"{temp} = {sub_code}")
+            sub_temps.append(temp)
+        if sub_temps:
+            subs_tuple = f"({', '.join(sub_temps)},)"
+        else:
+            subs_tuple = "()"
+        subs_tuple_str = subs_tuple
+        storage_target = None  # Marker: use _rt.globals.set() below
     else:
-        # Could be array subscript or global - generate expression
+        # Could be array subscript - generate expression
         storage_target = generate_expr(target.variable, ctx)
 
     if target.fixed_length is not None and target.timeout is not None:
         # R X#n:t — maxlen + timeout
         maxlen_expr = generate_expr(target.fixed_length, ctx)
         timeout_expr = generate_expr(target.timeout, ctx)
-        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            ctx.emitter.line(
-                f"_read_val, _read_key, _test = _rt.read_maxlen_timeout("
-                f"int({maxlen_expr}), {timeout_expr})"
-            )
-            ctx.emitter.line("_rt._test = _test")
-            ctx.emitter.line("_rt._current_device.key = _read_key")
-            ctx.emitter.line(f"{storage_target} = _read_val")
-        else:
-            ctx.emitter.line(
-                f"_read_val, _read_key, _test = _rt.read_maxlen_timeout("
-                f"int({maxlen_expr}), {timeout_expr})"
-            )
-            ctx.emitter.line("_rt._test = _test")
-            ctx.emitter.line("_rt._current_device.key = _read_key")
-            ctx.emitter.line(f"{storage_target} = _read_val")
+        ctx.emitter.line(
+            f"_read_val, _read_key, _test = _rt.read_maxlen_timeout("
+            f"int({maxlen_expr}), {timeout_expr})"
+        )
+        ctx.emitter.line("_rt._test = _test")
+        ctx.emitter.line("_rt._current_device.key = _read_key")
     elif target.fixed_length is not None:
         # R X#n — maxlen read
         maxlen_expr = generate_expr(target.fixed_length, ctx)
-        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            ctx.emitter.line(
-                f"_read_val, _read_key = _rt.read_maxlen(int({maxlen_expr}))"
-            )
-            ctx.emitter.line("_rt._current_device.key = _read_key")
-            ctx.emitter.line(f"{storage_target} = _read_val")
-        else:
-            ctx.emitter.line(
-                f"_read_val, _read_key = _rt.read_maxlen(int({maxlen_expr}))"
-            )
-            ctx.emitter.line("_rt._current_device.key = _read_key")
-            ctx.emitter.line(f"{storage_target} = _read_val")
+        ctx.emitter.line(f"_read_val, _read_key = _rt.read_maxlen(int({maxlen_expr}))")
+        ctx.emitter.line("_rt._current_device.key = _read_key")
     elif target.timeout is not None:
         # Timeout read: R X:n
         timeout_expr = generate_expr(target.timeout, ctx)
-        # Use runtime method for timeout read - returns (value, test_flag)
-        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Need to unpack properly for scope storage
-            ctx.emitter.line(
-                f"_read_val, _test = _rt.read_line_timeout({timeout_expr})"
-            )
-            ctx.emitter.line("_rt._test = _test")
-            ctx.emitter.line(f"{storage_target} = _read_val")
-        else:
-            ctx.emitter.line(
-                f"_read_val, _test = _rt.read_line_timeout({timeout_expr})"
-            )
-            ctx.emitter.line("_rt._test = _test")
-            ctx.emitter.line(f"{storage_target} = _read_val")
+        ctx.emitter.line(f"_read_val, _test = _rt.read_line_timeout({timeout_expr})")
+        ctx.emitter.line("_rt._test = _test")
     elif target.is_char_read:
         # Single character read: R *X
-        ctx.emitter.line(f"{storage_target} = _rt.read_char()")
+        ctx.emitter.line("_read_val = _rt.read_char()")
     else:
         # Basic read: R X
-        ctx.emitter.line(f"{storage_target} = _rt.read_line()")
+        ctx.emitter.line("_read_val = _rt.read_line()")
+
+    # Store the read value into the target
+    if is_global_target:
+        # Use _rt.globals.set() for global targets — avoids non-assignable LHS
+        # from generate_expr() (e.g., `_rt.globals.get(...) or ''`)
+        ctx.emitter.line(
+            f"_rt.globals.set({global_name!r}, {subs_tuple_str}, m_str(_read_val))"
+        )
+    else:
+        ctx.emitter.line(f"{storage_target} = _read_val")
 
 
 # =============================================================================
@@ -5944,11 +6158,12 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         """
         result = compile_mumps_line(mumps_code)
         if isinstance(result, MParseError):
-            # Include original code in error message for context
-            escaped_code = mumps_code.replace('"', '\\"')
-            ctx.emitter.line(
-                f"raise SyntaxError(\"XECUTE parse error in '{escaped_code}': {result.message}\")"
-            )
+            # Include original code in error message for context.
+            # Use repr() to safely escape all quotes in the message.
+            error_msg = f"XECUTE parse error in {mumps_code!r}: {result.message}"
+            # Double-escape for code generation: the repr() already handles
+            # inner quotes, so we just need to emit a valid Python string.
+            ctx.emitter.line(f"raise SyntaxError({error_msg!r})")
             return
 
         # Generate Python for each structured statement
@@ -6710,6 +6925,29 @@ def _generate_zlink(stmt: MZLinkStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f"_rt.zlink({routine_expr})")
 
 
+def _generate_zload(stmt: MZLoadStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZLOAD command.
+
+    ZLOAD loads a routine into the routine buffer for editing.
+    In transpiler context, we treat it the same as ZLINK since
+    both load a routine; editing semantics don't apply in Python.
+
+    Example:
+        ZL "MYROUTINE"
+
+    Args:
+        stmt: MZLoadStatement node
+        ctx: Generator context
+    """
+    if not stmt.args:
+        ctx.emitter.line("pass  # ZLOAD (no args)")
+        return
+
+    for arg in stmt.args:
+        routine_expr = generate_expr(arg, ctx)
+        ctx.emitter.line(f"_rt.zlink({routine_expr})")
+
+
 def _generate_zsystem(stmt: MZSystemStatement, ctx: "GeneratorContext") -> None:
     """Generate Python code for ZSYSTEM command.
 
@@ -6803,7 +7041,13 @@ def _generate_zgoto(stmt: MZGotoStatement, ctx: "GeneratorContext") -> None:
 
         if arg.target is not None:
             # ZGOTO level:label - unwind and transfer
-            target_expr = generate_expr(arg.target, ctx)
+            # arg.target may be an MCall (label reference) — extract name as string
+            from m2py.asg.elements import MCall as MCallType
+
+            if isinstance(arg.target, MCallType):
+                target_expr = repr(arg.target.name or "")
+            else:
+                target_expr = generate_expr(arg.target, ctx)
             ctx.emitter.line(
                 f"raise _rt.ZGotoException({level_expr}, {target_expr})  # ZGOTO"
             )
@@ -6837,6 +7081,46 @@ def _generate_zhalt(stmt: MZHaltStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f"raise SystemExit(int({exit_expr}))  # ZHALT")
     else:
         ctx.emitter.line("raise SystemExit(0)  # ZHALT")
+
+
+def _generate_zprint(stmt: MZPrintStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZPRINT command.
+
+    ZPRINT displays source code of a routine. In transpiled code this is a
+    no-op since the original MUMPS source is not available at runtime.
+
+    Example:
+        ZPRINT label^routine
+        ZP
+
+    Args:
+        stmt: MZPrintStatement node
+        ctx: Generator context
+    """
+    ctx.emitter.line("pass  # ZPRINT (no-op in transpiled code)")
+
+
+def _generate_zmessage(stmt: MZMessageStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZMESSAGE command.
+
+    ZMESSAGE generates a MUMPS error by code number. In transpiled code,
+    we call the runtime's m_zmessage helper which maps codes to error text,
+    and raise it as an exception (matching YDB/IRIS behavior).
+
+    Example:
+        ZMESSAGE 150372994
+        ZM error_code
+
+    Args:
+        stmt: MZMessageStatement node
+        ctx: Generator context
+    """
+    if stmt.args:
+        for arg in stmt.args:
+            code_expr = generate_expr(arg, ctx)
+            ctx.emitter.line(f"raise RuntimeError(m_zmessage({code_expr}))  # ZMESSAGE")
+    else:
+        ctx.emitter.line("pass  # ZMESSAGE (no args)")
 
 
 __all__ = [

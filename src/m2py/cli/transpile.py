@@ -243,6 +243,41 @@ def _transpile_one(args: tuple[str, str, bool]) -> tuple[str, str | None]:
         return ("", f"{type(e).__name__}: {e}")
 
 
+def _transpile_one_with_warnings(
+    args: tuple[str, str, bool],
+) -> tuple[str, str | None, list[str]]:
+    """Worker function for parallel transpilation with warning capture.
+
+    Like _transpile_one but also captures and returns warnings emitted
+    during transpilation.
+
+    Args:
+        args: Tuple of (source_code, routine_name, validate)
+
+    Returns:
+        Tuple of (python_code, error_message_or_none, list_of_warning_messages)
+    """
+    import warnings
+
+    source, routine_name, validate = args
+    captured_warnings: list[str] = []
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            code = generate_python(source, routine_name=routine_name, validate=validate)
+            error = None
+        except Exception as e:
+            code = ""
+            error = f"{type(e).__name__}: {e}"
+
+    # Extract warning messages
+    for w in caught:
+        captured_warnings.append(str(w.message))
+
+    return (code, error, captured_warnings)
+
+
 def transpile_sources(
     items: Sequence[tuple[str, str]],
     *,
@@ -288,6 +323,39 @@ def transpile_sources(
         return list(executor.map(_transpile_one, args_list))
 
 
+def transpile_sources_with_warnings(
+    items: Sequence[tuple[str, str]],
+    *,
+    max_workers: int | None = None,
+    validate: bool = True,
+) -> list[tuple[str, str | None, list[str]]]:
+    """Transpile multiple MUMPS sources in parallel, capturing warnings.
+
+    Like transpile_sources but also captures and returns warnings emitted
+    during each transpilation. Warnings are captured per-routine in each
+    worker process and returned to the caller.
+
+    Args:
+        items: Sequence of (source_code, routine_name) tuples
+        max_workers: Maximum parallel workers (default: CPU count).
+        validate: Whether to validate generated Python with ast.parse()
+
+    Returns:
+        List of (python_code, error_or_none, warnings_list) in same order as input.
+    """
+    if not items:
+        return []
+
+    args_list = [(src, name, validate) for src, name in items]
+
+    # Sequential for small batches or when max_workers=1
+    if len(items) <= 4 or max_workers == 1:
+        return [_transpile_one_with_warnings(a) for a in args_list]
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        return list(executor.map(_transpile_one_with_warnings, args_list))
+
+
 # =============================================================================
 # Core Transpilation
 # =============================================================================
@@ -314,8 +382,11 @@ def transpile_file(
     routine_name = input_path.stem.upper()
 
     try:
-        # Read source
-        source = input_path.read_text(encoding="utf-8")
+        # Read source (try UTF-8 first, fall back to Latin-1 for legacy files)
+        try:
+            source = input_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            source = input_path.read_text(encoding="latin-1")
     except OSError as e:
         return TranspileResult(
             input_path=input_path,
@@ -428,7 +499,10 @@ def transpile_paths(
     for input_path, base_dir in m_files:
         output_path = _compute_output_path(input_path, base_dir, out_dir)
         try:
-            source = input_path.read_text(encoding="utf-8")
+            try:
+                source = input_path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                source = input_path.read_text(encoding="latin-1")
             file_specs.append((input_path, output_path, source))
         except OSError as e:
             results.append(

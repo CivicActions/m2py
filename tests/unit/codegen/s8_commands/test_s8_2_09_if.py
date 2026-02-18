@@ -154,3 +154,80 @@ class TestIfCommandCodegen:
         result = execute_mumps('TEST\n I 1 I  W "YES"\n Q\n')
         assert result.output == "YES"
         assert result.success is True
+
+
+# =============================================================================
+# Empty TRAMPOLINE Block (024-vista-transpilation-fixes, Contract 3)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestEmptyTrampolineBlock:
+    """Contract 3: Empty IF/ELSE blocks must get 'pass' to avoid SyntaxError.
+
+    Validates FR-003: empty indented blocks in TRAMPOLINE strategy.
+    """
+
+    def test_empty_block_if_goto(self, execute_mumps):
+        """Contract 3 happy path: IF with GOTO in TRAMPOLINE mode."""
+        code = 'EMPTYB\n S X=1 I X G DONE\n W "not reached",!\nDONE W "done",!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "done\n"
+
+    def test_empty_block_compiles(self, generate_python):
+        """Generated Python for GOTO-bearing code must compile()."""
+        code = 'EMPTYB\n S X=1 I X G DONE\n W "not reached",!\nDONE W "done",!\n Q\n'
+        py_code = generate_python(code)
+        compile(py_code, "<test>", "exec")
+
+    def test_if_with_argumentless_do(self, generate_python):
+        """IF with argumentless DO (multi-condition) must compile."""
+        code = 'TEST\n S X=1,Y=1\n I X,Y D\n . W "both true",!\n Q\n'
+        py_code = generate_python(code)
+        compile(py_code, "<test>", "exec")
+
+    def test_if_false_no_body_compiles(self, generate_python):
+        """IF false with empty body (e.g., G after IF) must compile."""
+        code = 'TEST\n S X=0 I X G DONE\n W "ran",!\nDONE W "done",!\n Q\n'
+        py_code = generate_python(code)
+        compile(py_code, "<test>", "exec")
+
+    def test_else_empty_block_compiles(self, generate_python):
+        """ELSE with empty body must compile (pass inserted)."""
+        code = 'TEST\n I 1 G DONE\n E  G DONE\nDONE W "ok",!\n Q\n'
+        py_code = generate_python(code)
+        compile(py_code, "<test>", "exec")
+
+    def test_multi_target_goto_empty_block(self, generate_python):
+        """G A:c1,B:c2,C:c3 — multi-target GOTO chain (FHWOR6 pattern)."""
+        code = (
+            "TEST S CHK=2\n"
+            " G A:CHK=1,B:CHK=2,C:CHK=3\n"
+            ' W "fallthrough",! Q\n'
+            'A W "A",! Q\nB W "B",! Q\nC W "C",! Q\n'
+        )
+        result = generate_python(code)
+        assert isinstance(result, str)
+        compile(result, "<test>", "exec")
+
+    def test_if_not_paren_with_do_quit(self, generate_python):
+        """I '(DFN>0) D label Q — IF-NOT-paren-DO-QUIT (HMPDMC pattern)."""
+        code = 'TEST S DFN=5\n I \'(DFN>0) W "bad",! Q\n W "good",!\n Q\n'
+        result = generate_python(code)
+        assert isinstance(result, str)
+        compile(result, "<test>", "exec")
+
+    def test_if_goto_guard_clause(self, generate_python):
+        """IF cond ... G label — IF-GOTO guard clause (SCMCCV pattern)."""
+        code = 'TEST S OK=1\n IF \'OK W "not ok",! G DONE\n W "ok",!\nDONE Q\n'
+        result = generate_python(code)
+        assert isinstance(result, str)
+        compile(result, "<test>", "exec")
+
+    def test_if_not_quit_guard(self, generate_python):
+        """I 'START Q — IF-QUIT guard clause (FSCEVENP pattern)."""
+        code = 'TEST S X=0\n I \'X Q\n W "X is nonzero",!\n Q\n'
+        result = generate_python(code)
+        assert isinstance(result, str)
+        compile(result, "<test>", "exec")

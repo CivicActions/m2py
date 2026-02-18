@@ -224,6 +224,96 @@ def validate_analysis_complete(routine: MRoutine) -> None:
             # The codegen correctly handles None by generating 'return' statements.
 
 
+def _fix_empty_blocks(code: str) -> str:
+    """Insert 'pass' into empty if/elif/else blocks.
+
+    Scans generated Python for if/elif/else statements whose body is empty
+    (next non-blank line is at same or lower indentation). Inserts 'pass'
+    to make the block syntactically valid.
+
+    These arise when conditional DO or IF at end-of-line produce
+    an if block whose body is at a different scope level.
+    """
+    lines = code.split("\n")
+    result: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.lstrip()
+        if stripped.startswith(("if ", "elif ", "else:")) and stripped.endswith(":"):
+            indent = len(line) - len(stripped)
+            # Look at next non-blank line
+            j = i + 1
+            while j < len(lines) and lines[j].strip() == "":
+                j += 1
+            if j >= len(lines):
+                # End of file — empty block
+                result.append(line)
+                result.append(" " * (indent + 4) + "pass")
+                i += 1
+                continue
+            next_indent = len(lines[j]) - len(lines[j].lstrip())
+            if next_indent <= indent:
+                # Next line is at same or lower indentation → empty block
+                result.append(line)
+                result.append(" " * (indent + 4) + "pass")
+                i += 1
+                continue
+        result.append(line)
+        i += 1
+    return "\n".join(result)
+
+
+def _fix_import_in_elif_chain(code: str) -> str:
+    """Move import statements that break if/elif/else chains.
+
+    When codegen emits an ``import X`` between an ``if`` block and an
+    ``elif``/``else``, the generated Python is invalid.  This function
+    detects this pattern and hoists the import above the ``if`` block.
+    """
+    lines = code.split("\n")
+    result: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        # Detect: current line is `import X` (or `from X import Y`)
+        # and the NEXT non-blank line is `elif` or `else:` at the same indent
+        if (
+            stripped.startswith("import ") or stripped.startswith("from ")
+        ) and i + 1 < len(lines):
+            # Find next non-blank line
+            j = i + 1
+            while j < len(lines) and lines[j].strip() == "":
+                j += 1
+            if j < len(lines):
+                next_stripped = lines[j].lstrip()
+                next_indent = len(lines[j]) - len(next_stripped)
+                if next_indent == indent and next_stripped.startswith(
+                    ("elif ", "else:")
+                ):
+                    # This import breaks an if/elif chain.
+                    # Hoist it above the preceding if block.
+                    # Walk backwards to find the `if` at the same indentation.
+                    insert_pos = len(result) - 1
+                    while insert_pos >= 0:
+                        prev = result[insert_pos]
+                        prev_stripped = prev.lstrip()
+                        prev_indent = len(prev) - len(prev_stripped)
+                        if prev_indent == indent and prev_stripped.startswith("if "):
+                            break
+                        insert_pos -= 1
+                    if insert_pos >= 0:
+                        result.insert(insert_pos, line)
+                        i += 1
+                        continue
+        result.append(line)
+        i += 1
+    return "\n".join(result)
+
+
 class RoutineGenerator:
     """Generates Python code for a complete MUMPS routine.
 
@@ -314,6 +404,16 @@ class RoutineGenerator:
 
         code = self._emitter.get_code()
 
+        # Post-processing: fix empty if/elif/else blocks by inserting 'pass'.
+        # These arise when conditional DO or IF at end-of-line produce
+        # an if block whose body is at a different scope level.
+        code = _fix_empty_blocks(code)
+
+        # Post-processing: hoist import statements that break if/elif/else chains.
+        # These arise when codegen emits an inline import for DO ^ROUTINE
+        # between an if block's body and its elif/else continuation.
+        code = _fix_import_in_elif_chain(code)
+
         # Validate generated Python is syntactically correct
         try:
             ast.parse(code)
@@ -353,10 +453,11 @@ class RoutineGenerator:
         # Import runtime helpers: LHS functions, $DATA, $ORDER, $QUERY, $SELECT,
         # $PIECE, $EXTRACT, $GET, $FIND, $NAME/$QLENGTH/$QSUBSCRIPT, $FNUMBER,
         # sorts-after, pattern_match, NewScopeManager, READ helpers, m_var_value,
-        # _format_subscript, unwind_new_stack, $ZDATE, $ZMESSAGE.
+        # _format_subscript, unwind_new_stack, $ZDATE, $ZMESSAGE,
+        # IRIS vendor: $REPLACE, $ZBOOLEAN, $ZU, $ZF, $ZCONVERT, stubs.
         # Contains ([) and follows (]) are inlined as Python expressions.
         ctx.emitter.line(
-            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_increment, m_increment_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, m_translate, NewScopeManager, m_var_value, _format_subscript, unwind_new_stack, m_zdate, m_zmessage"
+            "from m2py.runtime.helpers import m_set_piece, m_set_extract, m_data, m_data_global, m_order, m_order_global, m_query, m_query_global, _raise_select_false, m_piece, m_extract, m_get, m_get_global, m_increment, m_increment_global, m_find, m_name, m_qlength, m_qsubscript, m_justify, m_fnumber, m_sorts_after, m_pattern_match, m_translate, NewScopeManager, m_var_value, _format_subscript, unwind_new_stack, m_zdate, m_zmessage, m_replace, m_zboolean, m_zu, m_zf, m_zcall_stub, m_view_func_stub, m_zconvert, _rt_os_environ_get, m_zgetjpi, m_zparse, m_zbitand, m_zbitor, m_zbitxor, m_zbitnot, m_zbitstr, m_zabs, m_now, m_ztime, m_zgetsyi, _rt_os_getcwd"
         )
         # Import $RANDOM helper
         ctx.emitter.line("from m2py.codegen.expressions import _m_random_checked")

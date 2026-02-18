@@ -55,24 +55,24 @@ class TestWriteCommandCodegen:
         assert result.success is True
 
     def test_write_device_control_not_supported(self, generate_python):
-        """WRITE device control (/mnemonic) raises NotImplementedError.
+        """WRITE device control (/mnemonic) generates device_control() stub call.
 
         Device control mnemonics like /CUP(row,col) are terminal-specific
-        sequences that cannot be transpiled to pure Python.
+        sequences that generate a runtime stub call.
 
-        Spec 015: Document that device control mnemonics are not supported.
+        Spec 015: Device control mnemonics generate stub calls.
         """
         code = "TEST\n W /CUP(10,5)\n Q\n"
-        with pytest.raises(NotImplementedError, match="DeviceControl"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.device_control(" in result
 
     def test_write_device_control_with_string_raises_not_implemented(
         self, generate_python
     ):
-        """WRITE with device control mnemonic and string raises NotImplementedError."""
+        """WRITE with device control mnemonic and string generates device_control() calls."""
         code = 'TEST\n W /BOLD,"text",/NORMAL\n Q\n'
-        with pytest.raises(NotImplementedError, match="DeviceControl"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.device_control(" in result
 
 
 @pytest.mark.codegen
@@ -370,3 +370,47 @@ class TestZWriteAllLocalsCodegen:
         """ZWR A — dump specific variable."""
         result = execute_mumps('TEST\n S A(1)="x",A(2)="y"\n ZWR A\n Q\n')
         assert "A(" in result.output
+
+
+# =============================================================================
+# DeviceControl stub handling (024-vista-transpilation-fixes)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestDeviceControlCodegen:
+    """DeviceControl mnemonics generate stub runtime calls."""
+
+    def test_device_control_transpiles(self, generate_python):
+        """W /CUP(10,5) generates device_control() call."""
+        code = "TEST\n W /CUP(10,5)\n Q\n"
+        result = generate_python(code)
+        assert "_rt.device_control(" in result
+
+    def test_device_control_no_params(self, generate_python):
+        """W /EOF generates device_control() call without params."""
+        code = "TEST\n W /EOF\n Q\n"
+        result = generate_python(code)
+        assert "_rt.device_control(" in result
+
+    def test_device_control_executes(self, execute_mumps):
+        """DeviceControl stub doesn't crash at runtime."""
+        code = 'TEST\n W /EOF\n W "ok",!\n Q\n'
+        result = execute_mumps(code)
+        assert result.success is True
+        assert "ok" in result.output
+
+    def test_device_control_keyword_preserved(self, generate_python):
+        """Device control keyword is passed as string argument."""
+        code = "TEST\n W /SGR(1)\n Q\n"
+        result = generate_python(code)
+        assert "device_control" in result
+
+    def test_device_control_with_set_x(self, generate_python):
+        """W X S $X=0 W /EOF — SET $X + device control combo (XUSHSH pattern)."""
+        code = 'TEST\n W "Hello"\n S $X=0\n W /EOF\n Q\n'
+        result = generate_python(code)
+        assert isinstance(result, str)
+        assert "_rt.set_x(" in result
+        assert "_rt.device_control(" in result
+        compile(result, "<test>", "exec")

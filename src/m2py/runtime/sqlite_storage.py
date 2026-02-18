@@ -103,6 +103,9 @@ class SQLiteGlobalStorage:
         # Naked indicator — per-instance (per-process) state
         self._naked_indicator: tuple[str, tuple[str, ...]] | None = None
 
+        # $ZREFERENCE — last global reference string
+        self._last_global_ref: str = ""
+
         # Transaction support
         self._tlevel: int = 0
         self._savepoint_counter: int = 0
@@ -161,11 +164,25 @@ class SQLiteGlobalStorage:
         return tuple(json.loads(json_str))
 
     def _update_naked_indicator(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Update naked indicator after global access."""
+        """Update naked indicator and $ZREFERENCE after global access."""
+        # Update $ZREFERENCE
+        if subscripts:
+            subs_str = ",".join(
+                f'"{s}"' if not s.lstrip("-").isdigit() else s for s in subscripts
+            )
+            self._last_global_ref = f"^{name}({subs_str})"
+        else:
+            self._last_global_ref = f"^{name}"
+
         if subscripts:
             self._naked_indicator = (name, subscripts[:-1])
         else:
             self._naked_indicator = None
+
+    @property
+    def last_global_ref(self) -> str:
+        """Return the last global reference string ($ZREFERENCE)."""
+        return self._last_global_ref
 
     # =========================================================================
     # Core Global Operations

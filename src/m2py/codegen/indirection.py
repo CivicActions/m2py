@@ -572,10 +572,15 @@ def generate_data_indirection_name(
             sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
             all_subs.extend(sub_exprs)
         if len(all_subs) == 1:
-            subs_fstr = f"f'({{_format_subscript({all_subs[0]})}})'"
+            # Use string concatenation instead of f-string to avoid nested
+            # quote incompatibility on Python 3.10 (PEP 701 is 3.12+)
+            subs_fstr = "'(' + _format_subscript(" + all_subs[0] + ") + ')'"
         else:
-            subs_parts = ",".join(f"{{_format_subscript({s})}}" for s in all_subs)
-            subs_fstr = f"f'({subs_parts})'"
+            # Multiple subscripts: build comma-separated format
+            subs_parts = " + ',' + ".join(
+                "_format_subscript(" + s + ")" for s in all_subs
+            )
+            subs_fstr = "'(' + " + subs_parts + " + ')'"
     else:
         subs_fstr = "''"
 

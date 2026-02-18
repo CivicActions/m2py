@@ -1886,5 +1886,75 @@ class TestForwardGotoIfCodegen:
 
 
 # =============================================================================
+# Computed GOTO @expr (024-vista-transpilation-fixes, Contract 9)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestComputedGotoCodegen:
+    """Contract 9: Computed GOTO via @expr.
+
+    Validates FR-009: G @$S(%=1:"A",%=2:"B",1:"C") dispatches correctly.
+    """
+
+    def test_contract_9_computed_goto_select(self, execute_mumps):
+        """Contract 9: G @$S(%=2:"B") dispatches to B."""
+        code = (
+            'TEST\n S %=2 G @$S(%=1:"A",%=2:"B",1:"C")\n'
+            'A W "A",! Q\nB W "B",! Q\nC W "C",! Q\n'
+        )
+        result = execute_mumps(code)
+        assert result.success is True
+        assert result.output == "B\n"
+
+    def test_computed_goto_first_match(self, execute_mumps):
+        """Computed GOTO with first $SELECT match."""
+        code = (
+            'TEST\n S %=1 G @$S(%=1:"X",%=2:"Y",1:"Z")\n'
+            'X W "X",! Q\nY W "Y",! Q\nZ W "Z",! Q\n'
+        )
+        result = execute_mumps(code)
+        assert result.output == "X\n"
+
+    def test_computed_goto_default(self, execute_mumps):
+        """Computed GOTO falls through to default (1:...)."""
+        code = (
+            'TEST\n S %=99 G @$S(%=1:"X",%=2:"Y",1:"Z")\n'
+            'X W "X",! Q\nY W "Y",! Q\nZ W "Z",! Q\n'
+        )
+        result = execute_mumps(code)
+        assert result.output == "Z\n"
+
+    def test_computed_goto_variable_target(self, execute_mumps):
+        """G @VAR where VAR contains label name."""
+        code = 'TEST\n S TGT="DONE" G @TGT\n Q\nDONE W "done",! Q\n'
+        result = execute_mumps(code)
+        assert result.output == "done\n"
+
+    def test_computed_goto_with_concatenation(self, execute_mumps):
+        """G @("LAB"_N) — computed target via string concatenation."""
+        code = 'TEST\n S N=2 G @("LAB"_N)\n Q\nLAB1 W "1",! Q\nLAB2 W "2",! Q\n'
+        result = execute_mumps(code)
+        assert result.output == "2\n"
+
+    def test_computed_goto_compiles(self, generate_python):
+        """Computed GOTO generates compilable Python."""
+        code = 'TEST\n S %=1 G @$S(%=1:"A",1:"B")\nA Q\nB Q\n'
+        py_code = generate_python(code)
+        compile(py_code, "<test>", "exec")
+
+    def test_computed_goto_multi_select(self, generate_python):
+        """G @$S(%=1:"A",%=0:"B",%=2:"C",1:"D") — multi-arm $SELECT GOTO (LAJOB pattern)."""
+        code = (
+            "TEST S %=2\n"
+            ' G @$S(%=1:"A",%=0:"B",%=2:"C",1:"D")\n'
+            'A W "A",! Q\nB W "B",! Q\nC W "C",! Q\nD W "D",! Q\n'
+        )
+        result = generate_python(code)
+        assert isinstance(result, str)
+        compile(result, "<test>", "exec")
+
+
+# =============================================================================
 # XECUTE with postconditions
 # =============================================================================

@@ -1,0 +1,33 @@
+{
+  "description": "Reference baseline for VistA-VEHU-M transpilation scan",
+  "created": "2026-02-18T14:23:50",
+  "total_routines": 39304,
+  "expected_failures": 5,
+  "expected_warnings": 8,
+  "failed_routines": [
+    "ZISG",
+    "ZISG1",
+    "ZISG2",
+    "ZISG3",
+    "ZZBACSUA"
+  ],
+  "warning_routines": [
+    "A1BFJOBR",
+    "A1CBRPT1",
+    "AQDBAR",
+    "AQDBAR1",
+    "LRZLIST",
+    "ZBCK1",
+    "ZZPSODEL"
+  ],
+  "warning_messages": [
+    "UNRESOLVED GOTO to DAT in label TEST of routine ZBCK1 \u2014 will raise LabelNotFoundError at runtime if reached",
+    "UNRESOLVED GOTO to ERR in label TEST of routine ZBCK1 \u2014 will raise LabelNotFoundError at runtime if reached",
+    "UNRESOLVED GOTO to EXIT in label EN of routine A1BFJOBR \u2014 will raise LabelNotFoundError at runtime if reached",
+    "UNRESOLVED GOTO to K in label DEV of routine AQDBAR1 \u2014 will raise LabelNotFoundError at runtime if reached",
+    "UNRESOLVED GOTO to K in label SET of routine AQDBAR \u2014 will raise LabelNotFoundError at runtime if reached",
+    "UNRESOLVED GOTO to LRLIST in label LRZLIST of routine LRZLIST \u2014 will raise LabelNotFoundError at runtime if reached",
+    "UNRESOLVED GOTO to PSORXDL in label ZZPSODEL of routine ZZPSODEL \u2014 will raise LabelNotFoundError at runtime if reached",
+    "UNRESOLVED GOTO to QUIT in label A1CBRPT1 of routine A1CBRPT1 \u2014 will raise LabelNotFoundError at runtime if reached"
+  ]
+}

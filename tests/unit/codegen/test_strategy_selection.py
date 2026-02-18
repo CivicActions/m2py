@@ -9,7 +9,6 @@ from m2py.asg.elements import MCall, MLabel, MRoutine, MScope
 from m2py.asg.enums import GotoType
 from m2py.asg.statements import MGotoStatement
 from m2py.codegen import (
-    UnsupportedFeatureError,
     _check_unsupported_gotos,
     _select_goto_strategy,
 )
@@ -74,24 +73,35 @@ class TestCheckUnsupportedGotos:
         routine.add_label(label)
         return routine
 
-    def test_unresolved_goto_raises_error(self):
-        """T045a: UNRESOLVED GOTO raises UnsupportedFeatureError.
+    def test_unresolved_goto_emits_warning(self):
+        """T045a: UNRESOLVED GOTO emits warning instead of raising.
 
-        Pattern: goto_type=UNRESOLVED → error with Spec 012 reference
+        Pattern: goto_type=UNRESOLVED → warning about runtime fallback
         """
         routine = self._create_routine_with_goto(GotoType.UNRESOLVED)
 
-        with pytest.raises(UnsupportedFeatureError, match="UNRESOLVED GOTO"):
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
             _check_unsupported_gotos(routine)
 
-    def test_unresolved_goto_error_message(self):
-        """Error message for UNRESOLVED GOTO."""
+        assert len(w) == 1
+        assert "UNRESOLVED GOTO" in str(w[0].message)
+        assert "LabelNotFoundError" in str(w[0].message)
+
+    def test_unresolved_goto_warning_message(self):
+        """Warning message for UNRESOLVED GOTO includes target info."""
         routine = self._create_routine_with_goto(GotoType.UNRESOLVED)
 
-        with pytest.raises(
-            UnsupportedFeatureError, match="UNRESOLVED GOTO not supported"
-        ):
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
             _check_unsupported_gotos(routine)
+
+        assert len(w) == 1
+        assert "LabelNotFoundError at runtime" in str(w[0].message)
 
     def test_external_goto_raises_error(self):
         """EXTERNAL GOTO is supported and does not raise.

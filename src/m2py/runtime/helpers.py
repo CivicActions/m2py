@@ -18,6 +18,9 @@ These helpers are imported in generated code and called at runtime.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import warnings
 from decimal import Decimal, ROUND_HALF_UP, localcontext
 from typing import TYPE_CHECKING, Any, Callable, Tuple
 
@@ -2073,3 +2076,618 @@ def m_zmessage(code: int | str) -> str:
     if msg:
         return f"%YDB-E-{msg}"
     return str(code_int)
+
+
+# =============================================================================
+# IRIS/Caché Vendor Functions (024-vista-transpilation-fixes, US4)
+# =============================================================================
+
+
+def m_replace(
+    string: str,
+    search: str,
+    replace: str,
+    start: int = 1,
+    count: int = -1,
+    case: int = 0,
+) -> str:
+    """IRIS $REPLACE implementation.
+
+    Replace occurrences of *search* in *string* with *replace*.
+
+    Args:
+        string: Source string.
+        search: Substring to find. Empty string → return *string* unchanged.
+        replace: Replacement text.
+        start: 1-based start position. Characters before *start* are **dropped**
+               from the result (IRIS semantics).
+        count: Max replacements (−1 = all).
+        case: 0 = case-sensitive, 1 = case-insensitive.
+
+    Returns:
+        Modified string (from *start* onward).
+    """
+    string = str(string)
+    search = str(search)
+    replace = str(replace)
+
+    if not search:
+        # Empty search → return string from start position
+        return string[max(0, start - 1) :]
+
+    # Slice from start (1-based)
+    if start > 1:
+        string = string[start - 1 :]
+
+    if case == 1:
+        # Case-insensitive replacement
+        result: list[str] = []
+        s_lower = string.lower()
+        search_lower = search.lower()
+        search_len = len(search)
+        idx = 0
+        replacements = 0
+        while idx <= len(string) - search_len:
+            if s_lower[idx : idx + search_len] == search_lower:
+                result.append(replace)
+                idx += search_len
+                replacements += 1
+                if count >= 0 and replacements >= count:
+                    result.append(string[idx:])
+                    return "".join(result)
+            else:
+                result.append(string[idx])
+                idx += 1
+        result.append(string[idx:])
+        return "".join(result)
+    else:
+        # Case-sensitive
+        if count < 0:
+            return string.replace(search, replace)
+        return string.replace(search, replace, count)
+
+
+def m_zboolean(arg1: Any, arg2: Any, op: int) -> Any:
+    """IRIS $ZBOOLEAN — 16-operation bitwise Boolean.
+
+    When both args are numeric → integer bitwise operations.
+    When either arg is non-numeric string → per-character byte operations.
+
+    Args:
+        arg1: First operand.
+        arg2: Second operand.
+        op: Operation code 0–15.
+
+    Returns:
+        Integer or string result depending on operand types.
+    """
+    op = int(op)
+    if op < 0 or op > 15:
+        raise ValueError(f"$ZBOOLEAN operation code must be 0-15, got {op}")
+
+    # Determine mode: string if either arg is non-numeric string
+    a1_str = str(arg1)
+    a2_str = str(arg2)
+    a1_int = 0
+    a2_int = 0
+    is_string_mode = False
+    try:
+        a1_int = int(Decimal(a1_str))
+        a2_int = int(Decimal(a2_str))
+    except Exception:
+        is_string_mode = True
+
+    if is_string_mode:
+        return _zboolean_string(a1_str, a2_str, op)
+    else:
+        return _zboolean_int(a1_int, a2_int, op)
+
+
+def _zboolean_int(a: int, b: int, op: int) -> int:
+    """Integer-mode $ZBOOLEAN dispatch."""
+    # fmt: off
+    ops = {
+        0:  lambda a, b: 0,           # FALSE
+        1:  lambda a, b: a & b,       # AND
+        2:  lambda a, b: a & ~b,      # arg1 AND NOT arg2
+        3:  lambda a, b: a,           # arg1
+        4:  lambda a, b: ~a & b,      # NOT arg1 AND arg2
+        5:  lambda a, b: b,           # arg2
+        6:  lambda a, b: a ^ b,       # XOR
+        7:  lambda a, b: a | b,       # OR
+        8:  lambda a, b: ~(a | b),    # NOR
+        9:  lambda a, b: ~(a ^ b),    # XNOR
+        10: lambda a, b: ~b,          # NOT arg2
+        11: lambda a, b: a | ~b,      # arg1 OR NOT arg2
+        12: lambda a, b: ~a,          # NOT arg1
+        13: lambda a, b: ~a | b,      # NOT arg1 OR arg2
+        14: lambda a, b: ~(a & b),    # NAND
+        15: lambda a, b: -1,          # TRUE (all bits set)
+    }
+    # fmt: on
+    return ops[op](a, b)
+
+
+def _zboolean_string(a: str, b: str, op: int) -> str:
+    """String-mode $ZBOOLEAN — per-byte bitwise operations.
+
+    The shorter string is cycled (repeated) to match the length of the longer
+    string. This matches IRIS behavior where $ZBOOLEAN("abcd","_",1) = "ABCD"
+    because "_" (0x5F) is repeated to "____" and AND with "abcd" gives "ABCD".
+    """
+    max_len = max(len(a), len(b))
+    if not a:
+        a = "\x00"
+    if not b:
+        b = "\x00"
+    # Cycle shorter string to match length of longer
+    a_bytes = (a * (max_len // len(a) + 1))[:max_len]
+    b_bytes = (b * (max_len // len(b) + 1))[:max_len]
+
+    result_chars = []
+    for ca, cb in zip(a_bytes, b_bytes):
+        byte_result = _zboolean_int(ord(ca), ord(cb), op) & 0xFF
+        result_chars.append(chr(byte_result))
+    return "".join(result_chars)
+
+
+def m_zu(code: int | str, *args: Any) -> Any:
+    """IRIS $ZU utility function dispatcher.
+
+    Implements the subset of $ZU codes used by VistA.
+
+    Args:
+        code: $ZU function code.
+        *args: Additional arguments.
+
+    Returns:
+        Result string or integer.
+    """
+    code_int = int(code)
+
+    if code_int == 0:
+        # $ZU(0) → namespace name
+        return "VISTA"
+    elif code_int == 5:
+        # $ZU(5) → namespace; $ZU(5,ns) → set namespace
+        if args:
+            return "VISTA"  # set is a no-op in transpiler context
+        return "VISTA"
+    elif code_int == 12:
+        # $ZU(12) → config directory
+        return os.getcwd()
+    elif code_int == 53:
+        # $ZU(53) → $IO value
+        return "0"
+    elif code_int == 56:
+        # $ZU(56,2) → collation info
+        return 0
+    elif code_int == 68:
+        # $ZU(68,...) → various config no-ops
+        return 0
+    elif code_int == 140:
+        # $ZU(140,4,file) → file exists check
+        if len(args) >= 2:
+            return 1 if os.path.exists(str(args[1])) else 0
+        return 0
+    elif code_int == 168:
+        # $ZU(168) → current directory
+        return os.getcwd()
+    elif code_int == 190:
+        # $ZU(190,17) → block collision stub
+        return 0
+    else:
+        # Unknown $ZU code — return empty string with warning
+        warnings.warn(f"$ZU({code_int}) not implemented, returning empty string")
+        return ""
+
+
+def m_zf(code: int | str, *args: Any) -> Any:
+    """IRIS $ZF external function family.
+
+    Args:
+        code: Function variant code or string name.
+        *args: Arguments for the specific $ZF variant.
+
+    Returns:
+        Integer exit code or string result.
+    """
+    # Handle string codes (VMS stubs)
+    if isinstance(code, str):
+        code_str = code.upper()
+        if code_str in ("GETSYM", "GETJPI", "TRNLNM"):
+            return ""
+        # Numeric string
+        try:
+            code_int = int(code)
+        except (ValueError, TypeError):
+            return ""
+    else:
+        code_int = int(code)
+
+    if code_int == -1:
+        # $ZF(-1
+        if args:
+            cmd = str(args[0])
+            result = subprocess.run(cmd, shell=True, capture_output=True, timeout=30)
+            return result.returncode
+        return 0
+    elif code_int == -2:
+        # $ZF(-2, cmd) — launch async
+        if args:
+            cmd = str(args[0])
+            subprocess.Popen(cmd, shell=True)  # noqa: S602
+        return 0
+    elif code_int == -100:
+        # $ZF(-100, flags, cmd, *cmdargs)
+        if len(args) >= 2:
+            cmd = str(args[1])
+            cmd_args = [str(a) for a in args[2:]]
+            try:
+                result = subprocess.run(
+                    [cmd] + cmd_args, capture_output=True, timeout=30
+                )
+                return result.returncode
+            except FileNotFoundError:
+                return -1
+        return 0
+    else:
+        return ""
+
+
+def m_zcall_stub(name: str, *args: Any) -> str:
+    """Stub for $& external function calls.
+
+    VistA uses $& (formerly $ZF(name,...)) format for external calls.
+    These are C/DLL callouts that cannot run in Python.
+    Returns empty string with a warning.
+    """
+    warnings.warn(f"$&{name} external call not available, returning empty string")
+    return ""
+
+
+def m_view_func_stub(*args: Any) -> str:
+    """Stub for $VIEW function.
+
+    $VIEW is implementation-specific and cannot be meaningfully transpiled.
+    Returns empty string.
+    """
+    return ""
+
+
+def m_zconvert(string: str, mode: str) -> str:
+    """Implement $ZCONVERT/$ZCVT — string case conversion (IRIS/Caché).
+
+    Args:
+        string: Input string
+        mode: "U" (upper), "L" (lower), "S" (sentence — capitalize first),
+              "W" (word — capitalize each word), "T" (same as "U" in IRIS)
+
+    Returns:
+        Converted string. Unknown modes return the original string.
+    """
+    mode_upper = mode.upper()
+    if mode_upper in ("U", "T"):
+        return string.upper()
+    elif mode_upper == "L":
+        return string.lower()
+    elif mode_upper == "S":
+        # Sentence case: capitalize first character only
+        return string[:1].upper() + string[1:] if string else string
+    elif mode_upper == "W":
+        # Word case: capitalize first letter of each word
+        return string.title()
+    return string
+
+
+# =============================================================================
+# Phase 10: Vendor Runtime Helpers (024-vista-transpilation-fixes)
+# =============================================================================
+
+
+def _rt_os_environ_get(name: str) -> str:
+    """Get environment variable value, returning "" if not set.
+
+    Used by $ZTRNLNM (VMS/YDB translate logical name).
+    """
+    import os
+
+    return os.environ.get(name, "")
+
+
+def _rt_os_getcwd() -> str:
+    """Get current working directory.
+
+    Used by $ZDIR (GT.M/YDB current directory function).
+    """
+    import os
+
+    return os.getcwd()
+
+
+def m_zgetjpi(pid: str, item: str) -> str:
+    """Implement $ZGETJPI — get job/process information (YDB).
+
+    Common usage: $ZGETJPI(pid, "ISPROCALIVE") — returns "1" if process is alive.
+
+    Args:
+        pid: Process ID ("" for current process)
+        item: Info item name (e.g., "ISPROCALIVE")
+
+    Returns:
+        String result
+    """
+    import os
+    import signal
+
+    item_upper = item.upper()
+
+    if item_upper == "ISPROCALIVE":
+        if pid == "" or pid == "0":
+            return "1"  # Current process is always alive
+        try:
+            os.kill(int(pid), signal.SIG_DFL)
+            return "1"
+        except (ProcessLookupError, ValueError):
+            return "0"
+        except PermissionError:
+            return "1"  # Process exists but we can't signal it
+
+    # For unknown items, return empty string
+    warnings.warn(f"$ZGETJPI item {item!r} not implemented, returning empty string")
+    return ""
+
+
+def m_zparse(path: str, item: str = "") -> str:
+    """Implement $ZPARSE — file path parsing (YDB/GT.M).
+
+    $ZPARSE(path[,item]) parses file paths.
+    item can be: "DIRECTORY", "NAME", "TYPE", "NODE", "DEVICE"
+    If item is empty, returns the full expanded path.
+
+    Args:
+        path: File path to parse
+        item: Component to extract
+
+    Returns:
+        Requested path component as string
+    """
+    import os
+
+    item_upper = item.upper()
+
+    if not item or item_upper == "FULL":
+        return os.path.abspath(path) if path else ""
+
+    if item_upper == "DIRECTORY":
+        return os.path.dirname(path)
+    elif item_upper == "NAME":
+        base = os.path.basename(path)
+        name, _ = os.path.splitext(base)
+        return name
+    elif item_upper in ("TYPE", "EXTENSION"):
+        base = os.path.basename(path)
+        _, ext = os.path.splitext(base)
+        return ext
+    elif item_upper in ("NODE", "DEVICE"):
+        return ""  # No network/device on Unix
+
+    return path
+
+
+def m_zbitand(s1: str, s2: str) -> str:
+    """Implement $ZBITAND — bitwise AND on byte strings.
+
+    Performs byte-by-byte AND on two strings. Result length = min of both.
+
+    Args:
+        s1: First byte string
+        s2: Second byte string
+
+    Returns:
+        Result of bitwise AND
+    """
+    b1 = s1.encode("latin-1") if s1 else b""
+    b2 = s2.encode("latin-1") if s2 else b""
+    min_len = min(len(b1), len(b2))
+    result = bytes(b1[i] & b2[i] for i in range(min_len))
+    return result.decode("latin-1")
+
+
+def m_zbitor(s1: str, s2: str) -> str:
+    """Implement $ZBITOR — bitwise OR on byte strings.
+
+    Performs byte-by-byte OR on two strings. Result length = max of both.
+    Shorter string is right-padded with NUL bytes.
+
+    In YDB, $ZBITOR operates on GT.M bit strings (header + data bytes).
+    This implementation handles both raw byte strings and GT.M bit strings
+    by doing byte-by-byte OR with zero-padding.
+
+    Args:
+        s1: First byte string
+        s2: Second byte string
+
+    Returns:
+        Result of bitwise OR
+    """
+    b1 = s1.encode("latin-1") if s1 else b""
+    b2 = s2.encode("latin-1") if s2 else b""
+    max_len = max(len(b1), len(b2))
+    # Pad shorter string with NUL bytes
+    b1 = b1.ljust(max_len, b"\x00")
+    b2 = b2.ljust(max_len, b"\x00")
+    result = bytes(b1[i] | b2[i] for i in range(max_len))
+    return result.decode("latin-1")
+
+
+def m_zbitxor(s1: str, s2: str) -> str:
+    """Implement $ZBITXOR — bitwise XOR on byte strings.
+
+    Performs byte-by-byte XOR on two strings. Result length = max of both.
+    Shorter string is right-padded with NUL bytes.
+
+    Args:
+        s1: First byte string
+        s2: Second byte string
+
+    Returns:
+        Result of bitwise XOR
+    """
+    b1 = s1.encode("latin-1") if s1 else b""
+    b2 = s2.encode("latin-1") if s2 else b""
+    max_len = max(len(b1), len(b2))
+    b1 = b1.ljust(max_len, b"\x00")
+    b2 = b2.ljust(max_len, b"\x00")
+    result = bytes(b1[i] ^ b2[i] for i in range(max_len))
+    return result.decode("latin-1")
+
+
+def m_zbitnot(s1: str) -> str:
+    """Implement $ZBITNOT — bitwise NOT on byte strings.
+
+    Performs byte-by-byte NOT (complement) on a string.
+
+    Args:
+        s1: Byte string
+
+    Returns:
+        Result of bitwise NOT
+    """
+    b1 = s1.encode("latin-1") if s1 else b""
+    result = bytes(~b & 0xFF for b in b1)
+    return result.decode("latin-1")
+
+
+def m_zbitstr(length: str, value: str = "0") -> str:
+    """Implement $ZBITSTR — create a bitstring of n bits.
+
+    Creates a YDB-format bitstring: 1-byte header + data bytes.
+    Header byte = number of unused bits in the last data byte.
+    Data bytes are initialized to all 0s (value=0) or all 1s (value=1).
+
+    Format:
+        byte 0: (8 - (n % 8)) % 8  (unused trailing bits)
+        bytes 1..ceil(n/8): data bytes
+
+    Examples:
+        $ZBITSTR(8,0) → [0x00, 0x00]  (header=0, 1 zero byte)
+        $ZBITSTR(8,1) → [0x00, 0xFF]  (header=0, 1 all-ones byte)
+        $ZBITSTR(4,0) → [0x04, 0x00]  (header=4, 4 unused bits)
+        $ZBITSTR(16,0) → [0x00, 0x00, 0x00]  (header=0, 2 zero bytes)
+
+    Args:
+        length: Number of bits (coerced to non-negative integer)
+        value: "0" (default) or "1" to initialize all bits
+
+    Returns:
+        Bitstring as a latin-1 encoded string
+    """
+    import math
+
+    from m2py.core.values import m_num
+
+    n = int(m_num(length))
+    v = int(m_num(value))
+    if n <= 0:
+        # Zero or negative length: just a header byte with 0 unused bits
+        return "\x00"
+    num_data_bytes = math.ceil(n / 8)
+    unused_bits = (8 - (n % 8)) % 8
+    header = bytes([unused_bits])
+    if v:
+        data = bytes([0xFF] * num_data_bytes)
+    else:
+        data = bytes([0x00] * num_data_bytes)
+    return (header + data).decode("latin-1")
+
+
+def m_zabs(value: str) -> str:
+    """Implement $ZABS — absolute value.
+
+    IRIS-specific function that returns the absolute value of a numeric expression.
+    Non-numeric strings are coerced to 0 via m_num().
+
+    Args:
+        value: String representation of the number
+
+    Returns:
+        String representation of the absolute value
+    """
+    from m2py.core.values import m_num, m_str
+
+    n = m_num(value)
+    return m_str(abs(n))
+
+
+def m_now() -> str:
+    """Implement $NOW — current timestamp in $HOROLOG format with fractional seconds.
+
+    Returns a string in the format "days,seconds.fraction" where:
+    - days = number of days since December 31, 1840
+    - seconds = seconds since midnight with microsecond precision
+
+    This is similar to $HOROLOG but with fractional seconds.
+
+    Returns:
+        $HOROLOG-format timestamp with fractional seconds
+    """
+    import datetime
+
+    # MUMPS epoch: December 31, 1840
+    mumps_epoch = datetime.date(1840, 12, 31)
+    now = datetime.datetime.now()
+    today = now.date()
+
+    days = (today - mumps_epoch).days
+    # Seconds since midnight with fractional part
+    seconds_since_midnight = (
+        now.hour * 3600 + now.minute * 60 + now.second + now.microsecond / 1_000_000
+    )
+    # Format: remove trailing zeros but keep at least one decimal
+    sec_str = f"{seconds_since_midnight:.6f}".rstrip("0").rstrip(".")
+
+    return f"{days},{sec_str}"
+
+
+def m_ztime(seconds: str) -> str:
+    """Implement $ZTIME/$ZT — format seconds as HH:MM:SS.
+
+    Converts a number of seconds (like $HOROLOG second part) to
+    a time string in HH:MM:SS format.
+
+    Args:
+        seconds: String representation of seconds since midnight
+
+    Returns:
+        Formatted time string "HH:MM:SS"
+    """
+    from m2py.core.values import m_num
+
+    total = int(m_num(seconds))
+    if total < 0:
+        total = 0
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def m_zgetsyi(keyword: str) -> str:
+    """Implement $ZGETSYI — system information query.
+
+    Returns system information based on keyword.
+    GT.M/YDB specific function.
+
+    Args:
+        keyword: Information keyword (e.g., "NODENAME")
+
+    Returns:
+        Requested system information, or empty string for unknown keywords
+    """
+    import platform
+
+    kw = keyword.upper().strip('"')
+    if kw == "NODENAME":
+        return platform.node()
+    return ""

@@ -1681,6 +1681,20 @@ class MUMPSRuntime:
         # $TEST value for tracking IF/ELSE condition results
         # This is synced from/to generated code via execute_mumps
         self._test: bool = False
+        # IRIS/Caché special variables (024-vista-transpilation-fixes, US4)
+        # $ZA — last I/O activity status (read-only, default 0)
+        self._za: int = 0
+        # $ZREFERENCE / $ZR — last global reference (read+set)
+        self._zreference: str = ""
+        # $NAMESPACE — current namespace (read+set+NEW, default "VISTA")
+        self._namespace: str = "VISTA"
+        # Miscellaneous ISVs (024-vista-transpilation-fixes, US5)
+        # $ZINTERRUPT / $ZINT — interrupt handler code string
+        self._zinterrupt: str = ""
+        # $ZSOURCE — source file being loaded/compiled
+        self._zsource: str = ""
+        # $ZGBLDIR — global directory path
+        self._zgbldir: str = ""
         # JOB command support: virtual process ID for child processes
         # None = use os.getpid() (main process). Set to a unique ID for child processes.
         self._job_id: int | None = None
@@ -2411,7 +2425,7 @@ class MUMPSRuntime:
             if code == "I" or code == "*":
                 # Intrinsic special variables — output all ISVs m2py tracks,
                 # matching YDB's alphabetical ZSHOW "I" format.
-                self.write('$DEVICE=""\n')
+                self.write(f'$DEVICE="{self.device_status()}"\n')
                 self.write(f'$ECODE="{self._ecode}"\n')
                 self.write(f"$ESTACK={self.estack()}\n")
                 self.write(f'$ETRAP="{self._etrap}"\n')
@@ -2421,7 +2435,7 @@ class MUMPSRuntime:
                 self.write(f'$KEY="{self.key()}"\n')
                 self.write(f"$PRINCIPAL={self.principal()}\n")
                 self.write(f"$QUIT={self.quit_flag()}\n")
-                self.write('$REFERENCE=""\n')
+                self.write(f'$REFERENCE="{self.reference()}"\n')
                 self.write(f"$STACK={self.stack_level()}\n")
                 self.write("$STORAGE=2147483647\n")
                 self.write(f'$SYSTEM="{self.system()}"\n')
@@ -2722,6 +2736,132 @@ class MUMPSRuntime:
             Current line position
         """
         return self._current_device.y_pos
+
+    def set_x(self, value) -> None:
+        """Set cursor column position ($X).
+
+        MUMPS allows SET $X=n to control cursor column position.
+        Common VistA pattern: S $X=0 to reset column after manual positioning.
+
+        Args:
+            value: New column position (coerced to int via MUMPS numeric rules)
+        """
+        from m2py.codegen.helpers import m_num
+
+        self._current_device.x_pos = int(m_num(value))
+
+    def set_y(self, value) -> None:
+        """Set cursor line position ($Y).
+
+        MUMPS allows SET $Y=n to control cursor line position.
+        Common VistA pattern: S $Y=0 to reset line counter after page break.
+
+        Args:
+            value: New line position (coerced to int via MUMPS numeric rules)
+        """
+        from m2py.codegen.helpers import m_num
+
+        self._current_device.y_pos = int(m_num(value))
+
+    def device_control(self, keyword: str, *params) -> None:
+        """Handle device control mnemonics (W /keyword).
+
+        Device control commands are implementation-specific extensions for device I/O:
+        /EOF, /WAIT, /LISTEN, /ACCEPT, /PASS, /CLEAR, /FLUSH, etc.
+
+        Delegates to the current device's device_control() method, which is a
+        no-op by default. Specific device subclasses may override for
+        device-specific behavior (e.g., TCP socket operations).
+
+        Args:
+            keyword: Control keyword (e.g. 'EOF', 'WAIT', 'LISTEN')
+            *params: Optional parameters
+        """
+        self._current_device.device_control(keyword, *params)
+
+    # -----------------------------------------------------------------
+    # IRIS/Caché special variable accessors (024-vista-transpilation-fixes)
+    # -----------------------------------------------------------------
+
+    def zversion(self) -> str:
+        """Return $ZVERSION — transpiler version string.
+
+        IRIS returns something like ``"IRIS for UNIX (Ubuntu Server LTS for x86-64) ..."``.
+        We return an M2PY marker so ``$L($ZV)>0`` is true.
+        """
+        import platform
+
+        return f"M2PY for Python 1.0 ({platform.system()} {platform.machine()})"
+
+    def za(self) -> int:
+        """Return $ZA — last I/O activity status (read-only, default 0)."""
+        return self._za
+
+    def zreference(self) -> str:
+        """Return $ZREFERENCE ($ZR) — last global reference.
+
+        Delegates to the global storage backend which tracks references
+        automatically on every get/set/kill operation.
+        """
+        return self._globals.last_global_ref
+
+    def set_zreference(self, value: str) -> None:
+        """Set $ZREFERENCE ($ZR)."""
+        self._zreference = str(value)
+
+    def namespace(self) -> str:
+        """Return $NAMESPACE."""
+        return self._namespace
+
+    def set_namespace(self, value: str) -> None:
+        """Set $NAMESPACE."""
+        self._namespace = str(value)
+
+    # -----------------------------------------------------------------
+    # Miscellaneous ISV accessors (024-vista-transpilation-fixes, US5)
+    # -----------------------------------------------------------------
+
+    def device_status(self) -> str:
+        """Return $DEVICE — current device error status.
+
+        Returns: Empty string (no error) or error description.
+        """
+        return ""
+
+    def reference(self) -> str:
+        """Return $REFERENCE ($R) — last global reference.
+
+        Standard MUMPS $REFERENCE is equivalent to YDB/IRIS $ZREFERENCE.
+        """
+        return self._globals.last_global_ref
+
+    def zgbldir(self) -> str:
+        """Return $ZGBLDIR — global directory file path.
+
+        Returns the path to the current global directory file.
+        In m2py, returns an empty string or the configured value.
+        """
+        return self._zgbldir
+
+    def set_zgbldir(self, value: str) -> None:
+        """Set $ZGBLDIR."""
+        self._zgbldir = str(value)
+
+    def zinterrupt(self) -> str:
+        """Return $ZINTERRUPT ($ZINT) — interrupt handler code string."""
+        return self._zinterrupt
+
+    def set_zinterrupt(self, value: str) -> None:
+        """Set $ZINTERRUPT ($ZINT) — install interrupt handler."""
+        self._zinterrupt = str(value)
+
+    def zsource(self) -> str:
+        """Return $ZSOURCE — source file being loaded/compiled."""
+        return self._zsource
+
+    def set_zsource(self, value: str) -> None:
+        """Set $ZSOURCE — set source file name."""
+        self._zsource = str(value)
 
     def zeof(self) -> int:
         """Return end-of-file indicator ($ZEOF).

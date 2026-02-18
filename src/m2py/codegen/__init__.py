@@ -6,6 +6,7 @@ Provides the public API for generating executable Python code from MUMPS source.
 from __future__ import annotations
 
 import ast
+import sys
 from typing import TYPE_CHECKING
 
 from m2py.parser import MUMPSParser
@@ -102,18 +103,22 @@ def _get_reachable_labels(routine: "MRoutine") -> set[str]:
 
 
 def _check_unsupported_gotos(routine: "MRoutine") -> None:
-    """Check for unsupported GOTO patterns and raise if found.
+    """Check for unsupported GOTO patterns and warn if found.
 
     Only checks labels that are reachable from the routine entry point.
     Labels that contain unresolved GOTOs but are only callable externally
     are allowed - they simply won't be generated.
 
+    UNRESOLVED GOTOs (targets that don't exist in the routine) are allowed
+    at compile time. The codegen will emit `raise LabelNotFoundError(...)` at
+    those GOTO sites so an error only occurs if the dead code path is actually
+    reached at runtime.
+
     Args:
         routine: Analyzed MRoutine
-
-    Raises:
-        UnsupportedFeatureError: If UNRESOLVED GOTOs are found in reachable labels
     """
+    import warnings
+
     from m2py.asg.enums import GotoType
     from m2py.asg.statements import MGotoStatement
 
@@ -128,7 +133,19 @@ def _check_unsupported_gotos(routine: "MRoutine") -> None:
         for stmt in label.body.walk_statements():
             if isinstance(stmt, MGotoStatement):
                 if stmt.goto_type == GotoType.UNRESOLVED:
-                    raise UnsupportedFeatureError("UNRESOLVED GOTO not supported")
+                    # Collect unresolved target names for the warning message
+                    unresolved_targets = [
+                        call.name
+                        for call in stmt.targets
+                        if not call.is_resolved and call.target is None
+                    ]
+                    target_names = ", ".join(unresolved_targets) or "unknown"
+                    warnings.warn(
+                        f"UNRESOLVED GOTO to {target_names} in label {label.name} "
+                        f"of routine {routine.name or '?'} — "
+                        f"will raise LabelNotFoundError at runtime if reached",
+                        stacklevel=2,
+                    )
 
 
 def generate_python(
@@ -158,6 +175,25 @@ def generate_python(
         from m2py.codegen.helpers import m_str, m_num, m_truth, m_compare
         ...
     """
+    # Raise the recursion limit for deeply-nested MUMPS expressions
+    # (e.g., VistA routine PSXRECV) and restore it afterwards.
+    old_limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(max(old_limit, 5000))
+    try:
+        return _generate_python_inner(
+            source, routine_name=routine_name, validate=validate
+        )
+    finally:
+        sys.setrecursionlimit(old_limit)
+
+
+def _generate_python_inner(
+    source: str,
+    *,
+    routine_name: str | None = None,
+    validate: bool = True,
+) -> str:
+    """Inner implementation of generate_python (called with raised recursion limit)."""
     # Parse MUMPS source
     parser = MUMPSParser()
     routine = parser.parse(source, filename=routine_name)

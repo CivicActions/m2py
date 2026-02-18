@@ -228,7 +228,9 @@ def _classify_single_goto(
                 stmt.goto_type = GotoType.EXTERNAL
                 continue
             # Same routine explicit reference - treat as resolved if label exists
-            if call.name in label_positions:
+            # G ^ROUTINENAME (empty label) means "restart from entry label"
+            effective_name = call.name if call.name else routine.name
+            if effective_name in label_positions:
                 # Continue to classify as regular GOTO within routine
                 pass
             else:
@@ -245,7 +247,9 @@ def _classify_single_goto(
             target_label = call.target
         else:
             # Same-routine explicit call - look up label by name
-            target_label = routine.get_label(call.name)
+            # G ^ROUTINENAME (empty label) defaults to routine entry label
+            effective_name = call.name if call.name else routine.name
+            target_label = routine.get_label(effective_name)
             if not target_label:
                 stmt.goto_type = GotoType.UNRESOLVED
                 continue
@@ -339,7 +343,9 @@ def _classify_single_goto(
             for for_stmt in enclosing_fors:
                 for_stmt.has_internal_goto = True
                 # Add this GOTO to the FOR's exit_points (bidirectional link)
-                if stmt not in for_stmt.exit_points:
+                # Use identity check (any()) to avoid deep __eq__ recursion
+                # on ASG nodes with heavily nested expressions.
+                if not any(stmt is ep for ep in for_stmt.exit_points):
                     for_stmt.exit_points.append(stmt)
 
             # Pre-compute FOR fields for codegen

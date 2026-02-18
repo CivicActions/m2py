@@ -1350,5 +1350,52 @@ class TestQueryComposite:
 
 
 # =============================================================================
+# $EXTRACT with empty 3rd argument (Phase 9 / T051)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestExtractEmptyThirdArg:
+    """Tests for $E(string, from, ) with empty 3rd argument."""
+
+    def test_extract_from_3_to_end(self, execute_mumps):
+        """$E(X,3,) extracts from position 3 to end."""
+        result = execute_mumps('TEST\n S X="ABCDE" W $E(X,3,),!\n Q\n')
+        assert result.output.strip() == "CDE"
+
+    def test_extract_from_1_to_end(self, execute_mumps):
+        """$E(X,1,) extracts entire string."""
+        result = execute_mumps('TEST\n S X="ABCDE" W $E(X,1,),!\n Q\n')
+        assert result.output.strip() == "ABCDE"
+
+    def test_extract_beyond_length(self, execute_mumps):
+        """$E(X,99,) with from beyond string length returns empty."""
+        result = execute_mumps('TEST\n S X="ABCDE" W $E(X,99,),!\n Q\n')
+        assert result.output.strip() == ""
+
+    def test_extract_empty_string(self, execute_mumps):
+        """$E(\"\",1,) on empty string returns empty."""
+        result = execute_mumps('TEST\n W $E("",1,),!\n Q\n')
+        assert result.output.strip() == ""
+
+    def test_extract_position_0(self, execute_mumps):
+        """$E(X,0,) with position 0 returns the full string."""
+        result = execute_mumps('TEST\n S X="ABCDE" W $E(X,0,),!\n Q\n')
+        assert result.output.strip() == "ABCDE"
+
+    def test_extract_empty_third_arg_in_longer_routine(self, generate_python):
+        """$E(X,3,) in a routine with SET and WRITE transpiles without error (PSS262PO pattern)."""
+        source = 'TEST\n S X="ABCDE"\n S Y=$E(X,3,)\n W Y,!\n Q\n'
+        result = generate_python(source)
+        assert result
+        assert "len(m_str(" in result
+
+    def test_extract_empty_arg_codegen(self, generate_python):
+        """$E(X,3,) generates len-based upper bound."""
+        code = generate_python('TEST\n S X="ABCDE" W $E(X,3,),!\n Q\n')
+        assert "len(m_str(" in code
+
+
+# =============================================================================
 # Indirection: pattern match, name kill, name write
 # =============================================================================
