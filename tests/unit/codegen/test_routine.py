@@ -95,5 +95,212 @@ class TestAnalysisNotCompleteError:
 
 
 # =============================================================================
+# _fix_empty_blocks post-processing
+# =============================================================================
+
+
+class TestFixEmptyBlocks:
+    """Tests for _fix_empty_blocks post-processing function."""
+
+    def _fix(self, code: str) -> str:
+        from m2py.codegen.routine import _fix_empty_blocks
+
+        return _fix_empty_blocks(code)
+
+    def test_empty_if_block(self):
+        """Empty if block gets 'pass' inserted."""
+        code = "if x:\nfoo()"
+        result = self._fix(code)
+        assert result == "if x:\n    pass\nfoo()"
+
+    def test_empty_elif_block(self):
+        """Empty elif block gets 'pass' inserted."""
+        code = "if x:\n    do_x()\nelif y:\nelse:\n    do_else()"
+        result = self._fix(code)
+        assert "elif y:\n    pass\n" in result
+
+    def test_empty_else_block(self):
+        """Empty else block at end of code gets 'pass' inserted."""
+        code = "if x:\n    do_x()\nelse:"
+        result = self._fix(code)
+        assert result == "if x:\n    do_x()\nelse:\n    pass"
+
+    def test_nested_empty_blocks(self):
+        """Nested empty if blocks both get 'pass'."""
+        code = "    if a:\n        if b:\n    c()"
+        result = self._fix(code)
+        assert "        if b:\n            pass\n" in result
+
+    def test_blank_lines_between_if_and_next(self):
+        """Blank lines between if and next code are ignored."""
+        code = "if x:\n\n\nfoo()"
+        result = self._fix(code)
+        assert "    pass" in result
+
+    def test_multiple_consecutive_empty_blocks(self):
+        """Multiple consecutive empty blocks all get 'pass'."""
+        code = "if a:\nelif b:\nelse:\nfoo()"
+        result = self._fix(code)
+        assert result.count("pass") == 3
+
+    def test_non_empty_block_unchanged(self):
+        """Non-empty if block is not modified."""
+        code = "if x:\n    do_thing()\nfoo()"
+        result = self._fix(code)
+        assert result == code
+
+    def test_indented_empty_block(self):
+        """Empty block inside function body (indented) works."""
+        code = "def f():\n    if x:\n    return 0"
+        result = self._fix(code)
+        assert "        pass" in result
+
+    def test_if_with_condition_containing_colon_no_false_positive(self):
+        """Lines with colons in conditions but not ending with colon are skipped."""
+        code = 'x = {"a": 1}\nfoo()'
+        result = self._fix(code)
+        assert result == code
+
+    def test_preserves_existing_body(self):
+        """If block with proper indented body is not altered."""
+        code = "if cond:\n    x = 1\n    y = 2\nz = 3"
+        result = self._fix(code)
+        assert result == code
+
+    def test_empty_block_at_eof_no_trailing_lines(self):
+        """Empty if block at very end of file gets pass."""
+        code = "if x:"
+        result = self._fix(code)
+        assert result == "if x:\n    pass"
+
+    def test_real_codegen_pattern_conditional_do(self):
+        """Pattern from MUMPS conditional DO: if at same indent level."""
+        code = "    if m_truth(var):\n    _scope['X'] = MArray(value=1)\n"
+        result = self._fix(code)
+        assert "        pass\n" in result
+
+
+class TestFixEmptyBlocksIntegration:
+    """Integration tests: transpile real MUMPS patterns that produce empty blocks."""
+
+    def test_conditional_do_end_of_line(self, generate_python):
+        """Conditional DO at end of line should not produce empty if block."""
+        source = "TEST\n S X=1 D:X SUB\n Q\nSUB W X,!\n Q\n"
+        code = generate_python(source)
+        import ast
+
+        ast.parse(code)
+
+    def test_if_at_end_of_line(self, generate_python):
+        """IF at end of MUMPS line should not produce empty if block."""
+        source = 'TEST\n S X=1 I X\n W "yes",!\n Q\n'
+        code = generate_python(source)
+        import ast
+
+        ast.parse(code)
+
+    def test_psapur_transpiles(self, generate_python):
+        """PSAPUR.m (Drug Accountability) should transpile without error."""
+        from pathlib import Path
+
+        path = list(Path("VistA-VEHU-M").rglob("PSAPUR.m"))
+        if not path:
+            pytest.skip("VistA-VEHU-M not available")
+        code = path[0].read_text(errors="replace")
+        result = generate_python(code)
+        assert result
+
+    def test_xindx10_transpiles(self, generate_python):
+        """XINDX10.m (Kernel) should transpile without error."""
+        from pathlib import Path
+
+        path = list(Path("VistA-VEHU-M").rglob("XINDX10.m"))
+        if not path:
+            pytest.skip("VistA-VEHU-M not available")
+        code = path[0].read_text(errors="replace")
+        result = generate_python(code)
+        assert result
+
+
+# =============================================================================
+# _fix_import_in_elif_chain post-processing
+# =============================================================================
+
+
+class TestFixImportInElifChain:
+    """Tests for _fix_import_in_elif_chain post-processing function."""
+
+    def _fix(self, code: str) -> str:
+        from m2py.codegen.routine import _fix_import_in_elif_chain
+
+        return _fix_import_in_elif_chain(code)
+
+    def test_import_between_if_and_elif(self):
+        """Import between if and elif is hoisted above the if."""
+        code = "if a:\n    return 1\nimport foo\nelif b:\n    return 2\n"
+        result = self._fix(code)
+        lines = result.split("\n")
+        import_idx = next(i for i, l in enumerate(lines) if l.strip() == "import foo")
+        if_idx = next(i for i, l in enumerate(lines) if l.strip().startswith("if a:"))
+        assert import_idx < if_idx
+
+    def test_import_between_if_and_else(self):
+        """Import between if block and else is hoisted."""
+        code = "if a:\n    return 1\nimport bar\nelse:\n    return 2\n"
+        result = self._fix(code)
+        lines = result.split("\n")
+        import_idx = next(i for i, l in enumerate(lines) if l.strip() == "import bar")
+        if_idx = next(i for i, l in enumerate(lines) if l.strip().startswith("if a:"))
+        assert import_idx < if_idx
+
+    def test_import_not_breaking_chain_unchanged(self):
+        """Import not between if/elif is left in place."""
+        code = "import foo\nif a:\n    return 1\n"
+        result = self._fix(code)
+        assert result == code
+
+    def test_indented_import_elif_chain(self):
+        """Indented import breaking elif chain is hoisted."""
+        code = (
+            "    if a:\n"
+            "        return 1\n"
+            "    import baz\n"
+            "    elif b:\n"
+            "        return 2\n"
+        )
+        result = self._fix(code)
+        lines = result.split("\n")
+        import_idx = next(i for i, l in enumerate(lines) if "import baz" in l)
+        if_idx = next(i for i, l in enumerate(lines) if "if a:" in l)
+        assert import_idx < if_idx
+
+    def test_xmctlk_transpiles(self, generate_python):
+        """XMCTLK.m should transpile without error after import hoisting."""
+        from pathlib import Path
+
+        path = list(Path("VistA-VEHU-M").rglob("XMCTLK.m"))
+        if not path:
+            pytest.skip("VistA-VEHU-M not available")
+        code = path[0].read_text(errors="replace")
+        result = generate_python(code)
+        assert result
+
+    def test_from_import_also_hoisted(self):
+        """'from X import Y' breaking chain is also hoisted."""
+        code = (
+            "if a:\n"
+            "    return 1\n"
+            "from m2py.runtime import LabelNotFoundError\n"
+            "elif b:\n"
+            "    return 2\n"
+        )
+        result = self._fix(code)
+        lines = result.split("\n")
+        import_idx = next(i for i, l in enumerate(lines) if "from m2py.runtime" in l)
+        if_idx = next(i for i, l in enumerate(lines) if l.strip().startswith("if a:"))
+        assert import_idx < if_idx
+
+
+# =============================================================================
 # helpers.py: m_range edge cases
 # =============================================================================

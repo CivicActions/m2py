@@ -760,5 +760,81 @@ class TestXecuteIndirectionCodegen:
 
 
 # =============================================================================
+# XECUTE parse error string quoting (Phase 9 / T049)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestXecuteParseErrorQuoting:
+    """Tests for safe quoting of XECUTE parse error messages."""
+
+    def test_xecute_with_double_quotes_in_error(self, generate_python):
+        """XECUTE that fails to parse with double quotes in error message."""
+        source = 'TEST\n X "S X=$G(^XTMP(""-M"",1))"\n Q\n'
+        code = generate_python(source)
+        import ast
+
+        ast.parse(code)  # Must not raise SyntaxError
+
+    def test_xecute_with_single_quotes_in_mumps(self, generate_python):
+        """XECUTE with single quotes in MUMPS code."""
+        source = 'TEST\n X "INVALID[+\\-\']SYNTAX"\n Q\n'
+        code = generate_python(source)
+        import ast
+
+        ast.parse(code)
+
+    def test_hlcstcp2_transpiles(self, generate_python):
+        """HLCSTCP2.m should transpile without SyntaxError."""
+        from pathlib import Path
+
+        path = list(Path("VistA-VEHU-M").rglob("HLCSTCP2.m"))
+        if not path:
+            pytest.skip("VistA-VEHU-M not available")
+        code = path[0].read_text(errors="replace")
+        result = generate_python(code)
+        assert result
+
+    def test_xwbtcpm_transpiles(self, generate_python):
+        """XWBTCPM.m should transpile without SyntaxError."""
+        from pathlib import Path
+
+        path = list(Path("VistA-VEHU-M").rglob("XWBTCPM.m"))
+        if not path:
+            pytest.skip("VistA-VEHU-M not available")
+        code = path[0].read_text(errors="replace")
+        result = generate_python(code)
+        assert result
+
+    def test_xwbvll_transpiles(self, generate_python):
+        """XWBVLL.m should transpile without SyntaxError."""
+        from pathlib import Path
+
+        path = list(Path("VistA-VEHU-M").rglob("XWBVLL.m"))
+        if not path:
+            pytest.skip("VistA-VEHU-M not available")
+        code = path[0].read_text(errors="replace")
+        result = generate_python(code)
+        assert result
+
+    def test_hlcstcpa_transpiles(self, generate_python):
+        """HLCSTCPA.m should transpile without SyntaxError."""
+        from pathlib import Path
+
+        path = list(Path("VistA-VEHU-M").rglob("HLCSTCPA.m"))
+        if not path:
+            pytest.skip("VistA-VEHU-M not available")
+        code = path[0].read_text(errors="replace")
+        result = generate_python(code)
+        assert result
+
+    def test_xecute_parse_error_contains_repr(self, generate_python):
+        """Generated code for XECUTE parse error uses safe string escaping."""
+        source = 'TEST\n X "BOGUS COMMAND"\n Q\n'
+        code = generate_python(source)
+        assert "raise SyntaxError" in code
+
+
+# =============================================================================
 # LHS $PIECE / $EXTRACT indirection
 # =============================================================================

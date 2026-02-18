@@ -224,6 +224,96 @@ def validate_analysis_complete(routine: MRoutine) -> None:
             # The codegen correctly handles None by generating 'return' statements.
 
 
+def _fix_empty_blocks(code: str) -> str:
+    """Insert 'pass' into empty if/elif/else blocks.
+
+    Scans generated Python for if/elif/else statements whose body is empty
+    (next non-blank line is at same or lower indentation). Inserts 'pass'
+    to make the block syntactically valid.
+
+    These arise when conditional DO or IF at end-of-line produce
+    an if block whose body is at a different scope level.
+    """
+    lines = code.split("\n")
+    result: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.lstrip()
+        if stripped.startswith(("if ", "elif ", "else:")) and stripped.endswith(":"):
+            indent = len(line) - len(stripped)
+            # Look at next non-blank line
+            j = i + 1
+            while j < len(lines) and lines[j].strip() == "":
+                j += 1
+            if j >= len(lines):
+                # End of file — empty block
+                result.append(line)
+                result.append(" " * (indent + 4) + "pass")
+                i += 1
+                continue
+            next_indent = len(lines[j]) - len(lines[j].lstrip())
+            if next_indent <= indent:
+                # Next line is at same or lower indentation → empty block
+                result.append(line)
+                result.append(" " * (indent + 4) + "pass")
+                i += 1
+                continue
+        result.append(line)
+        i += 1
+    return "\n".join(result)
+
+
+def _fix_import_in_elif_chain(code: str) -> str:
+    """Move import statements that break if/elif/else chains.
+
+    When codegen emits an ``import X`` between an ``if`` block and an
+    ``elif``/``else``, the generated Python is invalid.  This function
+    detects this pattern and hoists the import above the ``if`` block.
+    """
+    lines = code.split("\n")
+    result: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        # Detect: current line is `import X` (or `from X import Y`)
+        # and the NEXT non-blank line is `elif` or `else:` at the same indent
+        if (
+            stripped.startswith("import ") or stripped.startswith("from ")
+        ) and i + 1 < len(lines):
+            # Find next non-blank line
+            j = i + 1
+            while j < len(lines) and lines[j].strip() == "":
+                j += 1
+            if j < len(lines):
+                next_stripped = lines[j].lstrip()
+                next_indent = len(lines[j]) - len(next_stripped)
+                if next_indent == indent and next_stripped.startswith(
+                    ("elif ", "else:")
+                ):
+                    # This import breaks an if/elif chain.
+                    # Hoist it above the preceding if block.
+                    # Walk backwards to find the `if` at the same indentation.
+                    insert_pos = len(result) - 1
+                    while insert_pos >= 0:
+                        prev = result[insert_pos]
+                        prev_stripped = prev.lstrip()
+                        prev_indent = len(prev) - len(prev_stripped)
+                        if prev_indent == indent and prev_stripped.startswith("if "):
+                            break
+                        insert_pos -= 1
+                    if insert_pos >= 0:
+                        result.insert(insert_pos, line)
+                        i += 1
+                        continue
+        result.append(line)
+        i += 1
+    return "\n".join(result)
+
+
 class RoutineGenerator:
     """Generates Python code for a complete MUMPS routine.
 
@@ -313,6 +403,16 @@ class RoutineGenerator:
         self._generate_main_block(ctx)
 
         code = self._emitter.get_code()
+
+        # Post-processing: fix empty if/elif/else blocks by inserting 'pass'.
+        # These arise when conditional DO or IF at end-of-line produce
+        # an if block whose body is at a different scope level.
+        code = _fix_empty_blocks(code)
+
+        # Post-processing: hoist import statements that break if/elif/else chains.
+        # These arise when codegen emits an inline import for DO ^ROUTINE
+        # between an if block's body and its elif/else continuation.
+        code = _fix_import_in_elif_chain(code)
 
         # Validate generated Python is syntactically correct
         try:

@@ -208,10 +208,111 @@
 
 **Purpose**: Final validation across all stories, ensuring the 99%+ target is met
 
-- [ ] T043 Run final VistA-VEHU-M full scan (39,304 routines) — verify ≥99% success rate (≥38,911 passing)
+- [X] T043 Run final VistA-VEHU-M full scan (39,304 routines) — verify ≥99% success rate (≥38,911 passing)
+  > Phase 8 scan results: 39,112 ok / 192 failed (99.51%). Target met. 3 MWAPI, 1 malformed file (ZZBACSUA), 188 fixable failures remain.
 - [ ] T044 Verify zero SyntaxError, zero NotImplementedError (except MWAPI), zero RecursionError in final scan results
 - [ ] T045 Run quickstart.md validation scenarios end-to-end
 - [ ] T047 Verify previously-failing syntax error routines (HLCSTCP2, XMCTLK, XWBVLL) pass in final scan — these are expected to be resolved by US1 codegen fixes
+
+---
+
+## Phase 9: Codegen Fixes — SyntaxErrors + Edge Cases (53 routines)
+
+**Goal**: Fix remaining SyntaxErrors in generated Python (empty if blocks, XECUTE string quoting, SET $TEST, $E empty arg). Unblocks 53 routines.
+
+### Implementation for Phase 9
+
+- [X] T048 [P] Fix empty indented blocks after 'if' statement in generated Python (47 routines) — add post-processing pass in RoutineGenerator.generate() to scan code for empty if/elif/else blocks and insert `pass`. Also added _fix_import_in_elif_chain() to handle import statements breaking if/elif/else chains (1 routine: XMCTLK). Both functions are module-level in src/m2py/codegen/routine.py.
+  > Added _fix_empty_blocks() and _fix_import_in_elif_chain() post-processing functions. All 47 empty-block routines + XMCTLK now transpile successfully.
+
+- [X] T049 [P] Fix XECUTE parse error string quoting in generated Python (4 routines: HLCSTCP2, HLCSTCPA, XWBTCPM, XWBVLL) — escape both single and double quotes in error messages using repr() at L6111 in src/m2py/codegen/statements.py
+  > Used repr() on both mumps_code and error_msg to safely escape all quotes. All 4 routines now transpile successfully.
+
+- [X] T050 [P] Add SET $TEST/$T support in SVN SET dispatch (~L1220) in src/m2py/codegen/statements.py — updates both _rt._test (runtime) and _test (module global) using bool(m_truth(value_expr)). Validated against IRIS for edge cases.
+  > SET $T=0 → 0, $T=1 → 1, $T="" → 0, $T="abc" → 0, $T=42 → 1. EEOEOSE.m now transpiles.
+
+- [X] T051 [P] Handle $EXTRACT with empty 3rd arg ($E(X,3,)) in codegen (1 routine: PSS262PO) — when args[2] is None, uses len(string) as upper bound in _gen_extract at ~L1945 in src/m2py/codegen/expressions.py
+  > Validated against IRIS: $E(X,3,)→"CDE", $E(X,1,)→"ABCDE", $E(X,99,)→"", $E("",1,)→"", $E(X,0,)→"ABCDE". PSS262PO.m now transpiles.
+
+### Validation for Phase 9
+
+- [X] T052 Write tests for Phase 9 fixes (empty blocks, XECUTE quoting, SET $T, $E empty arg) in tests/unit/codegen/test_phase9_codegen_fixes.py
+  > 91 tests: TestFixEmptyBlocks (12), TestFixEmptyBlocksIntegration (4), TestFixImportInElifChain (6), TestXecuteParseErrorQuoting (7), TestSetTestSpecialVariable (9), TestExtractEmptyThirdArg (7), TestPhase9BatchTranspilation (46 parametrized). All pass. Full suite: 7222 passed, 0 failed.
+
+---
+
+## Phase 10: Vendor Function Stubs + Aliases (99 routines)
+
+**Goal**: Register all remaining vendor-specific functions as stubs or aliases to existing implementations. Unblocks 99 routines across DSM/VMS, MSM, YDB, and IRIS/Caché functions.
+
+### Implementation for Phase 10
+
+#### Function Aliases (map to existing implementations)
+
+- [ ] T053 [P] Register function aliases in INTRINSIC_GENERATORS for: `ZS`→ZSEARCH (6 rtn: ZBCK, ZRODSM, ZRRBAC1, ZTMS, ZU, ZUGTM), `ZP`→ORDER with -1 ($ZPREVIOUS), `ZCHAR`/`ZCH`→CHAR, `ZJOB`→existing zjob SVN, `LISTGET`/`LG`→LIST stub in src/m2py/codegen/expressions.py
+
+#### DSM/VMS Function Stubs ($ZC/$ZCALL — 33 routines)
+
+- [ ] T054 [P] Register `ZC` and `ZCALL` as intrinsic function stubs returning `m_zcall_stub("$ZC")` / `m_zcall_stub("$ZCALL")` in INTRINSIC_GENERATORS (27+6=33 routines: KMPDUTL1, XML1CRC, A3AFLBK, etc.) in src/m2py/codegen/expressions.py
+
+#### YDB/GT.M Function Stubs
+
+- [ ] T055 [P] Add `$ZHOROLOG`/`$ZH` as intrinsic function stub returning `str(time.time())` (6 routines: A1BFDBWR, DINVVXD, ORPDMP, ORRDI1, XWBTCPMT, ZOSVKSD) — also add as SVN reader for no-args case in src/m2py/codegen/expressions.py
+  - Note: $ZH with args is $ZHOROLOG (timer), $ZH without args is also $ZHOROLOG SVN
+
+- [ ] T056 [P] Add remaining vendor function stubs as INTRINSIC_GENERATORS entries in src/m2py/codegen/expressions.py — each returns `m_zcall_stub("$FUNCNAME")` or a simple default:
+  - `ZIO` → `_rt.io()` (6 rtn), `PD` → `"1"` (5 rtn), `ZDEV` → `""` (5 rtn)
+  - `ZO`/`ZORDER` → `""` (3 rtn), `ZTIMESTAMP` → $H-format UTC string (3 rtn)
+  - `ZTRNLNM` → `os.environ.get(arg, "")` (3 rtn: HLCSGTM, XLFIPV, ZOSVGTM)
+  - `ZN`/`ZNAME` → `""` (2 rtn), `ZCLOSE` → `"0"` (2 rtn)
+  - `ZGETJPI`/`zgetjpi` → implement ISPROCALIVE check (3 rtn: UT, XQ82, ZOSVGUT1)
+  - `ZIOS` → `"0"` (2 rtn), `ZVER` → `""` (2 rtn)
+  - `ZPARSE` → implement via os.path (2 rtn: ZISHGTM, ZISHGUX)
+  - `ZL`/`ZLENGTH` → `len(s.encode())` (2 rtn)
+  - `ZJ` as function → `_rt.zjob()` (2 rtn)
+  - `ROLES` → `"%All"` (2 rtn), `ZDEFNSP`/`ZNSPACE` → `"VISTA"` (3 rtn)
+  - `NUM`/`NUMBER` → round/format (1 rtn), `ZDATEH` → `""` (1 rtn)
+  - `ZBITAND` → bitwise AND on strings (1 rtn)
+  - `ZDATETIME` → date format stub (1 rtn), `EREF` → `""` (1 rtn)
+  - `ZOS` → `""` (1 rtn), `zdevspeed` → `""` (1 rtn), `ZEO` → $ZEOF alias (1 rtn)
+  - `ZWA` → `"0"` (1 rtn), `ZMODE` → `"OTHER"` (1 rtn)
+  - `LB`/`LISTBUILD`/`LI`/`LIST`/`LISTGET` → `""` stub (3 rtn)
+  - `ZUCI` → `""` (1 rtn), `ZCMD` → `""` (1 rtn), `ZGD` → `""` (1 rtn)
+
+#### SVN Readers
+
+- [ ] T057 [P] Add `$ZCMDLINE` SVN reader returning `""` in generate_special_variable() in src/m2py/codegen/expressions.py (3 routines: DECOMMENT, ZFOO, ZJFOO)
+
+### Validation for Phase 10
+
+- [ ] T058 Write tests for Phase 10 stubs and aliases in tests/unit/codegen/test_phase10_vendor_stubs.py
+
+---
+
+## Phase 11: UNRESOLVED GOTO Fallback (19 routines)
+
+**Goal**: Change UNRESOLVED GOTOs from compile-time rejection to runtime fallback. Routines with GOTOs to non-existent labels compile successfully; error only raised if the dead code is actually reached at runtime.
+
+### Implementation for Phase 11
+
+- [ ] T059 Change _check_unsupported_gotos() in src/m2py/codegen/__init__.py from raising UnsupportedFeatureError to warning + marking (19 routines: A1BFJOBR, A1CBRPT1, AQDBAR, AQDBAR1, LRBLJLG1, LRBLPUS1, LRZLIST, RMPFDM, RMPFDT4, RMPFDT7, RMPFDT8, RMPFDT9, RMPRHIS, RMPRPIYI, RMPRSTI, RMPRSTK, XQ11, ZBCK1, ZZPSODEL)
+  - In TRAMPOLINE codegen: generate `raise LabelNotFoundError("label")` at UNRESOLVED GOTO sites instead of rejecting the routine entirely
+  - Test: transpile A1BFJOBR.m should produce compilable Python with runtime error at GOTO EXIT
+
+### Validation for Phase 11
+
+- [ ] T060 Write tests for UNRESOLVED GOTO fallback in tests/unit/codegen/test_phase11_unresolved_goto.py
+
+---
+
+## Phase 12: Final Validation
+
+**Purpose**: Verify all phases produce expected improvement — target 100% minus MWAPI (3) and ZZBACSUA (1 malformed file) = 99.99%
+
+- [ ] T061 Run final VistA-VEHU-M full scan — expect ≤4 failures (3 MWAPI + 1 malformed ZZBACSUA)
+- [ ] T062 Verify zero SyntaxError, zero NotImplementedError (except MWAPI) in final results
+- [ ] T063 Update limitations.md if new stubs need documentation
+- [ ] T064 Commit all Phase 9-12 changes
 
 ---
 

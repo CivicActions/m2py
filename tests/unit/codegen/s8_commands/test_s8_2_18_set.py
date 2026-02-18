@@ -1818,5 +1818,67 @@ class TestTupleSetWithIntrinsicTargets:
 
 
 # =============================================================================
+# SET $TEST / SET $T (Phase 9 / T050)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestSetTestSpecialVariable:
+    """Tests for SET $TEST/$T support."""
+
+    def test_set_test_to_zero(self, execute_mumps):
+        """SET $T=0 sets $TEST to 0."""
+        result = execute_mumps("TEST\n S $T=0 W $T,!\n Q\n")
+        assert result.output.strip() == "0"
+
+    def test_set_test_to_one(self, execute_mumps):
+        """SET $T=1 sets $TEST to 1."""
+        result = execute_mumps("TEST\n S $T=1 W $T,!\n Q\n")
+        assert result.output.strip() == "1"
+
+    def test_set_test_full_name(self, execute_mumps):
+        """SET $TEST=0 using full name."""
+        result = execute_mumps("TEST\n S $TEST=0 W $T,!\n Q\n")
+        assert result.output.strip() == "0"
+
+    def test_set_test_empty_string(self, execute_mumps):
+        """SET $T=\"\" sets $TEST to 0 (empty string is falsy)."""
+        result = execute_mumps('TEST\n S $T="" W $T,!\n Q\n')
+        assert result.output.strip() == "0"
+
+    def test_set_test_nonzero_number(self, execute_mumps):
+        """SET $T=42 sets $TEST to 1 (truthy)."""
+        result = execute_mumps("TEST\n S $T=42 W $T,!\n Q\n")
+        assert result.output.strip() == "1"
+
+    def test_set_test_nonnumeric_string(self, execute_mumps):
+        """SET $T=\"abc\" sets $TEST to 0 (non-numeric string -> 0)."""
+        result = execute_mumps('TEST\n S $T="abc" W $T,!\n Q\n')
+        assert result.output.strip() == "0"
+
+    def test_set_test_sequence(self, execute_mumps):
+        """Sequential SET $T changes are visible."""
+        result = execute_mumps("TEST\n S $T=0 W $T,! S $T=1 W $T,!\n Q\n")
+        assert result.output.strip() == "0\n1"
+
+    def test_set_test_codegen(self, generate_python):
+        """SET $T generates correct codegen with both _rt._test and _test."""
+        code = generate_python("TEST\n S $T=0\n Q\n")
+        assert "_rt._test" in code
+        assert "_test = _rt._test" in code
+
+    def test_eeoeose_transpiles(self, generate_python):
+        """EEOEOSE.m (uses SET $T=0) should transpile without error."""
+        from pathlib import Path
+
+        path = list(Path("VistA-VEHU-M").rglob("EEOEOSE.m"))
+        if not path:
+            pytest.skip("VistA-VEHU-M not available")
+        code = path[0].read_text(errors="replace")
+        result = generate_python(code)
+        assert result
+
+
+# =============================================================================
 # $DATA / $GET with indirection
 # =============================================================================

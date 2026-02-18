@@ -1216,6 +1216,11 @@ def _generate_single_assignment(
             ctx.emitter.line(f"_rt.set_zsource({value_expr})")
         elif svar_name == "ZGBLDIR":
             ctx.emitter.line(f"_rt.set_zgbldir({value_expr})")
+        elif svar_name in ("TEST", "T"):
+            # SET $TEST: update both _rt._test (runtime) and _test (module global)
+            # so subsequent reads of $TEST via int(_test) see the new value.
+            ctx.emitter.line(f"_rt._test = bool(m_truth({value_expr}))")
+            ctx.emitter.line("_test = _rt._test")
         else:
             raise NotImplementedError(f"SET ${assignment.target.name} not supported")
         return
@@ -6105,11 +6110,12 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
         """
         result = compile_mumps_line(mumps_code)
         if isinstance(result, MParseError):
-            # Include original code in error message for context
-            escaped_code = mumps_code.replace('"', '\\"')
-            ctx.emitter.line(
-                f"raise SyntaxError(\"XECUTE parse error in '{escaped_code}': {result.message}\")"
-            )
+            # Include original code in error message for context.
+            # Use repr() to safely escape all quotes in the message.
+            error_msg = f"XECUTE parse error in {mumps_code!r}: {result.message}"
+            # Double-escape for code generation: the repr() already handles
+            # inner quotes, so we just need to emit a valid Python string.
+            ctx.emitter.line(f"raise SyntaxError({error_msg!r})")
             return
 
         # Generate Python for each structured statement

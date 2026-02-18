@@ -93,3 +93,82 @@ class TestEncodingFallback:
         out_file = tmp_path / "UTF8.py"
         result = transpile_file(m_file, out_file, no_format=True)
         assert result.success, f"Failed: {result.error}"
+
+
+# Batch VistA Transpilation (Phase 9 / T048)
+
+
+@pytest.mark.codegen
+class TestPhase9BatchTranspilation:
+    """Verify all Phase 9 affected VistA routines transpile successfully."""
+
+    @pytest.fixture
+    def vista_available(self):
+        """Check VistA-VEHU-M is available."""
+        from pathlib import Path
+
+        if not Path("VistA-VEHU-M").exists():
+            pytest.skip("VistA-VEHU-M not available")
+
+    EMPTY_BLOCK_ROUTINES = [
+        "A4AARPT",
+        "DDS4",
+        "DDSU",
+        "DGRP1",
+        "DIAU",
+        "DIBTED",
+        "DICL",
+        "DICOMP",
+        "DICOMP1",
+        "DIP100",
+        "DIWE3",
+        "HLOPRSR3",
+        "IBAUTL9",
+        "PRC5CON",
+        "PRS8MT",
+        "PRSARC05",
+        "PSADJ",
+        "PSAENTO",
+        "PSALFM",
+        "PSAPUR",
+        "PSAREC2",
+        "PSATI",
+        "PSAVIN1",
+        "PSAVIN2",
+        "PSAVINC",
+        "PSBVDLIV",
+        "PSDADJ",
+        "PSDADJN",
+        "PSDEN",
+        "PSDREC",
+        "PSDREC1",
+        "PSDREC2",
+        "PSDREC3",
+        "PSJINVW",
+        "PSOCAN1",
+        "PXRRPCE1",
+        "QAPDEM1",
+        "QAPEDI1",
+        "QAPEDIT1",
+        "QAPPT1",
+        "QAPQCOPY",
+        "QAPSCRN1",
+        "QAPUTIL1",
+        "XINDX10",
+        "XUMF5I",
+        "ZVHFIX",
+    ]
+
+    @pytest.mark.parametrize("routine_name", EMPTY_BLOCK_ROUTINES)
+    def test_empty_block_routine_transpiles(
+        self, routine_name, generate_python, vista_available
+    ):
+        """Each empty-block-affected routine should transpile successfully."""
+        from pathlib import Path
+
+        paths = list(Path("VistA-VEHU-M").rglob(f"{routine_name}.m"))
+        if not paths:
+            pytest.skip(f"{routine_name}.m not found")
+        code = paths[0].read_text(errors="replace")
+        result = generate_python(code)
+        assert result

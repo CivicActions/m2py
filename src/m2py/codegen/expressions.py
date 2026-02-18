@@ -1941,7 +1941,11 @@ def _gen_extract(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         return f"m_extract(m_str({string_expr}), int(m_num({from_expr})), int(m_num({from_expr})))"
     else:
         # $E(string, from, to) - substring
+        # Handle empty 'to' argument: $E(X,3,) means extract from pos 3 to end
         from_expr = generate_expr(args[1], ctx)
+        if args[2] is None:
+            # Empty 'to' arg → extract to end of string
+            return f"m_extract(m_str({string_expr}), int(m_num({from_expr})), len(m_str({string_expr})))"
         to_expr = generate_expr(args[2], ctx)
         return f"m_extract(m_str({string_expr}), int(m_num({from_expr})), int(m_num({to_expr})))"
 
