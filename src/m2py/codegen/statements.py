@@ -835,9 +835,9 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
     elif isinstance(stmt, MZHelpStatement):
         raise NotImplementedError("LIM-015: ZHELP command not supported")
     elif isinstance(stmt, MZMessageStatement):
-        raise NotImplementedError("LIM-015: ZMESSAGE command not supported")
+        _generate_zmessage(stmt, ctx)
     elif isinstance(stmt, MZPrintStatement):
-        raise NotImplementedError("LIM-015: ZPRINT command not supported")
+        _generate_zprint(stmt, ctx)
     elif isinstance(stmt, MZStepStatement):
         raise NotImplementedError("LIM-015: ZSTEP command not supported")
     elif isinstance(stmt, MZSystemStatement):
@@ -1040,6 +1040,14 @@ def _generate_single_assignment_with_preeval_subs(
             ctx.emitter.line(f"_rt.set_y({value_var})")
         elif svar_name in ("NAMESPACE", "NSPACE"):
             ctx.emitter.line(f"_rt.set_namespace({value_var})")
+        elif svar_name in ("ZINTERRUPT", "ZINT"):
+            ctx.emitter.line(f"_rt.set_zinterrupt({value_var})")
+        elif svar_name == "ZERR":
+            ctx.emitter.line(f"_rt.set_zerror({value_var})")
+        elif svar_name in ("ZSOURCE", "ZSO"):
+            ctx.emitter.line(f"_rt.set_zsource({value_var})")
+        elif svar_name == "ZGBLDIR":
+            ctx.emitter.line(f"_rt.set_zgbldir({value_var})")
         else:
             raise NotImplementedError(
                 f"SET ${assignment.target.name} not supported in tuple SET"
@@ -1199,6 +1207,15 @@ def _generate_single_assignment(
             ctx.emitter.line(f"_rt.set_y({value_expr})")
         elif svar_name in ("NAMESPACE", "NSPACE"):
             ctx.emitter.line(f"_rt.set_namespace({value_expr})")
+        elif svar_name in ("ZINTERRUPT", "ZINT"):
+            ctx.emitter.line(f"_rt.set_zinterrupt({value_expr})")
+        elif svar_name == "ZERR":
+            # $ZERR is a non-standard abbreviation for $ZERROR
+            ctx.emitter.line(f"_rt.set_zerror({value_expr})")
+        elif svar_name in ("ZSOURCE", "ZSO"):
+            ctx.emitter.line(f"_rt.set_zsource({value_expr})")
+        elif svar_name == "ZGBLDIR":
+            ctx.emitter.line(f"_rt.set_zgbldir({value_expr})")
         else:
             raise NotImplementedError(f"SET ${assignment.target.name} not supported")
         return
@@ -7004,6 +7021,46 @@ def _generate_zhalt(stmt: MZHaltStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f"raise SystemExit(int({exit_expr}))  # ZHALT")
     else:
         ctx.emitter.line("raise SystemExit(0)  # ZHALT")
+
+
+def _generate_zprint(stmt: MZPrintStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZPRINT command.
+
+    ZPRINT displays source code of a routine. In transpiled code this is a
+    no-op since the original MUMPS source is not available at runtime.
+
+    Example:
+        ZPRINT label^routine
+        ZP
+
+    Args:
+        stmt: MZPrintStatement node
+        ctx: Generator context
+    """
+    ctx.emitter.line("pass  # ZPRINT (no-op in transpiled code)")
+
+
+def _generate_zmessage(stmt: MZMessageStatement, ctx: "GeneratorContext") -> None:
+    """Generate Python code for ZMESSAGE command.
+
+    ZMESSAGE generates a MUMPS error by code number. In transpiled code,
+    we call the runtime's m_zmessage helper which maps codes to error text,
+    and raise it as an exception (matching YDB/IRIS behavior).
+
+    Example:
+        ZMESSAGE 150372994
+        ZM error_code
+
+    Args:
+        stmt: MZMessageStatement node
+        ctx: Generator context
+    """
+    if stmt.args:
+        for arg in stmt.args:
+            code_expr = generate_expr(arg, ctx)
+            ctx.emitter.line(f"raise RuntimeError(m_zmessage({code_expr}))  # ZMESSAGE")
+    else:
+        ctx.emitter.line("pass  # ZMESSAGE (no args)")
 
 
 __all__ = [

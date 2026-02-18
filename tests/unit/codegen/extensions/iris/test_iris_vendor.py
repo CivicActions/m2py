@@ -472,3 +472,416 @@ class TestGlobalRefTracking:
         gs = InMemoryGlobalStorage()
         gs.set("TEST", ("abc",), "v")
         assert gs.last_global_ref == '^TEST("abc")'
+
+
+# =============================================================================
+# Phase 6: Miscellaneous Fixes and Stubs (024-vista-transpilation-fixes, US5)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestDeviceControl:
+    """Tests for device control mnemonic handling (WRITE /command)."""
+
+    def test_write_eof_codegen(self):
+        """WRITE /EOF generates device_control call."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n W /EOF\n Q"
+        result = generate_python(code)
+        assert "_rt.device_control(" in result
+        assert "'EOF'" in result
+
+    def test_write_listen_with_params(self):
+        """WRITE /LISTEN(5) generates device_control with params."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n W /LISTEN(5)\n Q"
+        result = generate_python(code)
+        assert "_rt.device_control(" in result
+        assert "'LISTEN'" in result
+
+    def test_device_control_runtime_noop(self):
+        """device_control() is a no-op by default on MUMPSRuntime."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        # Should not raise
+        rt.device_control("EOF")
+        rt.device_control("LISTEN", 5)
+        rt.device_control("WAIT", 10)
+        rt.device_control("CLEAR")
+
+    def test_device_control_on_base_device(self):
+        """device_control() is a no-op on base MUMPSDevice."""
+        from m2py.runtime.devices import PrincipalDevice
+
+        device = PrincipalDevice()
+        # Should not raise
+        device.device_control("EOF")
+        device.device_control("LISTEN", 5)
+
+    def test_runtime_delegates_to_device(self, execute_mumps):
+        """Device control in transpiled code doesn't crash."""
+        result = execute_mumps('TEST\n W /EOF\n W "ok",!\n Q')
+        assert result.output == "ok\n"
+
+    def test_write_clear_device_control(self):
+        """WRITE /CLEAR generates device_control call."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n W /CLEAR\n Q"
+        result = generate_python(code)
+        assert "_rt.device_control(" in result
+        assert "'CLEAR'" in result
+
+
+@pytest.mark.codegen
+class TestDeviceSpecialVariable:
+    """Tests for $DEVICE special variable."""
+
+    def test_device_read_codegen(self):
+        """$DEVICE generates runtime call."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n W $DEVICE,!\n Q"
+        result = generate_python(code)
+        assert "_rt.device_status()" in result
+
+    def test_device_returns_empty(self, execute_mumps):
+        """$DEVICE returns empty string (no error)."""
+        result = execute_mumps("TEST\n W $DEVICE,!\n Q")
+        assert result.output == "\n"
+
+    def test_device_in_conditional(self, execute_mumps):
+        """$DEVICE in IF — tests truthiness (empty=false)."""
+        result = execute_mumps('TEST\n I $DEVICE W "error",! Q\n W "ok",!\n Q')
+        assert result.output == "ok\n"
+
+    def test_device_d_abbreviation(self):
+        """$D (no args) as special variable generates device_status()."""
+        from m2py.codegen import generate_python
+
+        # Note: $D with args is $DATA, $D without args is $DEVICE
+        code = "TEST\n S X=$D\n Q"
+        result = generate_python(code)
+        assert "_rt.device_status()" in result
+
+
+@pytest.mark.codegen
+class TestReferenceSpecialVariable:
+    """Tests for $REFERENCE ($R) special variable."""
+
+    def test_reference_read_codegen(self):
+        """$REFERENCE generates runtime call."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n W $REFERENCE,!\n Q"
+        result = generate_python(code)
+        assert "_rt.reference()" in result
+
+    def test_reference_r_abbreviation(self):
+        """$R (single letter) generates reference() call."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n W $R,!\n Q"
+        result = generate_python(code)
+        assert "_rt.reference()" in result
+
+    def test_reference_tracks_globals(self, execute_mumps):
+        """$REFERENCE tracks last global reference."""
+        result = execute_mumps(
+            'TEST\n S ^ZZTEST(1,2)="v" W $REFERENCE,!\n K ^ZZTEST\n Q'
+        )
+        assert "^ZZTEST(1,2)" in result.output
+
+    def test_reference_empty_initially(self, execute_mumps):
+        """$REFERENCE is empty initially."""
+        result = execute_mumps("TEST\n W $REFERENCE,!\n Q")
+        assert result.output == "\n"
+
+
+@pytest.mark.codegen
+class TestZGblDir:
+    """Tests for $ZGBLDIR special variable."""
+
+    def test_zgbldir_read_codegen(self):
+        """$ZGBLDIR generates runtime call."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n W $ZGBLDIR,!\n Q"
+        result = generate_python(code)
+        assert "_rt.zgbldir()" in result
+
+    def test_zgbldir_returns_empty(self, execute_mumps):
+        """$ZGBLDIR returns empty string by default."""
+        result = execute_mumps("TEST\n W $ZGBLDIR,!\n Q")
+        assert result.output == "\n"
+
+    def test_set_zgbldir(self, execute_mumps):
+        """SET $ZGBLDIR stores value."""
+        result = execute_mumps('TEST\n S $ZGBLDIR="/path/to/gbldir" W $ZGBLDIR,!\n Q')
+        assert result.output == "/path/to/gbldir\n"
+
+
+@pytest.mark.codegen
+class TestSetZInterrupt:
+    """Tests for SET $ZINTERRUPT / $ZINT."""
+
+    def test_set_zinterrupt_codegen(self):
+        """SET $ZINTERRUPT generates set_zinterrupt() call."""
+        from m2py.codegen import generate_python
+
+        code = 'TEST\n S $ZINTERRUPT="I $$HANDLER^UTIL"\n Q'
+        result = generate_python(code)
+        assert "_rt.set_zinterrupt(" in result
+
+    def test_set_zint_abbreviation(self):
+        """SET $ZINT generates set_zinterrupt() call."""
+        from m2py.codegen import generate_python
+
+        code = 'TEST\n S $ZINT="handler code"\n Q'
+        result = generate_python(code)
+        assert "_rt.set_zinterrupt(" in result
+
+    def test_read_zinterrupt_codegen(self):
+        """W $ZINTERRUPT generates zinterrupt() call."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n W $ZINTERRUPT,!\n Q"
+        result = generate_python(code)
+        assert "_rt.zinterrupt()" in result
+
+    def test_zinterrupt_round_trip(self, execute_mumps):
+        """SET and read $ZINTERRUPT round-trip."""
+        result = execute_mumps('TEST\n S $ZINTERRUPT="I $$HANDLER" W $ZINTERRUPT,!\n Q')
+        assert result.output == "I $$HANDLER\n"
+
+    def test_zinterrupt_initially_empty(self, execute_mumps):
+        """$ZINTERRUPT is empty initially."""
+        result = execute_mumps("TEST\n W $ZINTERRUPT,!\n Q")
+        assert result.output == "\n"
+
+    def test_zinterrupt_in_tuple_set(self):
+        """$ZINTERRUPT works in tuple SET: S ($ZINTERRUPT,X)=val."""
+        from m2py.codegen import generate_python
+
+        code = 'TEST\n S ($ZINTERRUPT,X)="handler"\n Q'
+        result = generate_python(code)
+        assert "_rt.set_zinterrupt(" in result
+
+
+@pytest.mark.codegen
+class TestSetZErr:
+    """Tests for SET $ZERR (non-standard abbreviation of $ZERROR)."""
+
+    def test_set_zerr_codegen(self):
+        """SET $ZERR generates set_zerror() call."""
+        from m2py.codegen import generate_python
+
+        code = 'TEST\n S $ZERR=""\n Q'
+        result = generate_python(code)
+        assert "_rt.set_zerror(" in result
+
+    def test_zerr_round_trip(self, execute_mumps):
+        """SET $ZERR="" and read $ZE (standard abbreviation) round-trip."""
+        result = execute_mumps('TEST\n S $ZERR="" W $ZE,!\n Q')
+        assert result.output == "\n"
+
+    def test_vista_pattern_zerr(self, execute_mumps):
+        """VistA pattern: save $ZE then clear $ZERR."""
+        result = execute_mumps('TEST\n S OLDERR=$ZE S $ZERR="" W OLDERR,!\n Q')
+        assert result.output == "\n"
+
+
+@pytest.mark.codegen
+class TestSetZSource:
+    """Tests for SET $ZSOURCE."""
+
+    def test_set_zsource_codegen(self):
+        """SET $ZSOURCE generates set_zsource() call."""
+        from m2py.codegen import generate_python
+
+        code = 'TEST\n S $ZSOURCE="MYFILE"\n Q'
+        result = generate_python(code)
+        assert "_rt.set_zsource(" in result
+
+    def test_read_zsource_codegen(self):
+        """W $ZSOURCE generates zsource() call (parsed as IntrinsicFunctionNoArgs)."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n W $ZSOURCE,!\n Q"
+        result = generate_python(code)
+        assert "_rt.zsource()" in result
+
+    def test_zsource_round_trip(self, execute_mumps):
+        """SET and read $ZSOURCE round-trip."""
+        result = execute_mumps('TEST\n S $ZSOURCE="ZOSVGUT2" W $ZSOURCE,!\n Q')
+        assert result.output == "ZOSVGUT2\n"
+
+    def test_zsource_initially_empty(self, execute_mumps):
+        """$ZSOURCE is empty initially."""
+        result = execute_mumps("TEST\n W $ZSOURCE,!\n Q")
+        assert result.output == "\n"
+
+
+@pytest.mark.codegen
+class TestZPrintStub:
+    """Tests for ZPRINT command stub."""
+
+    def test_zprint_generates_pass(self):
+        """ZPRINT generates pass statement."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n ZPRINT TEST^TEST\n Q"
+        result = generate_python(code)
+        assert "pass  # ZPRINT" in result
+
+    def test_zprint_bare_generates_pass(self):
+        """Bare ZPRINT generates pass statement."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n ZP\n Q"
+        result = generate_python(code)
+        assert "pass  # ZPRINT" in result
+
+    def test_zprint_runs_without_error(self, execute_mumps):
+        """ZPRINT in transpiled code runs without error."""
+        result = execute_mumps('TEST\n ZPRINT TEST\n W "ok",!\n Q')
+        assert result.output == "ok\n"
+
+
+@pytest.mark.codegen
+class TestZMessageStub:
+    """Tests for ZMESSAGE command stub."""
+
+    def test_zmessage_generates_raise(self):
+        """ZMESSAGE generates RuntimeError raise."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n ZMESSAGE 150373210\n Q"
+        result = generate_python(code)
+        assert "raise RuntimeError(m_zmessage(" in result
+
+    def test_zmessage_with_variable(self):
+        """ZMESSAGE with variable generates raise."""
+        from m2py.codegen import generate_python
+
+        code = "TEST\n S CODE=100 ZMESSAGE CODE\n Q"
+        result = generate_python(code)
+        assert "raise RuntimeError(m_zmessage(" in result
+
+
+@pytest.mark.codegen
+class TestRuntimeISVProperties:
+    """Direct unit tests for new runtime ISV properties."""
+
+    def test_device_status_default(self):
+        """MUMPSRuntime.device_status() returns empty string."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt.device_status() == ""
+
+    def test_reference_aliases_zreference(self):
+        """MUMPSRuntime.reference() returns same as zreference()."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt.reference() == rt.zreference()
+
+    def test_reference_after_global_set(self):
+        """MUMPSRuntime.reference() updates after global SET."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt.globals.set("TEST", ("1",), "v")
+        assert rt.reference() == "^TEST(1)"
+
+    def test_zgbldir_default_empty(self):
+        """MUMPSRuntime.zgbldir() returns empty string by default."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt.zgbldir() == ""
+
+    def test_set_zgbldir(self):
+        """MUMPSRuntime.set_zgbldir() stores value."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt.set_zgbldir("/usr/lib/yottadb/r1.38/g/yottadb.gld")
+        assert rt.zgbldir() == "/usr/lib/yottadb/r1.38/g/yottadb.gld"
+
+    def test_zinterrupt_default_empty(self):
+        """MUMPSRuntime.zinterrupt() returns empty string by default."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt.zinterrupt() == ""
+
+    def test_set_zinterrupt(self):
+        """MUMPSRuntime.set_zinterrupt() stores handler code."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt.set_zinterrupt("I $$JOBEXAM^ZU($ZPOSITION)")
+        assert rt.zinterrupt() == "I $$JOBEXAM^ZU($ZPOSITION)"
+
+    def test_zsource_default_empty(self):
+        """MUMPSRuntime.zsource() returns empty string by default."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt.zsource() == ""
+
+    def test_set_zsource(self):
+        """MUMPSRuntime.set_zsource() stores source file name."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        rt.set_zsource("ZOSVGUT2")
+        assert rt.zsource() == "ZOSVGUT2"
+
+
+@pytest.mark.codegen
+class TestVistARoutineTranspilation:
+    """Verify specific VistA routines that were blocked by Phase 6 issues now transpile."""
+
+    def _transpile(self, stem):
+        """Transpile a VistA routine by name, return generated Python."""
+        from pathlib import Path
+
+        from m2py.codegen import generate_python
+
+        # Search common VistA package locations
+        base = Path("/workspaces/m2py/VistA-VEHU-M")
+        for m_file in base.rglob(f"{stem}.m"):
+            code = m_file.read_text(errors="replace")
+            return generate_python(code, routine_name=stem)
+        pytest.skip(f"VistA routine {stem}.m not found")
+
+    def test_zzlog1_transpiles(self):
+        """ZZLOG1 (SET $ZERR) transpiles successfully."""
+        result = self._transpile("ZZLOG1")
+        assert "set_zerror" in result
+
+    def test_a1bflog1_transpiles(self):
+        """A1BFLOG1 (SET $ZERR) transpiles successfully."""
+        result = self._transpile("A1BFLOG1")
+        assert "set_zerror" in result
+
+    def test_hlcstcp1_transpiles(self):
+        """HLCSTCP1 ($DEVICE) transpiles successfully."""
+        result = self._transpile("HLCSTCP1")
+        assert "device_status" in result
+
+    def test_xwbrw_transpiles(self):
+        """XWBRW ($DEVICE) transpiles successfully."""
+        result = self._transpile("XWBRW")
+        assert "device_status" in result
+
+    def test_ztmgrset_transpiles(self):
+        """ZTMGRSET (ZPRINT, $ZSOURCE) transpiles successfully."""
+        result = self._transpile("ZTMGRSET")
+        assert "pass  # ZPRINT" in result

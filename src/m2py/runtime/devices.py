@@ -129,6 +129,22 @@ class MUMPSDevice(ABC):
         self.x_pos = 0
         self.y_pos = 0
 
+    def device_control(self, keyword: str, *params: Any) -> None:
+        """Handle device control mnemonics (W /keyword).
+
+        Device control commands are implementation-specific extensions for
+        device I/O: /EOF, /WAIT, /LISTEN, /ACCEPT, /PASS, /CLEAR, /FLUSH, etc.
+
+        VistA uses these primarily for socket and pipe operations. The base
+        implementation is a no-op; subclasses can override for device-specific
+        control behavior.
+
+        Args:
+            keyword: Control keyword (e.g. 'EOF', 'WAIT', 'LISTEN', 'CLEAR')
+            *params: Optional parameters for the control command
+        """
+        pass  # No-op stub — subclasses may override for device-specific behavior
+
 
 class PrincipalDevice(MUMPSDevice):
     """Principal device ($PRINCIPAL) — stdin/stdout wrapper.

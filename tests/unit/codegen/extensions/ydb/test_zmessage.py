@@ -1,7 +1,7 @@
 """Tests for ZMESSAGE command code generation (YDB extension).
 
 Reference: YottaDB Z-Commands
-Spec 014: Verify LIM-015 errors for unimplemented Z-commands.
+024-vista-transpilation-fixes: ZMESSAGE now generates RuntimeError raise.
 """
 
 import pytest
@@ -13,12 +13,13 @@ from m2py.codegen import generate_python
 class TestZmessageCodegen:
     """Codegen-level tests for ZMESSAGE command (YDB).
 
-    ZMESSAGE is not supported in m2py.
-    This test verifies that NotImplementedError is raised with LIM-015.
+    ZMESSAGE generates a RuntimeError raise with the error message from
+    m_zmessage(), matching the error-signaling semantics of the command.
     """
 
-    def test_zmessage_raises_not_implemented(self):
-        """ZMESSAGE raises NotImplementedError with LIM-015."""
+    def test_zmessage_generates_raise(self):
+        """ZMESSAGE generates RuntimeError raise."""
         code = "TEST\n ZMESSAGE 150373210\n Q"
-        with pytest.raises(NotImplementedError, match="LIM-015"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "raise RuntimeError(m_zmessage(" in result
+        assert "# ZMESSAGE" in result

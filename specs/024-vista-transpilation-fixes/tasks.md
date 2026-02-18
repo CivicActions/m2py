@@ -168,18 +168,18 @@
 
 ### Implementation for User Story 5
 
-- [ ] T034 [P] [US5] Add device_control(command, args) handler in src/m2py/runtime/devices.py
-- [ ] T035 [P] [US5] Add $DEVICE, $REFERENCE, $ZGBLDIR properties and external_call_stub(name, args) method to MRuntime in src/m2py/runtime/__init__.py
-- [ ] T036 [US5] Add WRITE /command (device control mnemonic) codegen and SET $ZINTERRUPT/$ZERR/$ZSOURCE dispatch in src/m2py/codegen/statements.py
-- [ ] T037 [US5] Add $DEVICE/$REFERENCE/$ZGBLDIR SVN readers and $& external function call codegen in src/m2py/codegen/expressions.py
+- [X] T034 [P] [US5] Add device_control(command, args) handler in src/m2py/runtime/devices.py
+- [X] T035 [P] [US5] Add $DEVICE, $REFERENCE, $ZGBLDIR properties and external_call_stub(name, args) method to MRuntime in src/m2py/runtime/__init__.py
+- [X] T036 [US5] Add WRITE /command (device control mnemonic) codegen and SET $ZINTERRUPT/$ZERR/$ZSOURCE dispatch in src/m2py/codegen/statements.py
+- [X] T037 [US5] Add $DEVICE/$REFERENCE/$ZGBLDIR SVN readers and $& external function call codegen in src/m2py/codegen/expressions.py
 
 #### ZPRINT / ZMESSAGE Stubs (FR-030) — 5 routines
 
-- [ ] T046 [P] [US5] Add ZPRINT and ZMESSAGE codegen dispatch stubs — route MZPrintStatement to no-op and MZMessageStatement to error-signal stub in src/m2py/codegen/statements.py
+- [X] T046 [P] [US5] Add ZPRINT and ZMESSAGE codegen dispatch stubs — route MZPrintStatement to no-op and MZMessageStatement to error-signal stub in src/m2py/codegen/statements.py
 
 ### Validation for User Story 5
 
-- [ ] T038 [US5] Write tests for misc stubs (device control, SET $ZINTERRUPT/$ZERR/$ZSOURCE, $& calls, reader SVNs, ZPRINT/ZMESSAGE) in tests/functional/
+- [X] T038 [US5] Write tests for misc stubs (device control, SET $ZINTERRUPT/$ZERR/$ZSOURCE, $& calls, reader SVNs, ZPRINT/ZMESSAGE) in tests/functional/
 
 **Checkpoint**: US1-5 complete — all ~2,521 fixable failures resolved, success rate ~99.8%
 

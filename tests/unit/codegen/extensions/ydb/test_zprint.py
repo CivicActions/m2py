@@ -1,7 +1,7 @@
 """Tests for ZPRINT command code generation (YDB extension).
 
 Reference: YottaDB Z-Commands
-Spec 014: Verify LIM-015 errors for unimplemented Z-commands.
+024-vista-transpilation-fixes: ZPRINT now generates a no-op stub.
 """
 
 import pytest
@@ -13,12 +13,12 @@ from m2py.codegen import generate_python
 class TestZprintCodegen:
     """Codegen-level tests for ZPRINT command (YDB).
 
-    ZPRINT is not supported in m2py.
-    This test verifies that NotImplementedError is raised with LIM-015.
+    ZPRINT generates a no-op pass statement in transpiled code
+    since the original MUMPS source is not available at runtime.
     """
 
-    def test_zprint_raises_not_implemented(self):
-        """ZPRINT raises NotImplementedError with LIM-015."""
+    def test_zprint_generates_noop(self):
+        """ZPRINT generates pass (no-op stub)."""
         code = "TEST\n ZPRINT TEST\n Q"
-        with pytest.raises(NotImplementedError, match="LIM-015"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "pass  # ZPRINT" in result

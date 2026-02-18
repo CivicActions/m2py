@@ -56,11 +56,11 @@ class TestYdbSpecialVariablesCodegen:
         with pytest.raises(NotImplementedError, match="ZYERROR"):
             generate_python(code)
 
-    def test_zinterrupt_raises_not_implemented(self):
-        """$ZINTERRUPT raises NotImplementedError (YDB-specific variable)."""
+    def test_zinterrupt_generates_code(self):
+        """$ZINTERRUPT generates runtime call (024-vista-transpilation-fixes)."""
         code = "TEST\n W $ZINTERRUPT\n Q"
-        with pytest.raises(NotImplementedError, match="ZINTERRUPT"):
-            generate_python(code)
+        result = generate_python(code)
+        assert "_rt.zinterrupt()" in result
 
     def test_zmode_raises_not_implemented(self):
         """$ZMODE raises NotImplementedError (YDB-specific variable)."""

@@ -741,6 +741,28 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     if name in ("NAMESPACE", "NSPACE"):
         return "_rt.namespace()"
 
+    # -----------------------------------------------------------------
+    # Miscellaneous ISVs (024-vista-transpilation-fixes, US5)
+    # -----------------------------------------------------------------
+
+    # $DEVICE / $D - current device error status
+    # Note: $D() with arguments is $DATA (intrinsic function), handled separately.
+    # $D without arguments is $DEVICE (special variable).
+    if name in ("DEVICE", "D"):
+        return "_rt.device_status()"
+
+    # $REFERENCE / $R - last global reference (standard MUMPS equivalent of $ZR)
+    if name in ("REFERENCE", "R"):
+        return "_rt.reference()"
+
+    # $ZGBLDIR - global directory file path
+    if name == "ZGBLDIR":
+        return "_rt.zgbldir()"
+
+    # $ZINTERRUPT / $ZINT - interrupt handler code string
+    if name in ("ZINTERRUPT", "ZINT"):
+        return "_rt.zinterrupt()"
+
     # Add other special variables as needed
     raise NotImplementedError(f"Special variable ${var.name} not yet supported")
 
@@ -2932,3 +2954,23 @@ def _gen_svn_namespace(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str
 
 INTRINSIC_GENERATORS["NAMESPACE"] = _gen_svn_namespace
 INTRINSIC_GENERATORS["NSPACE"] = _gen_svn_namespace
+
+
+# --- US5 ISV shims (parsed as IntrinsicFunctionNoArgs when not in SVARNAME) ---
+
+
+def _gen_svn_zsource(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZSOURCE/$ZSO as no-args intrinsic function."""
+    return "_rt.zsource()"
+
+
+INTRINSIC_GENERATORS["ZSOURCE"] = _gen_svn_zsource
+INTRINSIC_GENERATORS["ZSO"] = _gen_svn_zsource
+
+
+def _gen_svn_zerr(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
+    """$ZERR as no-args intrinsic function (non-standard abbreviation of $ZERROR)."""
+    return "_rt.zerror()"
+
+
+INTRINSIC_GENERATORS["ZERR"] = _gen_svn_zerr
