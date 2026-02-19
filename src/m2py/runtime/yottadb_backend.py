@@ -631,9 +631,16 @@ class YottaDBGlobalStorage:
         """Query ^$JOB(pid) for job/process information."""
         try:
             pid = int(subscript)
-            os.kill(pid, 0)  # Signal 0 = check existence
-            return "1"
-        except (ValueError, ProcessLookupError, PermissionError):
+            if pid <= 0:
+                return ""  # PIDs must be positive
+            try:
+                os.kill(pid, 0)  # Signal 0 = check existence
+                return "1"
+            except ProcessLookupError:
+                return ""  # Process does not exist
+            except PermissionError:
+                return "1"  # Process exists but we lack permission
+        except (ValueError, OverflowError):
             return ""
 
     def ssvn_lock(self, subscript: str) -> str:

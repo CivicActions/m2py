@@ -237,7 +237,7 @@
 - [x] T106 [P] Validate InMemoryGlobalStorage implements all protocol methods correctly after protocol updates (including any new SSVN methods)
 - [x] T107 [P] Implement SSVN operations (ssvn_get, ssvn_set, ssvn_data, ssvn_order, ssvn_query) in YottaDBGlobalStorage for system-wide state (^$JOB, ^$LOCK)
 - [x] T108 [P] Implement SSVN operations in IRISGlobalStorage for system-wide state
-- [ ] T109 [P] Create tests for SSVN operations in test_ssvn_operations.py validating system variable access across backends
+- [x] T109 [P] Create tests for SSVN operations in test_ssvn_operations.py validating system variable access across backends
 
 ---
 
