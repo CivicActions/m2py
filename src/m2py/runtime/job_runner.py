@@ -25,7 +25,7 @@ import sys
 
 def main() -> None:
     """Entry point for JOB'd child process."""
-    parser = argparse.ArgumentParser(description="M2PY JOB subprocess runner")
+    parser = argparse.ArgumentParser(description="m2py JOB subprocess runner")
     parser.add_argument("--routine", required=True, help="Routine module name")
     parser.add_argument("--label", required=True, help="Entry label name")
     parser.add_argument("--db-path", required=True, help="SQLite database path")

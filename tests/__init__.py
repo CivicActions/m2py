@@ -1,1 +1,1 @@
-"""M2PY test suite."""
+"""m2py test suite."""

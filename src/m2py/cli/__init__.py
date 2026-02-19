@@ -1,4 +1,4 @@
-"""Command-line interface for M2PY.
+"""Command-line interface for m2py.
 
 Entry point: ``m2py.cli:main``
 

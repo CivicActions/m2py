@@ -1,7 +1,7 @@
 """MUMPS I/O device abstraction layer.
 
 Provides the MUMPSDevice abstract base class and concrete device implementations
-for the M2PY transpiler runtime. All MUMPS I/O operations (READ, WRITE, OPEN,
+for the m2py transpiler runtime. All MUMPS I/O operations (READ, WRITE, OPEN,
 USE, CLOSE) are dispatched through this device layer.
 
 Device types:
@@ -155,7 +155,7 @@ class PrincipalDevice(MUMPSDevice):
 
     For testing, output is captured in the runtime's ``_output`` list
     and can be retrieved with ``get_output()``. This matches the
-    pre-existing M2PY pattern where ``write()`` appends to a list
+    pre-existing m2py pattern where ``write()`` appends to a list
     and ``get_output()`` joins it.
 
     The device holds a back-reference to the runtime so that output

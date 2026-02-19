@@ -1,4 +1,4 @@
-"""M2PY - MUMPS to Python transpiler.
+"""m2py - MUMPS to Python transpiler.
 
 This package provides a textX-based parser that produces an Abstract Semantic
 Graph (ASG) for MUMPS routines.

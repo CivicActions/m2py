@@ -1,6 +1,15 @@
-# M2PY - MUMPS to Python Transpiler
+# m2py - MUMPS to Python Transpiler
 
-M2PY is a MUMPS-to-Python transpiler that uses [textX](https://textx.github.io/textX/) to parse MUMPS source code into an Abstract Semantic Graph (ASG), enrich it through multi-pass analysis, and generate executable Python code.
+m2py is a MUMPS-to-Python transpiler that uses [textX](https://textx.github.io/textX/) to parse MUMPS source code into an Abstract Semantic Graph (ASG), enrich it through multi-pass analysis, and generate executable Python code, with a runtime library to support MUMPS semantics.
+
+## Status
+
+* Over 7,400 unit, integration, and functional tests covering a wide variety of MUMPS constructs and edge cases.
+* 99.99% transpilation success rate on the VistA-VEHU-M routine set (39,299 / 39,304 routines). The only remaining failures are MWAPI SSVNs (X11.6 standard).
+* Functional test suites (MUGJ, MVTS, and others) validate transpiled output against YottaDB reference output.
+* GT.M/YottaDB and Caché/IRIS-specific extensions are supported, including `$ZBOOLEAN`, `$ZCONVERT`/`$ZCVT`, `$ZF`, `$ZV`, `$ZU`, `$REPLACE`, `$NAMESPACE`, and others.
+* A CLI (`m2py`) transpiles individual files or entire directory trees to Python, with automatic ruff lint-fixing and formatting.
+* Upcoming goals: YottaDB and IRIS database/lock backends, and VistA-VEHU runtime validation tests.
 
 ## Installation
 
@@ -12,7 +21,24 @@ uv sync
 
 ## Quick Start
 
-### Transpile MUMPS to Python
+### Transpile MUMPS to Python (CLI)
+
+The `m2py` command transpiles `.m` files or directories to Python:
+
+```bash
+# Transpile a single file (writes HELLO.py alongside HELLO.m)
+m2py HELLO.m
+
+# Transpile a directory tree (mirrors structure in output dir)
+m2py VistA-VEHU-M/ -o output/
+
+# Verbose progress, skip ruff formatting
+m2py src/ -v --no-format
+```
+
+Generated Python files are automatically lint-fixed and formatted by ruff. Use `--no-format` to skip this step.
+
+### Transpile Programmatically
 
 ```python
 from m2py.codegen import generate_python
@@ -39,11 +65,20 @@ for label in routine.labels:
     print(f"Label: {label.name}, statements: {len(label.body.statements)}")
 ```
 
-### Validate Against YottaDB
+### Validate Against YottaDB / IRIS
 
 ```bash
+# Compare m2py output against YottaDB (requires Docker)
 uv run python utils/validate.py --code 'TEST W "Hello",! Q'
+
+# Debug mode: show ASG and generated Python
 uv run python utils/validate.py --debug --code 'TEST S X=1 W X Q'
+
+# Compare against both YDB and IRIS
+uv run python utils/validate.py --iris --code 'TEST W "Hello" Q'
+
+# Compare against IRIS only
+uv run python utils/validate.py --no-ydb --iris --code 'TEST W $ZCV("hello","U") Q'
 ```
 
 ## Architecture
@@ -66,6 +101,17 @@ uv run pytest --backend sqlite   # Use SQLite global storage
 ```
 
 See [docs/testing.md](docs/testing.md) for full testing guide.
+
+## Utilities
+
+| Script | Purpose |
+|--------|---------|
+| `utils/validate.py` | Compare m2py output against YottaDB and/or IRIS (requires Docker) |
+| `utils/ydb.py` | Run MUMPS through YottaDB via Docker |
+| `utils/iris.py` | Run MUMPS through InterSystems IRIS via Docker (persistent container) |
+| `utils/scan_vista.py` | Scan VistA-VEHU-M routines and report transpilation metrics with regression detection |
+| `utils/validate_asg.py` | Inspect ASG structure for a MUMPS file |
+| `utils/rebuild_docs.py` | Regenerate `docs/limitations.md` from source |
 
 ## Documentation
 

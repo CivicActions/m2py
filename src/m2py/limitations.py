@@ -1,4 +1,4 @@
-"""M2PY Parser Limitations Registry.
+"""m2py Parser Limitations Registry.
 
 This module is the canonical source for all limitation data. It is used by:
 - utils/rebuild_docs.py (generates docs/limitations.md and docs/coverage-matrix.md)
@@ -48,7 +48,7 @@ class Limitation(NamedTuple):
     short_description: str
     sections: tuple[str, ...]  # Test section IDs this applies to
     details: str  # Full markdown description
-    behavior: str  # M2PY Behavior description
+    behavior: str  # m2py Behavior description
 
 
 # =============================================================================
@@ -98,7 +98,7 @@ tests and VA Vista. It will be implemented if encountered in real codebases.""",
         sections=(),  # Tested within s7_1_3_ssvns
         details="""\
 The MUMPS Windowing API (MWAPI, defined in ANSI M X11.6) provides GUI capabilities
-through structured system variables and event processing. M2PY does **not** support
+through structured system variables and event processing. m2py does **not** support
 MWAPI because:
 
 1. **Limited real-world usage** - Only 5 files in VA VistA reference MWAPI (`ZISG*.m`)
@@ -186,7 +186,7 @@ variable and are implementation-specific.
 environment variable, but the specific character handling behaviors are outside
 the scope of standard MUMPS and must be handled at code generation time.""",
         behavior="""\
-M2PY implements charset M (ASCII 0-127) as the default. Extended character sets
+m2py implements charset M (ASCII 0-127) as the default. Extended character sets
 beyond ASCII are not fully supported. String handling assumes ASCII/UTF-8
 compatibility. The `^$CHARACTER` SSVN is parsed but charset-specific operations
 (transforms, collation algorithms) are implementation-defined.""",
@@ -217,7 +217,7 @@ languages (e.g., C, FORTRAN). This involves host language interoperability,
 foreign function interfaces, and runtime integration that is outside the
 scope of a source-to-source transpiler.""",
         behavior="""\
-Not applicable. M2PY transpiles standalone MUMPS routines to Python, not MUMPS
+Not applicable. m2py transpiles standalone MUMPS routines to Python, not MUMPS
 embedded within other host programs. Test files contain comments only.""",
     ),
     "LIM-009": Limitation(
@@ -256,7 +256,7 @@ Parser accepts `^$LIBRARY` syntax (valid SSVN grammar). ASG produces
         sections=(),  # Not a specific section, applies to unknown Z-*
         details="""\
 Per the MUMPS standard, all names beginning with 'Z' are reserved for
-vendor-specific extensions (FR-017). M2PY implements support for:
+vendor-specific extensions (FR-017). m2py implements support for:
 
 **YottaDB Z-commands**: ZBREAK, ZCOMPILE, ZGOTO, ZHALT, ZHELP, ZKILL, ZLINK,
 ZLOAD, ZMESSAGE, ZPRINT, ZSHOW, ZSTEP, ZSYSTEM, ZTRIGGER, ZWRITE, ZALLOCATE,
@@ -376,7 +376,7 @@ stub codegen, and some require YDB infrastructure not available in transpiled co
 
 | Function/Variable | Description | Status |
 |-------------------|-------------|--------|
-| $ZVERSION/$ZV | Version string | Returns M2PY version |
+| $ZVERSION/$ZV | Version string | Returns m2py version |
 | $ZTRAP/$ZT | Error trapping | Full implementation |
 | $ZSTATUS/$ZS | Last error status | Full implementation |
 | $ZDATE | Date formatting | Full implementation |
@@ -468,7 +468,7 @@ Parser accepts syntax. ASG produces appropriate nodes. Codegen raises
         short_description="Subset of IRIS/Caché vendor functions used by VistA",
         sections=(),
         details="""\
-M2PY implements partial support for InterSystems Caché/IRIS vendor-specific functions
+m2py implements partial support for InterSystems Caché/IRIS vendor-specific functions
 as used by VA VistA. This covers the subset of IRIS features actually used in
 VistA-VEHU-M routines. IRIS features not used by VistA are not supported.
 
@@ -487,7 +487,7 @@ VistA-VEHU-M routines. IRIS features not used by VistA are not supported.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `$ZVERSION`/`$ZV` | Version string | "M2PY for Python 1.0..." |
+| `$ZVERSION`/`$ZV` | Version string | "m2py for Python 1.0..." |
 | `$ZA` | I/O activity status | 0 |
 | `$ZREFERENCE`/`$ZR` | Last global reference | "" (tracks SET/GET/KILL) |
 | `$DEVICE`/`$D` | Device status | "" |
@@ -537,11 +537,11 @@ log a warning and return empty string. IRIS-specific language extensions
         short_description="Minor precision differences in 18-digit boundary cases",
         sections=(),
         details="""\
-MUMPS specifies 18 significant digits for numeric precision. M2PY uses Python's
+MUMPS specifies 18 significant digits for numeric precision. m2py uses Python's
 Decimal library to implement this precision. However, there are minor differences
 in edge cases when results approach the 18-digit boundary:
 
-| Case | YDB | M2PY | Difference |
+| Case | YDB | m2py | Difference |
 |------|-----|------|------------|
 | -1 + .000000000000000001 | -1 | -.999999999999999999 | Rounding to integer |
 | -37 * 1.00000000111111111 | -37.000000041111111 | -37.0000000411111111 | Last digit |
@@ -573,9 +573,9 @@ Edge case rounding may differ slightly from YDB in the last significant digit.""
 # =============================================================================
 
 DOC_HEADER = """\
-# M2PY Parser Limitations
+# m2py Parser Limitations
 
-This document describes known limitations of the M2PY parser and commands
+This document describes known limitations of the m2py parser and commands
 that are not currently supported. Each limitation has a unique ID (LIM-XXX)
 for traceability to test files.
 
@@ -586,7 +586,7 @@ for traceability to test files.
 DOC_TYPES_TABLE = """\
 ## Limitation Types
 
-| Type | Description | M2PY Behavior |
+| Type | Description | m2py Behavior |
 |------|-------------|---------------|
 | **Parse Error** | Syntax is recognized but explicitly rejected | Parser raises `MUMPSParseError` |
 | **Parses OK** | Syntax is valid but runtime/codegen behavior is undefined | Parser accepts, codegen may be incomplete |
@@ -613,7 +613,7 @@ This error will be triggered for:
 DOC_VENDOR_COMMANDS = """\
 ### Vendor-Specific Commands
 
-M2PY targets standard MUMPS with YottaDB/GT.M extensions. Commands specific to
+m2py targets standard MUMPS with YottaDB/GT.M extensions. Commands specific to
 other implementations (InterSystems Caché/IRIS, MicroM, DSM, etc.) are not currently
 supported and will trigger the unknown command error.
 
@@ -788,7 +788,7 @@ def generate_limitations_md() -> str:
         lines.append("")
 
         # Behavior
-        lines.append(f"**M2PY Behavior**: {lim.behavior}")
+        lines.append(f"**m2py Behavior**: {lim.behavior}")
         lines.append("")
 
     # Workflow section

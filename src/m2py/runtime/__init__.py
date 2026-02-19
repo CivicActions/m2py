@@ -1641,7 +1641,7 @@ class MUMPSRuntime:
         # $KEY — tracked per-device on device.key
         # Accessor key() delegates to _current_device.key
         # $SYSTEM - system identification (V,S format)
-        self._system: str = "47,M2PY"
+        self._system: str = "47,m2py"
         # Error processing special variables
         # $ECODE - comma-delimited list of active error codes (empty = no errors)
         self._ecode: str = ""
@@ -2713,7 +2713,7 @@ class MUMPSRuntime:
         pattern 1.N1\",\"1.E.
 
         Returns:
-            System identification string (e.g., "47,M2PY")
+            System identification string (e.g., "47,m2py")
         """
         return self._system
 

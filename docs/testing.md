@@ -19,7 +19,7 @@ No need for `-o "addopts="` — the smart defaults detect your CLI flags and sta
 
 ## Test Organization
 
-~390 test files across ~6,700 tests, organized in four tiers:
+~380 test files across ~7,400 tests, organized in four tiers:
 
 ```
 tests/
@@ -169,8 +169,10 @@ Suite routine definitions (labels, expected pass/fail counts) are maintained in 
 
 | Script | Purpose |
 |--------|---------|
-| `utils/validate.py` | Compare m2py output against YottaDB via Docker |
+| `utils/validate.py` | Compare m2py output against YottaDB and/or IRIS via Docker |
 | `utils/ydb.py` | Run MUMPS through YottaDB via Docker |
+| `utils/iris.py` | Run MUMPS through InterSystems IRIS via Docker (persistent container) |
+| `utils/scan_vista.py` | Scan VistA-VEHU-M routines, report transpilation metrics, and detect regressions against a reference baseline |
 | `utils/validate_asg.py` | Inspect ASG structure for a MUMPS file |
 | `utils/rebuild_docs.py` | Regenerate `docs/limitations.md` |
 
@@ -178,9 +180,24 @@ Suite routine definitions (labels, expected pass/fail counts) are maintained in 
 # Compare output against YDB
 uv run python utils/validate.py --code 'TEST W "Hello" Q'
 
-# Debug mode: show AST and generated Python
+# Compare against both YDB and IRIS
+uv run python utils/validate.py --iris --code 'TEST W "Hello" Q'
+
+# Compare against IRIS only
+uv run python utils/validate.py --no-ydb --iris --code 'TEST W $ZCV("hello","U") Q'
+
+# Debug mode: show ASG and generated Python
 uv run python utils/validate.py --debug --code 'TEST S X=1 W X Q'
 
 # Run MUMPS through YDB only
 uv run python utils/ydb.py --code 'TEST W 1+2 Q'
+
+# Run MUMPS through IRIS only
+uv run python utils/iris.py --code 'TEST W 1+2 Q'
+
+# Scan VistA-VEHU-M transpilation (parallel, with regression check)
+uv run python utils/scan_vista.py
+
+# Update the reference baseline after fixes
+uv run python utils/scan_vista.py --update-reference
 ```

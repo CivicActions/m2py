@@ -1,3 +1,13 @@
+# License and Copyright
+
+This software comprises several components, which may have different copyright holders and licensing terms.
+
+* The functional test MUMPS code and reference output in the tests/functional/ may have copyright listed in the file headers, but are otherwise copyright YottaDB and licensed under the AGPL-3.0-only.
+* Dependencies are listed in pyproject.toml and are licensed under their respective terms (e.g. textX is MIT-licensed).
+* All other code, tests and documentation in this repository are copyright 2026 by CivicActions and licensed under the AGPL-3.0-only (see below).
+
+---
+
 # GNU AFFERO GENERAL PUBLIC LICENSE
 
 Version 3, 19 November 2007
