@@ -170,8 +170,10 @@ Suite routine definitions (labels, expected pass/fail counts) are maintained in 
 | Script | Purpose |
 |--------|---------|
 | `utils/validate.py` | Compare m2py output against YottaDB and/or IRIS via Docker |
-| `utils/ydb.py` | Run MUMPS through YottaDB via Docker |
-| `utils/iris.py` | Run MUMPS through InterSystems IRIS via Docker (persistent container) |
+| `utils/ydb.sh` | Run commands inside a YottaDB Docker container (auto-builds image) |
+| `utils/iris.sh` | Run commands with IRIS Docker container available (auto-starts, exports connection env) |
+| `utils/run_mumps_ydb.py` | Run MUMPS through YottaDB via Docker |
+| `utils/run_mumps_iris.py` | Run MUMPS through InterSystems IRIS via Docker (persistent container) |
 | `utils/scan_vista.py` | Scan VistA-VEHU-M routines, report transpilation metrics, and detect regressions against a reference baseline |
 | `utils/validate_asg.py` | Inspect ASG structure for a MUMPS file |
 | `utils/rebuild_docs.py` | Regenerate `docs/limitations.md` |
@@ -190,10 +192,13 @@ uv run python utils/validate.py --no-ydb --iris --code 'TEST W $ZCV("hello","U")
 uv run python utils/validate.py --debug --code 'TEST S X=1 W X Q'
 
 # Run MUMPS through YDB only
-uv run python utils/ydb.py --code 'TEST W 1+2 Q'
+uv run python utils/run_mumps_ydb.py --code 'TEST W 1+2 Q'
 
 # Run MUMPS through IRIS only
-uv run python utils/iris.py --code 'TEST W 1+2 Q'
+uv run python utils/run_mumps_iris.py --code 'TEST W 1+2 Q'
+
+# Run tests with YottaDB Python SDK available
+bash utils/ydb.sh uv run pytest tests/ -x -n0
 
 # Scan VistA-VEHU-M transpilation (parallel, with regression check)
 uv run python utils/scan_vista.py

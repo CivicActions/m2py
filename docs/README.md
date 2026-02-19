@@ -41,8 +41,10 @@ python_code = generate_python(open("MYROUTINE.m").read(), routine_name="MYROUTIN
 | Script | Purpose |
 |--------|---------|
 | `utils/validate.py` | Compare m2py output against YottaDB and/or IRIS (requires Docker) |
-| `utils/ydb.py` | Run MUMPS through YottaDB via Docker |
-| `utils/iris.py` | Run MUMPS through InterSystems IRIS via Docker (persistent container) |
+| `utils/ydb.sh` | Run commands inside a YottaDB Docker container (auto-builds image) |
+| `utils/iris.sh` | Run commands with IRIS Docker container available (auto-starts, exports connection env) |
+| `utils/run_mumps_ydb.py` | Run MUMPS through YottaDB via Docker |
+| `utils/run_mumps_iris.py` | Run MUMPS through InterSystems IRIS via Docker (persistent container) |
 | `utils/scan_vista.py` | Scan VistA-VEHU-M routines and report transpilation metrics with regression detection |
 | `utils/validate_asg.py` | Inspect ASG structure for a MUMPS file |
 | `utils/rebuild_docs.py` | Regenerate `docs/limitations.md` from source |

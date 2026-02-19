@@ -3,13 +3,13 @@
 
 Usage:
     # Run a file
-    uv run python utils/ydb.py tests/functional/mugj/inref/V1FORA.m
+    uv run python utils/run_mumps_ydb.py tests/functional/mugj/inref/V1FORA.m
 
     # Run from stdin
-    echo -e 'TEST\\n write 1+2,!' | uv run python utils/ydb.py -
+    echo -e 'TEST\\n write 1+2,!' | uv run python utils/run_mumps_ydb.py -
 
     # Pass code directly
-    uv run python utils/ydb.py --code 'TEST W "Hello" Q'
+    uv run python utils/run_mumps_ydb.py --code 'TEST W "Hello" Q'
 """
 
 import argparse
@@ -128,13 +128,13 @@ def main() -> int:
         epilog="""
 Examples:
     # Run a file
-    uv run python utils/ydb.py routine.m
+    uv run python utils/run_mumps_ydb.py routine.m
 
     # Run from stdin
-    echo -e 'TEST\\n write 1+2,!' | uv run python utils/ydb.py -
+    echo -e 'TEST\\n write 1+2,!' | uv run python utils/run_mumps_ydb.py -
 
     # Pass code directly
-    uv run python utils/ydb.py --code 'TEST W "Hello" Q'
+    uv run python utils/run_mumps_ydb.py --code 'TEST W "Hello" Q'
         """,
     )
     parser.add_argument(

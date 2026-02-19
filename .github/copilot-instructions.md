@@ -67,41 +67,72 @@ uv run python utils/validate.py --no-ydb --code 'TEST W 1+2 Q'
 
 ## Generating YDB Reference Output
 
-Use `utils/ydb.py` or `utils/validate.py` to run MUMPS through YottaDB. Do NOT use docker commands directly.
+Use `utils/run_mumps_ydb.py` or `utils/validate.py` to run MUMPS through YottaDB. Do NOT use docker commands directly.
 
 ```bash
 # Run MUMPS file through YDB
-uv run python utils/ydb.py routine.m
+uv run python utils/run_mumps_ydb.py routine.m
 
 # Run inline MUMPS
-uv run python utils/ydb.py --code 'TEST W 1+2 Q'
+uv run python utils/run_mumps_ydb.py --code 'TEST W 1+2 Q'
 
 # Run from stdin
-echo -e 'TEST\n write 1+2,!' | uv run python utils/ydb.py -
+echo -e 'TEST\n write 1+2,!' | uv run python utils/run_mumps_ydb.py -
 ```
 
 **⚠️ Never use `-t` for testing** — TTY mangles control characters (form feed `\x0c` → ANSI escapes), breaking output comparison.
 
 ## Generating IRIS Reference Output
 
-Use `utils/iris.py` to run MUMPS through InterSystems IRIS. Uses a persistent Docker container (auto-started on first use) to avoid slow IRIS startup on each invocation.
+Use `utils/run_mumps_iris.py` to run MUMPS through InterSystems IRIS. Uses a persistent Docker container (auto-started on first use) to avoid slow IRIS startup on each invocation.
 
 ```bash
 # Run MUMPS file through IRIS
-uv run python utils/iris.py routine.m
+uv run python utils/run_mumps_iris.py routine.m
 
 # Run inline MUMPS
-uv run python utils/iris.py --code 'TEST W 1+2 Q'
+uv run python utils/run_mumps_iris.py --code 'TEST W 1+2 Q'
 
 # Run from stdin
-echo -e 'TEST\n write 1+2,!' | uv run python utils/iris.py -
+echo -e 'TEST\n write 1+2,!' | uv run python utils/run_mumps_iris.py -
 
 # Container management
-uv run python utils/iris.py --start   # Pre-start the container
-uv run python utils/iris.py --stop    # Stop and remove the container
+uv run python utils/run_mumps_iris.py --start   # Pre-start the container
+uv run python utils/run_mumps_iris.py --stop    # Stop and remove the container
 ```
 
 This is useful for testing IRIS/Caché-specific functions (e.g., `$ZCONVERT`, `$LISTBUILD`) that are not available in YottaDB.
+
+## Running with IRIS Container
+
+Use `utils/iris.sh` to auto-start the IRIS Docker container and run commands with connection env vars exported. Unlike `ydb.sh`, commands run locally (IRIS SDK connects over TCP).
+
+```bash
+# Run tests with IRIS container available
+bash utils/iris.sh uv run pytest tests/ -x -n0
+
+# Container management
+bash utils/iris.sh --start    # Start container only
+bash utils/iris.sh --stop     # Stop and remove container
+bash utils/iris.sh --status   # Show container status
+```
+
+Exported env vars: `IRIS_HOST`, `IRIS_PORT`, `IRIS_NAMESPACE`, `IRIS_USER`, `IRIS_PASSWORD`.
+
+## Running with YottaDB Python SDK
+
+Use `utils/ydb.sh` to run any command inside a YottaDB Docker container with the workspace mounted. The image is auto-built on first use from `Dockerfile.yottadb`.
+
+```bash
+# Run tests with yottadb Python package available
+bash utils/ydb.sh uv run pytest tests/ -x -n0
+
+# Import test
+bash utils/ydb.sh uv run python -c "import yottadb; print('ok')"
+
+# Interactive shell (YDB env pre-configured)
+bash utils/ydb.sh bash
+```
 
 ## Core Principles
 

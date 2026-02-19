@@ -44,6 +44,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - File system (`.m` input → `.py` output) (023-cli-codegen-quality)
 - Python 3.10+ (generated code must be valid on 3.10; transpiler itself runs on 3.10+) + textX (parser), pytest (testing), uv (package management) (024-vista-transpilation-fixes)
 - SQLite-backed global storage (existing `sqlite_storage.py`) (024-vista-transpilation-fixes)
+- Python 3.10+ + yottadb (YottaDB Python wrapper), intersystems-irispython (IRIS Native SDK) (025-database-backends)
+- YottaDB persistent storage, IRIS persistent storage (both via Docker for dev/test) (025-database-backends)
 
 - (001-textx-semantic-graph)
 
