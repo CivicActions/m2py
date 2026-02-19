@@ -4,8 +4,9 @@ T042: Validates that data written through m2py backends can be read back
 by native MUMPS commands executed through YottaDB or IRIS, proving that
 m2py correctly writes to the real database (not just a Python-side cache).
 
-These tests use the run_mumps_ydb.py and run_mumps_iris.py utilities to
-execute native MUMPS code and compare results against m2py backend reads.
+When running inside the YottaDB container (detected via $ydb_dist), the
+YDB tests call the ``yottadb`` executable directly — no Docker-in-Docker
+needed.  IRIS tests use run_mumps_iris.py which connects over TCP.
 """
 
 from __future__ import annotations
@@ -20,14 +21,21 @@ from m2py.runtime.globals import GlobalStorageBackend
 
 
 def _run_native_ydb(code: str, timeout: int = 10) -> str:
-    """Run MUMPS code through native YottaDB and return output."""
+    """Run MUMPS code through native YottaDB and return output.
+
+    When ``$ydb_dist`` is set (i.e. we are inside the YDB container),
+    the routine is written to ``$ydb_dir/r/`` and executed directly via
+    ``yottadb -run``.  Otherwise falls back to utils/run_mumps_ydb.py.
+    """
+    ydb_dist = os.environ.get("ydb_dist")
+    ydb_dir = os.environ.get("ydb_dir", "/data")
+
+    if ydb_dist:
+        return _run_ydb_direct(code, ydb_dir, timeout)
+
+    # Fallback: call the helper script (needs Docker)
     result = subprocess.run(
-        [
-            sys.executable,
-            "utils/run_mumps_ydb.py",
-            "--code",
-            code,
-        ],
+        [sys.executable, "utils/run_mumps_ydb.py", "--code", code],
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -35,6 +43,48 @@ def _run_native_ydb(code: str, timeout: int = 10) -> str:
     if result.returncode != 0:
         pytest.skip(f"YottaDB native execution failed: {result.stderr[:200]}")
     return result.stdout.strip()
+
+
+def _run_ydb_direct(code: str, ydb_dir: str, timeout: int) -> str:
+    """Execute MUMPS *code* directly via the ``yottadb`` binary.
+
+    *code* is a single-line MUMPS routine of the form ``LABEL <body> Q``.
+    The first whitespace-delimited token is used as the entry label.
+    """
+    # Parse entry label from the first token
+    parts = code.strip().split(None, 1)
+    if not parts:
+        pytest.skip("Empty MUMPS code")
+    label = parts[0]
+    body = parts[1] if len(parts) > 1 else ""
+
+    # Write a routine file
+    routine_dir = os.path.join(ydb_dir, "r")
+    os.makedirs(routine_dir, exist_ok=True)
+    routine_path = os.path.join(routine_dir, "xvalm2py.m")
+    with open(routine_path, "w") as f:
+        f.write(f"{label}\n")
+        if body:
+            f.write(f"\t{body}\n")
+
+    try:
+        result = subprocess.run(
+            ["yottadb", "-run", f"{label}^xvalm2py"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=ydb_dir,
+        )
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip()
+            pytest.skip(f"YottaDB direct execution failed: {stderr[:200]}")
+        return result.stdout.strip()
+    finally:
+        # Clean up routine file
+        try:
+            os.remove(routine_path)
+        except OSError:
+            pass
 
 
 def _run_native_iris(code: str, timeout: int = 30) -> str:

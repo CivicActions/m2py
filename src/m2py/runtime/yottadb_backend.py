@@ -283,9 +283,9 @@ class YottaDBGlobalStorage:
                 key = self._make_key(name, parent_subs + (start_sub,))
 
                 if direction == 1:
-                    result = key.subscript_next
+                    result = key.subscript_next()
                 else:
-                    result = key.subscript_previous
+                    result = key.subscript_previous()
 
                 if result is None or result == b"":
                     return ""
@@ -296,8 +296,14 @@ class YottaDBGlobalStorage:
                 return m_format_output(result)
             except Exception as e:
                 ydb = self._ydb
-                if ydb is not None and isinstance(e, ydb.YDBError):
-                    return ""
+                if ydb is not None:
+                    import _yottadb
+
+                    # YDBNodeEnd means end of subscript list → return ""
+                    if isinstance(e, _yottadb.YDBNodeEnd):
+                        return ""
+                    if isinstance(e, ydb.YDBError):
+                        return ""
                 raise self._translate_exception(e)
 
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
@@ -340,8 +346,11 @@ class YottaDBGlobalStorage:
                 return ""
             except Exception as e:
                 ydb_mod = self._ydb
-                if ydb_mod is not None and isinstance(e, ydb_mod.YDBError):
-                    return ""
+                if ydb_mod is not None:
+                    import _yottadb
+
+                    if isinstance(e, (_yottadb.YDBNodeEnd, ydb_mod.YDBError)):
+                        return ""
                 raise self._translate_exception(e)
 
     # =========================================================================

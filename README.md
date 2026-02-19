@@ -7,9 +7,9 @@ m2py is a MUMPS-to-Python transpiler that uses [textX](https://textx.github.io/t
 * Over 7,400 unit, integration, and functional tests covering a wide variety of MUMPS constructs and edge cases.
 * 99.99% transpilation success rate on the VistA-VEHU-M routine set (39,299 / 39,304 routines). The only remaining failures are MWAPI SSVNs (X11.6 standard).
 * Functional test suites (MUGJ, MVTS, and others) validate transpiled output against YottaDB reference output.
-* GT.M/YottaDB and Caché/IRIS-specific extensions are supported, including `$ZBOOLEAN`, `$ZCONVERT`/`$ZCVT`, `$ZF`, `$ZV`, `$ZU`, `$REPLACE`, `$NAMESPACE`, and others.
+* GT.M/YottaDB and Caché/IRIS-specific global storage, locks and many (but not all) Z functions and other extensions are supported.
 * A CLI (`m2py`) transpiles individual files or entire directory trees to Python, with automatic ruff lint-fixing and formatting.
-* Upcoming goals: YottaDB and IRIS database/lock backends, and VistA-VEHU runtime validation tests.
+* Upcoming goals: VistA-VEHU runtime validation tests.
 
 ## Installation
 
@@ -22,11 +22,11 @@ uv sync
 ### Database Backend Dependencies (Optional)
 
 ```bash
-# For IRIS backend (TCP SDK, works on any platform)
-uv add intersystems-irispython --optional backend
-
 # For YottaDB backend (requires running inside YDB container)
 bash utils/ydb.sh uv sync  # yottadb package auto-available in container
+
+# For IRIS backend (TCP SDK, works on any platform)
+uv add intersystems-irispython --optional backend
 ```
 
 ## Quick Start
@@ -46,7 +46,7 @@ m2py VistA-VEHU-M/ -o output/
 m2py src/ -v --no-format
 ```
 
-Generated Python files are automatically lint-fixed and formatted by ruff. Use `--no-format` to skip this step.
+Generated Python files are automatically lint-fixed, formatted by ruff and meet basic PyRight type checking. Use `--no-format` to skip formatting fixes.
 
 ### Transpile Programmatically
 
