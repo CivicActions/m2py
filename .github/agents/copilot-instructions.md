@@ -46,6 +46,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-19
 - SQLite-backed global storage (existing `sqlite_storage.py`) (024-vista-transpilation-fixes)
 - Python 3.10+ + yottadb (YottaDB Python wrapper), intersystems-irispython (IRIS Native SDK) (025-database-backends)
 - YottaDB persistent storage, IRIS persistent storage (both via Docker for dev/test) (025-database-backends)
+- Python 3.10+ + m2py (transpiler/runtime), paramiko (SSH), pytest, textX (026-vista-munit-tests)
+- JSON files (baseline data), m2py global store (MDict) for transpiled globals (026-vista-munit-tests)
 
 - (001-textx-semantic-graph)
 
