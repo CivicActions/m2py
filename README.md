@@ -19,6 +19,16 @@ cd m2py
 uv sync
 ```
 
+### Database Backend Dependencies (Optional)
+
+```bash
+# For IRIS backend (TCP SDK, works on any platform)
+uv add intersystems-irispython --optional backend
+
+# For YottaDB backend (requires running inside YDB container)
+bash utils/ydb.sh uv sync  # yottadb package auto-available in container
+```
+
 ## Quick Start
 
 ### Transpile MUMPS to Python (CLI)
@@ -99,6 +109,25 @@ uv run pytest -n0                # Run sequentially (for debugging)
 uv run pytest -m slow            # Run only slow tests
 uv run pytest --backend sqlite   # Use SQLite global storage
 ```
+
+### Database Backends
+
+Global variables can be stored in external databases for persistence and cross-process access:
+
+```bash
+# Run with YottaDB (inside Docker container)
+bash utils/ydb.sh uv run python my_script.py
+
+# Run with IRIS (container auto-started)
+bash utils/iris.sh uv run python my_script.py
+
+# Run backend tests against all three backends
+uv run pytest tests/runtime/backend/ -n0                       # InMemory
+bash utils/ydb.sh uv run pytest tests/runtime/backend/ -n0     # YottaDB
+bash utils/iris.sh uv run pytest tests/runtime/backend/ -n0    # IRIS
+```
+
+Set `M2PY_GLOBAL_BACKEND` to `inmemory` (default), `sqlite`, `yottadb`, or `iris`. See [docs/runtime.md](docs/runtime.md) for environment variable details.
 
 See [docs/testing.md](docs/testing.md) for full testing guide.
 

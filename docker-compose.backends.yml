@@ -1,0 +1,41 @@
+# Docker Compose for multi-backend testing
+#
+# Usage:
+#   docker compose -f docker-compose.backends.yml up -d   # Start all backends
+#   docker compose -f docker-compose.backends.yml down     # Stop all backends
+#
+# For individual backend testing, prefer utils/ydb.sh and utils/iris.sh
+# which handle container lifecycle automatically.
+
+services:
+  yottadb:
+    build:
+      context: .
+      dockerfile: Dockerfile.yottadb
+    volumes:
+      - .:/workspace
+      - yottadb-data:/data
+    working_dir: /workspace
+    environment:
+      - M2PY_GLOBAL_BACKEND=yottadb
+    tty: true
+    stdin_open: true
+
+  iris:
+    image: intersystemsdc/iris-community:latest
+    ports:
+      - "1972:1972"
+      - "52773:52773"
+    volumes:
+      - iris-data:/usr/irissys/mgr
+    environment:
+      - ISC_DATA_DIRECTORY=/usr/irissys/mgr
+    healthcheck:
+      test: ["CMD", "iris", "session", "IRIS", "-U", "%SYS", "##class(%SYSTEM.Process).Terminate(0)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  yottadb-data:
+  iris-data:

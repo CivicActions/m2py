@@ -34,7 +34,13 @@ if [ $# -eq 0 ]; then
     set -- bash
 fi
 
-exec docker run --rm -it \
+# Auto-detect TTY: use -it for interactive use, -i only for piped/captured output
+DOCKER_FLAGS="--rm -i"
+if [ -t 0 ] && [ -t 1 ]; then
+    DOCKER_FLAGS="--rm -it"
+fi
+
+exec docker run $DOCKER_FLAGS \
     -v "$PROJECT_ROOT:/workspace" \
     "$IMAGE_NAME" \
     "$@"

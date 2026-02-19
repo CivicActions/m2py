@@ -114,7 +114,12 @@ The runtime library imported by generated Python code. See [runtime.md](runtime.
 
 - `MArray` — MUMPS hierarchical sparse arrays (each node has both a value AND children)
 - `MUMPSRuntime` — central runtime instance: I/O, global variables, indirection resolution, XECUTE compilation, error handling, stack frames, intrinsic special variables
-- `GlobalStorageBackend` — pluggable global storage (`InMemoryGlobalStorage` default, `SQLiteGlobalStorage` for cross-process JOB/LOCK)
+- `GlobalStorageBackend` — pluggable global storage with multiple backends:
+  - `InMemoryGlobalStorage` — default in-process backend (no external database)
+  - `SQLiteGlobalStorage` — cross-process JOB/LOCK support
+  - `YottaDBGlobalStorage` — YottaDB database backend (requires YDB container)
+  - `IRISGlobalStorage` — InterSystems IRIS backend (requires IRIS container)
+  - Backend selection via `M2PY_GLOBAL_BACKEND` env var or `get_global_storage()` factory
 - Device layer — `PrincipalDevice` (stdin/stdout), `FileDevice`, `TCPDevice`
 - JOB subprocess support via `job_runner.py`
 

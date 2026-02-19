@@ -61,6 +61,10 @@ markers = [
     "mvts: marks mvts (M Validation Test Suite) tests",
     "merge: marks merge test suite tests",
     "functional: marks functional tests comparing against YDB outref",
+    "backend: marks backend storage tests (run with M2PY_GLOBAL_BACKEND)",
+    "backend_inmemory: marks tests requiring inmemory backend",
+    "backend_yottadb: marks tests requiring yottadb backend",
+    "backend_iris: marks tests requiring iris backend",
 ]
 
 [tool.ruff.lint]

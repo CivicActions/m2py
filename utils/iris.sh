@@ -91,6 +91,16 @@ start_container() {
     fi
 
     wait_for_ready
+
+    # Fix password-change-required on fresh containers
+    setup_password
+}
+
+setup_password() {
+    # On fresh IRIS community images the default password is expired.
+    # Set it to our expected value and mark it never-expiring.
+    echo -e "set p(\"Password\")=\"${IRIS_PASSWORD}\"\nset p(\"PasswordNeverExpires\")=1\nset sc=##class(Security.Users).Modify(\"${IRIS_USER}\",.p)\nhalt" \
+        | docker exec -i "$CONTAINER_NAME" iris session IRIS -U "%SYS" > /dev/null 2>&1 || true
 }
 
 stop_container() {

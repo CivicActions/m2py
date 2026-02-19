@@ -1,123 +1,14 @@
-"""Tests for global storage backend configuration.
+"""Tests for InMemoryGlobalStorage operations.
 
 Spec 009 Phase 9: User Story 7 - Global Storage Backend Configuration
 
-Tests backend selection via:
-- M2PY_GLOBAL_BACKEND environment variable
-- MUMPSRuntime(global_storage=...) programmatic API
-
-Acceptance Scenarios from spec.md:
-1. M2PY_GLOBAL_BACKEND=inmemory → InMemoryGlobalStorage used
-2. MUMPSRuntime(global_storage=...) → programmatic backend used
-3. No configuration → InMemoryGlobalStorage (default)
-4. M2PY_GLOBAL_BACKEND=yottadb (not installed) → ImportError with message
+Note: Backend selection tests (env var, factory, programmatic API)
+have been moved to tests/runtime/backend/test_connection_lifecycle.py.
 """
 
 import pytest
 
 from m2py.runtime.globals import InMemoryGlobalStorage
-
-
-@pytest.mark.runtime
-class TestBackendEnvVar:
-    """Test M2PY_GLOBAL_BACKEND environment variable configuration."""
-
-    def test_inmemory_backend_explicit(self, monkeypatch):
-        """Scenario 1: M2PY_GLOBAL_BACKEND=inmemory selects InMemoryGlobalStorage."""
-        from m2py.runtime import get_global_storage, InMemoryGlobalStorage
-
-        monkeypatch.setenv("M2PY_GLOBAL_BACKEND", "inmemory")
-        backend = get_global_storage()
-        assert isinstance(backend, InMemoryGlobalStorage)
-
-    def test_default_backend_inmemory(self, monkeypatch):
-        """Scenario 3: No configuration defaults to InMemoryGlobalStorage."""
-        from m2py.runtime import get_global_storage, InMemoryGlobalStorage
-
-        # Remove env var if set
-        monkeypatch.delenv("M2PY_GLOBAL_BACKEND", raising=False)
-        backend = get_global_storage()
-        assert isinstance(backend, InMemoryGlobalStorage)
-
-    def test_yottadb_backend_not_installed(self, monkeypatch):
-        """Scenario 4: M2PY_GLOBAL_BACKEND=yottadb raises ImportError."""
-        from m2py.runtime import get_global_storage
-
-        monkeypatch.setenv("M2PY_GLOBAL_BACKEND", "yottadb")
-        with pytest.raises(ImportError) as exc_info:
-            get_global_storage()
-        assert "YottaDB" in str(exc_info.value)
-
-    def test_iris_backend_not_installed(self, monkeypatch):
-        """IRIS backend raises ImportError when not installed."""
-        from m2py.runtime import get_global_storage
-
-        monkeypatch.setenv("M2PY_GLOBAL_BACKEND", "iris")
-        with pytest.raises(ImportError) as exc_info:
-            get_global_storage()
-        assert "IRIS" in str(exc_info.value)
-
-    def test_unknown_backend_raises_value_error(self, monkeypatch):
-        """Unknown backend name raises ValueError with valid options."""
-        from m2py.runtime import get_global_storage
-
-        monkeypatch.setenv("M2PY_GLOBAL_BACKEND", "unknown")
-        with pytest.raises(ValueError) as exc_info:
-            get_global_storage()
-        assert "Unknown" in str(exc_info.value)
-        assert "inmemory" in str(exc_info.value)
-
-    def test_case_insensitive_backend_name(self, monkeypatch):
-        """Backend names are case-insensitive."""
-        from m2py.runtime import get_global_storage, InMemoryGlobalStorage
-
-        monkeypatch.setenv("M2PY_GLOBAL_BACKEND", "INMEMORY")
-        backend = get_global_storage()
-        assert isinstance(backend, InMemoryGlobalStorage)
-
-
-@pytest.mark.runtime
-class TestBackendProgrammaticAPI:
-    """Test MUMPSRuntime(global_storage=...) programmatic configuration."""
-
-    def test_explicit_backend_parameter(self):
-        """Scenario 2: MUMPSRuntime(global_storage=...) uses provided backend."""
-        from m2py.runtime import MUMPSRuntime, InMemoryGlobalStorage
-
-        custom_backend = InMemoryGlobalStorage()
-        rt = MUMPSRuntime(global_storage=custom_backend)
-        assert rt.globals is custom_backend
-
-    def test_default_uses_factory(self, monkeypatch):
-        """MUMPSRuntime without global_storage uses get_global_storage()."""
-        from m2py.runtime import MUMPSRuntime, InMemoryGlobalStorage
-
-        monkeypatch.delenv("M2PY_GLOBAL_BACKEND", raising=False)
-        rt = MUMPSRuntime()
-        assert isinstance(rt.globals, InMemoryGlobalStorage)
-
-
-@pytest.mark.runtime
-class TestBackendFactoryFunction:
-    """Test get_global_storage() factory function directly."""
-
-    def test_explicit_parameter_overrides_env(self, monkeypatch):
-        """Explicit backend parameter takes precedence over env var."""
-        from m2py.runtime import get_global_storage, InMemoryGlobalStorage
-
-        # Set env to something that would fail
-        monkeypatch.setenv("M2PY_GLOBAL_BACKEND", "yottadb")
-        # But explicit parameter should override
-        backend = get_global_storage("inmemory")
-        assert isinstance(backend, InMemoryGlobalStorage)
-
-    def test_factory_returns_new_instance_each_call(self):
-        """Each call to get_global_storage() returns a new instance."""
-        from m2py.runtime import get_global_storage
-
-        backend1 = get_global_storage("inmemory")
-        backend2 = get_global_storage("inmemory")
-        assert backend1 is not backend2
 
 
 @pytest.mark.runtime

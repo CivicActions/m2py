@@ -19,8 +19,8 @@
 
 - [x] T001 [P] Create Docker configuration for YottaDB (`Dockerfile.yottadb` + `utils/ydb.sh`)
 - [x] T002 [P] Create Docker container helper for IRIS (`utils/iris.sh`)
-- [ ] T003 [P] Create tests/runtime/backend/ directory structure
-- [ ] T004 [P] Add yottadb and intersystems-irispython to pyproject.toml as optional backend dependencies
+- [x] T003 [P] Create tests/runtime/backend/ directory structure
+- [x] T004 [P] Add yottadb and intersystems-irispython to pyproject.toml as optional backend dependencies
 
 ---
 
@@ -30,11 +30,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 [P] Create backend exception hierarchy in src/m2py/runtime/backend_exceptions.py
-- [ ] T006 [P] Create test fixtures for backend parameterization in tests/runtime/backend/conftest.py
-- [ ] T007 Update get_global_storage() factory in src/m2py/runtime/__init__.py to support backend selection via M2PY_GLOBAL_BACKEND
-- [ ] T008 [P] Create environment configuration helper functions for reading backend parameters
-- [ ] T009 [P] Add pytest markers for backend testing (backend_inmemory, backend_yottadb, backend_iris)
+- [x] T005 [P] Create backend exception hierarchy in src/m2py/runtime/backend_exceptions.py
+- [x] T006 [P] Create test fixtures for backend parameterization in tests/runtime/backend/conftest.py
+- [x] T007 Update get_global_storage() factory in src/m2py/runtime/__init__.py to support backend selection via M2PY_GLOBAL_BACKEND
+- [x] T008 [P] Create environment configuration helper functions for reading backend parameters
+- [x] T009 [P] Add pytest markers for backend testing (backend_inmemory, backend_yottadb, backend_iris)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -48,26 +48,26 @@
 
 ### Implementation for User Story 1
 
-- [ ] T010 [US1] Create YottaDBGlobalStorage class stub in src/m2py/runtime/yottadb_backend.py
-- [ ] T011 [US1] Implement lazy connection initialization (_ensure_initialized) with YottaDB SDK import
-- [ ] T012 [US1] Implement get() method with subscript canonicalization and YDB exception translation
-- [ ] T013 [US1] Implement set() method with subscript canonicalization
-- [ ] T014 [US1] Implement kill() and kill_all() methods
-- [ ] T015 [US1] Implement data() method returning correct $DATA codes (0/1/10/11)
-- [ ] T016 [US1] Implement order() method with MUMPS collation order
-- [ ] T017 [US1] Implement query() method using recursive order() traversal
-- [ ] T018 [US1] Implement get_tree() and merge_tree() bulk operations
-- [ ] T019 [US1] Implement incr() atomic increment operation
-- [ ] T020 [US1] Add thread safety locks around all YDB API calls
-- [ ] T021 [US1] Update factory to instantiate YottaDBGlobalStorage when backend=yottadb
+- [x] T010 [US1] Create YottaDBGlobalStorage class stub in src/m2py/runtime/yottadb_backend.py
+- [x] T011 [US1] Implement lazy connection initialization (_ensure_initialized) with YottaDB SDK import
+- [x] T012 [US1] Implement get() method with subscript canonicalization and YDB exception translation
+- [x] T013 [US1] Implement set() method with subscript canonicalization
+- [x] T014 [US1] Implement kill() and kill_all() methods
+- [x] T015 [US1] Implement data() method returning correct $DATA codes (0/1/10/11)
+- [x] T016 [US1] Implement order() method with MUMPS collation order
+- [x] T017 [US1] Implement query() method using recursive order() traversal
+- [x] T018 [US1] Implement get_tree() and merge_tree() bulk operations
+- [x] T019 [US1] Implement incr() atomic increment operation
+- [x] T020 [US1] Add thread safety locks around all YDB API calls
+- [x] T021 [US1] Update factory to instantiate YottaDBGlobalStorage when backend=yottadb
 
 ### Tests for User Story 1
 
-- [ ] T022 [P] [US1] Create test_basic_operations.py with tests for get/set/kill/data operations
-- [ ] T023 [P] [US1] Create test_order_query.py with YottaDB-specific traversal tests
-- [ ] T024 [P] [US1] Create test_subscript_canonicalization.py with numeric/string collation tests including explicit validation of numeric vs string canonicalization (e.g., subscript '1' equivalent to 1)
-- [ ] T025 [P] [US1] Create test_connection_lifecycle.py with lazy init and error handling tests
-- [ ] T026 [P] [US1] Create test_exception_translation.py validating YDB exception mapping
+- [x] T022 [P] [US1] Create test_basic_operations.py with tests for get/set/kill/data operations
+- [x] T023 [P] [US1] Create test_order_query.py with YottaDB-specific traversal tests
+- [x] T024 [P] [US1] Create test_subscript_canonicalization.py with numeric/string collation tests including explicit validation of numeric vs string canonicalization (e.g., subscript '1' equivalent to 1)
+- [x] T025 [P] [US1] Create test_connection_lifecycle.py with lazy init and error handling tests
+- [x] T026 [P] [US1] Create test_exception_translation.py validating YDB exception mapping
 
 **Checkpoint**: YottaDB backend fully functional - can persist globals across process restarts
 
@@ -81,27 +81,27 @@
 
 ### Implementation for User Story 2
 
-- [ ] T027 [US2] Create IRISGlobalStorage class stub in src/m2py/runtime/iris_backend.py
-- [ ] T028 [US2] Implement lazy connection initialization (_ensure_connected) reading IRIS connection parameters
-- [ ] T029 [US2] Implement get() method with extended reference parsing (^|"NAMESPACE"|Global)
-- [ ] T030 [US2] Implement set() method with namespace switching
-- [ ] T031 [US2] Implement kill() and kill_all() methods
-- [ ] T032 [US2] Implement data() method returning correct $DATA codes
-- [ ] T033 [US2] Implement order() method
-- [ ] T034 [US2] Implement query() method using IRIS native query API
-- [ ] T035 [US2] Implement get_tree() and merge_tree() bulk operations
-- [ ] T036 [US2] Implement incr() atomic increment operation
-- [ ] T037 [US2] Add thread safety locks around IRIS connection operations
-- [ ] T038 [US2] Implement _parse_extended_ref() helper for namespace parsing
-- [ ] T039 [US2] Update factory to instantiate IRISGlobalStorage when backend=iris
+- [x] T027 [US2] Create IRISGlobalStorage class stub in src/m2py/runtime/iris_backend.py
+- [x] T028 [US2] Implement lazy connection initialization (_ensure_connected) reading IRIS connection parameters
+- [x] T029 [US2] Implement get() method with extended reference parsing (^|"NAMESPACE"|Global)
+- [x] T030 [US2] Implement set() method with namespace switching
+- [x] T031 [US2] Implement kill() and kill_all() methods
+- [x] T032 [US2] Implement data() method returning correct $DATA codes
+- [x] T033 [US2] Implement order() method
+- [x] T034 [US2] Implement query() method using IRIS native query API
+- [x] T035 [US2] Implement get_tree() and merge_tree() bulk operations
+- [x] T036 [US2] Implement incr() atomic increment operation
+- [x] T037 [US2] Add thread safety locks around IRIS connection operations
+- [x] T038 [US2] Implement _parse_extended_ref() helper for namespace parsing
+- [x] T039 [US2] Update factory to instantiate IRISGlobalStorage when backend=iris
 
 ### Tests for User Story 2
 
-- [ ] T040 [P] [US2] Add IRIS-specific tests to test_basic_operations.py
-- [ ] T041 [P] [US2] Add IRIS namespace tests to test_extended_globals.py
-- [ ] T042 [P] [US2] Create test_cross_validation.py validating m2py writes are readable by IRIS native MUMPS and YottaDB native MUMPS
-- [ ] T043 [P] [US2] Add IRIS connection parameter tests to test_connection_lifecycle.py
-- [ ] T044 [P] [US2] Add IRIS exception translation tests to test_exception_translation.py
+- [x] T040 [P] [US2] Add IRIS-specific tests to test_basic_operations.py
+- [x] T041 [P] [US2] Add IRIS namespace tests to test_extended_globals.py
+- [x] T042 [P] [US2] Create test_cross_validation.py validating m2py writes are readable by IRIS native MUMPS and YottaDB native MUMPS
+- [x] T043 [P] [US2] Add IRIS connection parameter tests to test_connection_lifecycle.py
+- [x] T044 [P] [US2] Add IRIS exception translation tests to test_exception_translation.py
 
 **Checkpoint**: IRIS backend fully functional - can persist globals with namespace support
 
@@ -115,19 +115,19 @@
 
 ### Implementation for User Story 3
 
-- [ ] T045 [US3] Audit existing tests in tests/unit/runtime/, tests/integration/ for backend operations
-- [ ] T046 [US3] Move (not copy) existing test_global_storage.py backend selection tests to tests/runtime/backend/, removing from original location tests/unit/runtime/
-- [ ] T047 [P] [US3] Reorganize global operations tests into test_basic_operations.py
-- [ ] T048 [P] [US3] Reorganize order/query tests into test_order_query.py
-- [ ] T049 [P] [US3] Reorganize subscript collation tests into test_subscript_canonicalization.py
-- [ ] T050 [P] [US3] Reorganize naked reference tests into test_naked_references.py
-- [ ] T051 [P] [US3] Reorganize MERGE tests into test_merge_operations.py
-- [ ] T052 [P] [US3] Reorganize $INCREMENT tests into test_increment.py
-- [ ] T053 [US3] Update all reorganized tests to use backend fixture from conftest.py
-- [ ] T054 [US3] Add @pytest.mark.backend_* decorators to all tests
-- [ ] T055 [US3] Run full test suite against inmemory backend to validate no regressions
-- [ ] T056 [US3] Run full test suite against yottadb backend in Docker
-- [ ] T057 [US3] Run full test suite against iris backend in Docker
+- [x] T045 [US3] Audit existing tests in tests/unit/runtime/, tests/integration/ for backend operations
+- [x] T046 [US3] Move (not copy) existing test_global_storage.py backend selection tests to tests/runtime/backend/, removing from original location tests/unit/runtime/
+- [x] T047 [P] [US3] Reorganize global operations tests into test_basic_operations.py
+- [x] T048 [P] [US3] Reorganize order/query tests into test_order_query.py
+- [x] T049 [P] [US3] Reorganize subscript collation tests into test_subscript_canonicalization.py
+- [x] T050 [P] [US3] Reorganize naked reference tests into test_naked_references.py
+- [x] T051 [P] [US3] Reorganize MERGE tests into test_merge_operations.py
+- [x] T052 [P] [US3] Reorganize $INCREMENT tests into test_increment.py
+- [x] T053 [US3] Update all reorganized tests to use backend fixture from conftest.py
+- [x] T054 [US3] Add @pytest.mark.backend_* decorators to all tests
+- [x] T055 [US3] Run full test suite against inmemory backend to validate no regressions
+- [x] T056 [US3] Run full test suite against yottadb backend in Docker
+- [x] T057 [US3] Run full test suite against iris backend in Docker
 
 **Checkpoint**: All backends pass identical unified test suite - semantic equivalence proven
 
@@ -141,23 +141,23 @@
 
 ### Implementation for User Story 4
 
-- [ ] T058 [US4] Implement lock() method in YottaDBGlobalStorage using yottadb.lock()
-- [ ] T059 [US4] Implement unlock() method in YottaDBGlobalStorage with lock state tracking
-- [ ] T060 [US4] Implement unlock_all() method in YottaDBGlobalStorage
-- [ ] T061 [US4] Implement lock() method in IRISGlobalStorage using IRIS native locks
-- [ ] T062 [US4] Implement unlock() method in IRISGlobalStorage
-- [ ] T063 [US4] Implement unlock_all() method in IRISGlobalStorage
-- [ ] T064 [US4] Add lock state tracking to YottaDB backend (workaround for YDB lock-all semantics)
-- [ ] T065 [US4] Handle lock timeout parameter (None = wait indefinitely)
+- [x] T058 [US4] Implement lock() method in YottaDBGlobalStorage using yottadb.lock()
+- [x] T059 [US4] Implement unlock() method in YottaDBGlobalStorage with lock state tracking
+- [x] T060 [US4] Implement unlock_all() method in YottaDBGlobalStorage
+- [x] T061 [US4] Implement lock() method in IRISGlobalStorage using IRIS native locks
+- [x] T062 [US4] Implement unlock() method in IRISGlobalStorage
+- [x] T063 [US4] Implement unlock_all() method in IRISGlobalStorage
+- [x] T064 [US4] Add lock state tracking to YottaDB backend (workaround for YDB lock-all semantics)
+- [x] T065 [US4] Handle lock timeout parameter (None = wait indefinitely)
 
 ### Tests for User Story 4
 
-- [ ] T066 [P] [US4] Create test_locks.py with lock acquisition tests for all backends
-- [ ] T067 [P] [US4] Add lock timeout tests (success within timeout, failure on timeout)
-- [ ] T068 [P] [US4] Add multi-process lock coordination tests
-- [ ] T069 [P] [US4] Add selective unlock tests (unlock specific node, not all)
-- [ ] T070 [P] [US4] Add nested lock tests
-- [ ] T070a [P] [US4] Create multi-threaded test validating backend thread safety with concurrent get/set operations from multiple threads
+- [x] T066 [P] [US4] Create test_locks.py with lock acquisition tests for all backends
+- [x] T067 [P] [US4] Add lock timeout tests (success within timeout, failure on timeout)
+- [x] T068 [P] [US4] Add multi-process lock coordination tests
+- [x] T069 [P] [US4] Add selective unlock tests (unlock specific node, not all)
+- [x] T070 [P] [US4] Add nested lock tests
+- [x] T070a [P] [US4] Create multi-threaded test validating backend thread safety with concurrent get/set operations from multiple threads
 
 **Checkpoint**: Lock operations work correctly across all backends with proper inter-process coordination
 
@@ -171,22 +171,22 @@
 
 ### Implementation for User Story 5
 
-- [ ] T071 [US5] Implement transaction_start() in YottaDBGlobalStorage with transaction depth tracking
-- [ ] T072 [US5] Implement transaction_commit() in YottaDBGlobalStorage using yottadb.tp() callback model
-- [ ] T073 [US5] Implement transaction_rollback() in YottaDBGlobalStorage
-- [ ] T074 [US5] Create transaction context manager for YDB callback adapter
-- [ ] T075 [US5] Implement transaction_start() in IRISGlobalStorage using IRIS.begin()
-- [ ] T076 [US5] Implement transaction_commit() in IRISGlobalStorage using IRIS.commit()
-- [ ] T077 [US5] Implement transaction_rollback() in IRISGlobalStorage using IRIS.rollback()
-- [ ] T078 [US5] Handle nested transaction levels correctly (increment/decrement depth)
+- [x] T071 [US5] Implement transaction_start() in YottaDBGlobalStorage with transaction depth tracking
+- [x] T072 [US5] Implement transaction_commit() in YottaDBGlobalStorage using yottadb.tp() callback model
+- [x] T073 [US5] Implement transaction_rollback() in YottaDBGlobalStorage
+- [x] T074 [US5] Create transaction context manager for YDB callback adapter
+- [x] T075 [US5] Implement transaction_start() in IRISGlobalStorage using IRIS.begin()
+- [x] T076 [US5] Implement transaction_commit() in IRISGlobalStorage using IRIS.commit()
+- [x] T077 [US5] Implement transaction_rollback() in IRISGlobalStorage using IRIS.rollback()
+- [x] T078 [US5] Handle nested transaction levels correctly (increment/decrement depth)
 
 ### Tests for User Story 5
 
-- [ ] T079 [P] [US5] Create test_transactions.py with basic transaction commit tests
-- [ ] T080 [P] [US5] Add transaction rollback tests validating state restoration
-- [ ] T081 [P] [US5] Add nested transaction tests ($TLEVEL tracking)
-- [ ] T082 [P] [US5] Add transaction atomicity tests (all-or-nothing)
-- [ ] T083 [P] [US5] Add transaction isolation tests (read committed minimum)
+- [x] T079 [P] [US5] Create test_transactions.py with basic transaction commit tests
+- [x] T080 [P] [US5] Add transaction rollback tests validating state restoration
+- [x] T081 [P] [US5] Add nested transaction tests ($TLEVEL tracking)
+- [x] T082 [P] [US5] Add transaction atomicity tests (all-or-nothing)
+- [x] T083 [P] [US5] Add transaction isolation tests (read committed minimum)
 
 **Checkpoint**: Transaction operations provide ACID guarantees across all backends
 
@@ -200,20 +200,20 @@
 
 ### Implementation for User Story 6
 
-- [ ] T084 [US6] Add environment variable validation in YottaDBGlobalStorage initialization
-- [ ] T085 [US6] Add environment variable validation in IRISGlobalStorage initialization
-- [ ] T086 [US6] Implement clear error messages for missing YottaDB environment (not running inside container)
-- [ ] T087 [US6] Implement clear error messages for missing M2PY_IRIS_PASSWORD (IRIS)
-- [ ] T088 [US6] Add default value handling for optional parameters (M2PY_IRIS_HOST=localhost, etc.)
-- [ ] T089 [US6] Document all environment variables in backend exception messages
+- [x] T084 [US6] Add environment variable validation in YottaDBGlobalStorage initialization
+- [x] T085 [US6] Add environment variable validation in IRISGlobalStorage initialization
+- [x] T086 [US6] Implement clear error messages for missing YottaDB environment (not running inside container)
+- [x] T087 [US6] Implement clear error messages for missing M2PY_IRIS_PASSWORD (IRIS)
+- [x] T088 [US6] Add default value handling for optional parameters (M2PY_IRIS_HOST=localhost, etc.)
+- [x] T089 [US6] Document all environment variables in backend exception messages
 
 ### Tests for User Story 6
 
-- [ ] T090 [P] [US6] Add configuration validation tests to test_connection_lifecycle.py
-- [ ] T091 [P] [US6] Test missing required environment variables raise BackendConfigurationError
-- [ ] T092 [P] [US6] Test default values are applied when optional env vars not set
-- [ ] T093 [P] [US6] Test backend switching via M2PY_GLOBAL_BACKEND environment variable
-- [ ] T094 [P] [US6] Test error messages include actionable guidance
+- [x] T090 [P] [US6] Add configuration validation tests to test_connection_lifecycle.py
+- [x] T091 [P] [US6] Test missing required environment variables raise BackendConfigurationError
+- [x] T092 [P] [US6] Test default values are applied when optional env vars not set
+- [x] T093 [P] [US6] Test backend switching via M2PY_GLOBAL_BACKEND environment variable
+- [x] T094 [P] [US6] Test error messages include actionable guidance
 
 **Checkpoint**: Configuration validation provides clear error messages and sensible defaults
 
@@ -223,20 +223,20 @@
 
 **Purpose**: Documentation, CI/CD, performance validation, security hardening
 
-- [ ] T095 [P] Update docs/architecture.md with backend architecture diagram
-- [ ] T096 [P] Update docs/runtime.md with backend usage examples
-- [ ] T097 [P] Update README.md with backend installation instructions
-- [ ] T098 [P] Create Docker Compose configuration for multi-backend testing with services: yottadb (future port 1972), iris (ports 1972, 52773), shared network, named volumes (yottadb-data, iris-data) for data persistence
+- [x] T095 [P] Update docs/architecture.md with backend architecture diagram
+- [x] T096 [P] Update docs/runtime.md with backend usage examples
+- [x] T097 [P] Update README.md with backend installation instructions
+- [x] T098 [P] Create Docker Compose configuration for multi-backend testing with services: yottadb (future port 1972), iris (ports 1972, 52773), shared network, named volumes (yottadb-data, iris-data) for data persistence
 - [ ] T099 [P] Update CI/CD workflows to run tests against all three backends
 - [ ] T100 [P] Add backend performance benchmarks to tests/runtime/backend/ measuring get/set/order latency with acceptance criteria: 95th percentile <10ms for typical operations (≤3 subscript levels, ≤1KB values)
 - [ ] T101 [P] Validate quickstart.md examples work end-to-end with default Docker connection parameters matching yottadb/yottadb:latest and intersystems/iris-community:latest images
 - [ ] T102 [P] Document IRIS namespace isolation semantics in quickstart.md (how USER namespace is default, how extended references work, cross-namespace limitations)
 - [ ] T103 [P] Update docs/limitations.md with backend-specific limitations including database-specific limits (max key length, value size, subscript depth) for YottaDB and IRIS
-- [ ] T104 Code review and refactoring for consistency across backends (consistent error messages, method signatures, variable naming, exception handling patterns)
-- [ ] T105 Security review of connection parameter handling (especially M2PY_IRIS_PASSWORD in environment)
-- [ ] T106 [P] Validate InMemoryGlobalStorage implements all protocol methods correctly after protocol updates (including any new SSVN methods)
-- [ ] T107 [P] Implement SSVN operations (ssvn_get, ssvn_set, ssvn_data, ssvn_order, ssvn_query) in YottaDBGlobalStorage for system-wide state (^$JOB, ^$LOCK)
-- [ ] T108 [P] Implement SSVN operations in IRISGlobalStorage for system-wide state
+- [x] T104 Code review and refactoring for consistency across backends (consistent error messages, method signatures, variable naming, exception handling patterns)
+- [x] T105 Security review of connection parameter handling (especially M2PY_IRIS_PASSWORD in environment)
+- [x] T106 [P] Validate InMemoryGlobalStorage implements all protocol methods correctly after protocol updates (including any new SSVN methods)
+- [x] T107 [P] Implement SSVN operations (ssvn_get, ssvn_set, ssvn_data, ssvn_order, ssvn_query) in YottaDBGlobalStorage for system-wide state (^$JOB, ^$LOCK)
+- [x] T108 [P] Implement SSVN operations in IRISGlobalStorage for system-wide state
 - [ ] T109 [P] Create tests for SSVN operations in test_ssvn_operations.py validating system variable access across backends
 
 ---

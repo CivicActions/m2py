@@ -1557,15 +1557,29 @@ def get_global_storage(backend: str | None = None) -> GlobalStorageBackend:
         db_path = os.environ.get("M2PY_SQLITE_DB_PATH", None)
         return SQLiteGlobalStorage(db_path)
     elif backend == "yottadb":
-        raise ImportError(
-            "YottaDB backend requires the 'yottadb' package. "
-            "Install with: pip install yottadb"
-        )
+        try:
+            from m2py.runtime.yottadb_backend import YottaDBGlobalStorage
+
+            return YottaDBGlobalStorage()
+        except ImportError as e:
+            from m2py.runtime.backend_exceptions import BackendConnectionError
+
+            raise BackendConnectionError(
+                "YottaDB backend requires the 'yottadb' package. "
+                "Run inside the YDB container: bash utils/ydb.sh <command>"
+            ) from e
     elif backend == "iris":
-        raise ImportError(
-            "IRIS backend requires the 'intersystems-iris' package. "
-            "Install with: pip install intersystems-iris"
-        )
+        try:
+            from m2py.runtime.iris_backend import IRISGlobalStorage
+
+            return IRISGlobalStorage()
+        except ImportError as e:
+            from m2py.runtime.backend_exceptions import BackendConnectionError
+
+            raise BackendConnectionError(
+                "IRIS backend requires the 'intersystems-irispython' package. "
+                "Install with: uv add intersystems-irispython --optional backend"
+            ) from e
     else:
         raise ValueError(
             f"Unknown global storage backend: {backend!r}. "

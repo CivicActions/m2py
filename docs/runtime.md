@@ -104,7 +104,49 @@ Used automatically by JOB'd subprocesses — the parent creates a SQLite databas
 
 ### Other Backends
 
-`yottadb` and `iris` backends are defined as stubs for future implementation.
+#### YottaDBGlobalStorage
+
+Connects to YottaDB database via the native Python SDK (`yottadb` package). Features:
+- Must run inside the YDB container: `bash utils/ydb.sh <command>`
+- Lazy SDK import on first operation
+- Full MUMPS global semantics: get, set, kill, data, order, query, merge
+- Native LOCK support via `yottadb.lock_incr()`/`lock_decr()`
+- Transaction support via `yottadb.tp()` callback adapter
+- Thread-safe via `threading.Lock`
+
+```bash
+# Run with YottaDB backend
+export M2PY_GLOBAL_BACKEND=yottadb
+bash utils/ydb.sh uv run python my_script.py
+```
+
+#### IRISGlobalStorage
+
+Connects to InterSystems IRIS via the TCP-based Python SDK (`intersystems-irispython`). Features:
+- Requires IRIS container: `bash utils/iris.sh --start`
+- Lazy connection on first operation
+- Connection parameters via environment variables (IRIS_HOST, IRIS_PORT, etc.)
+- Full MUMPS global semantics with IRIS-native operations
+- Native LOCK support via `iris.lock()`/`iris.unlock()`
+- Transaction support via `iris.tStart()`/`iris.tCommit()`/`iris.tRollback()`
+- Known limitation: empty string subscripts not supported by IRIS
+
+```bash
+# Run with IRIS backend
+export M2PY_GLOBAL_BACKEND=iris
+bash utils/iris.sh uv run python my_script.py
+```
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `M2PY_GLOBAL_BACKEND` | `inmemory` | Backend selection: `inmemory`, `sqlite`, `yottadb`, `iris` |
+| `IRIS_HOST` | `localhost` | IRIS server hostname |
+| `IRIS_PORT` | `1972` | IRIS SuperServer port |
+| `IRIS_NAMESPACE` | `USER` | IRIS namespace |
+| `IRIS_USER` | `_SYSTEM` | IRIS username |
+| `IRIS_PASSWORD` | `SYS` | IRIS password |
 
 ## Device Layer
 
