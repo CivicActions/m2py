@@ -51,6 +51,7 @@ class YottaDBGlobalStorage:
 
         # Transaction state
         self._tlevel: int = 0
+        self._transaction_journal: list[list[tuple]] = []  # Stack of change logs
 
         # $ZREFERENCE
         self._last_global_ref: str = ""
@@ -173,6 +174,12 @@ class YottaDBGlobalStorage:
             self._ensure_initialized()
             try:
                 key = self._make_key(name, subscripts)
+                # Journal old value for transaction rollback
+                if self._tlevel > 0:
+                    old_val = self._safe_get(name, subscripts)
+                    self._transaction_journal[-1].append(
+                        ("set", name, subscripts, old_val)
+                    )
                 key.value = value.encode("utf-8")
             except Exception as e:
                 raise self._translate_exception(e)
@@ -185,6 +192,12 @@ class YottaDBGlobalStorage:
         with self._lock:
             self._ensure_initialized()
             try:
+                # Journal subtree for transaction rollback
+                if self._tlevel > 0:
+                    subtree = self._snapshot_subtree(name, subscripts)
+                    self._transaction_journal[-1].append(
+                        ("kill", name, subscripts, subtree)
+                    )
                 key = self._make_key(name, subscripts)
                 key.delete_tree()
             except Exception as e:
@@ -419,12 +432,16 @@ class YottaDBGlobalStorage:
     ) -> None:
         """Recursively build MArray from YDB key using order traversal."""
         from m2py.runtime import MArray
+        import _yottadb
 
         # Use order traversal: start from "" to get first child
         current_sub = ""
         while True:
             child_key = parent_key[current_sub]
-            next_sub = child_key.subscript_next
+            try:
+                next_sub = child_key.subscript_next()
+            except _yottadb.YDBNodeEnd:
+                break
             if next_sub is None or next_sub == b"":
                 break
 
@@ -485,6 +502,12 @@ class YottaDBGlobalStorage:
             self._ensure_initialized()
             try:
                 key = self._make_key(name, subscripts)
+                # Journal old value for transaction rollback
+                if self._tlevel > 0:
+                    old_val = self._safe_get(name, subscripts)
+                    self._transaction_journal[-1].append(
+                        ("incr", name, subscripts, old_val)
+                    )
                 result = key.incr(increment)
                 if isinstance(result, bytes):
                     return m_format_output(result.decode("utf-8"))
@@ -531,19 +554,24 @@ class YottaDBGlobalStorage:
             self._ensure_initialized()
             ydb = self._ydb
             try:
-                timeout_ns = int(timeout * 1_000_000_000) if timeout is not None else 0
+                timeout_nsec = int(timeout * 1_000_000_000) if timeout is not None else 0
                 ydb.lock_incr(
                     f"^{name}",
                     list(subscripts),
-                    timeout_ns=timeout_ns,
+                    timeout_nsec=timeout_nsec,
                 )
                 self._locks_held[lock_key] = self._locks_held.get(lock_key, 0) + 1
                 return True
             except Exception as e:
                 ydb_mod = self._ydb
-                if ydb_mod is not None and isinstance(e, ydb_mod.YDBError):
-                    msg = str(e)
-                    if "TIME" in msg or "LOCKTIME" in msg:
+                if ydb_mod is not None:
+                    import _yottadb
+
+                    if isinstance(e, ydb_mod.YDBError):
+                        msg = str(e)
+                        if "TIME" in msg or "LOCKTIME" in msg:
+                            return False
+                    if isinstance(e, _yottadb.YDBLockTimeoutError):
                         return False
                 raise self._translate_exception(e)
 
@@ -592,13 +620,81 @@ class YottaDBGlobalStorage:
     # Transaction Operations
     # =========================================================================
 
+    def _safe_get(self, name: str, subscripts: tuple[str, ...]) -> str | None:
+        """Get value without updating naked indicator (for journaling)."""
+        try:
+            key = self._make_key(name, subscripts)
+            d = key.data
+            if d == 0 or d == 10:
+                return None
+            val = key.get()
+            if val is None:
+                return None
+            return val.decode("utf-8") if isinstance(val, bytes) else str(val)
+        except Exception:
+            return None
+
+    def _snapshot_subtree(
+        self, name: str, subscripts: tuple[str, ...]
+    ) -> list[tuple[tuple[str, ...], str | None]]:
+        """Snapshot all nodes in a subtree for rollback."""
+        nodes: list[tuple[tuple[str, ...], str | None]] = []
+        try:
+            key = self._make_key(name, subscripts)
+            d = key.data
+            if d in (1, 11):
+                val = key.get()
+                v = val.decode("utf-8") if isinstance(val, bytes) else str(val) if val is not None else None
+                nodes.append((subscripts, v))
+            elif d == 0:
+                nodes.append((subscripts, None))
+            else:
+                nodes.append((subscripts, None))
+            # Walk children via $ORDER
+            self._snapshot_children(name, subscripts, nodes)
+        except Exception:
+            pass
+        return nodes
+
+    def _snapshot_children(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        nodes: list[tuple[tuple[str, ...], str | None]],
+    ) -> None:
+        """Walk children recursively to snapshot values."""
+        import _yottadb
+
+        current_sub = ""
+        parent_key = self._make_key(name, subscripts)
+        while True:
+            child_key = parent_key[current_sub]
+            try:
+                next_sub_b = child_key.subscript_next()
+            except _yottadb.YDBNodeEnd:
+                break
+            if next_sub_b is None or next_sub_b == b"":
+                break
+            sub_str = next_sub_b.decode("utf-8") if isinstance(next_sub_b, bytes) else str(next_sub_b)
+            child_subs = subscripts + (sub_str,)
+            child_ydb = parent_key[sub_str]
+            d = child_ydb.data
+            if d in (1, 11):
+                val = child_ydb.get()
+                v = val.decode("utf-8") if isinstance(val, bytes) else str(val) if val is not None else None
+                nodes.append((child_subs, v))
+            if d in (10, 11):
+                self._snapshot_children(name, child_subs, nodes)
+            current_sub = sub_str
+
     def transaction_start(self) -> None:
         """Begin a transaction (TSTART).
 
-        Note: YottaDB uses tp() callback model. For the start/commit/rollback
-        protocol, we track depth and batch operations. True ACID transactions
-        only work when using the tp() callback directly.
+        Journals all modifications so rollback can undo them.
+        YottaDB uses tp() callback model natively, but the start/commit/rollback
+        protocol uses journal-based undo to match the MUMPS semantic interface.
         """
+        self._transaction_journal.append([])
         self._tlevel += 1
 
     def transaction_commit(self) -> None:
@@ -607,15 +703,56 @@ class YottaDBGlobalStorage:
             raise RuntimeError(
                 "M44: Cannot TCOMMIT outside of a transaction ($TLEVEL=0)"
             )
+        self._transaction_journal.pop()
         self._tlevel -= 1
 
     def transaction_rollback(self) -> None:
-        """Rollback current transaction (TROLLBACK)."""
+        """Rollback current transaction (TROLLBACK).
+
+        Replays journal entries in reverse to restore original state.
+        Per MUMPS spec: argumentless TROLLBACK rolls back ALL levels.
+        """
         if self._tlevel == 0:
             raise RuntimeError(
                 "M44: Cannot TROLLBACK outside of a transaction ($TLEVEL=0)"
             )
+        # Collect all journal entries from all nested levels
+        all_entries: list[tuple] = []
+        for journal in self._transaction_journal:
+            all_entries.extend(journal)
+        self._transaction_journal.clear()
         self._tlevel = 0
+
+        # Replay in reverse to restore original state
+        with self._lock:
+            self._ensure_initialized()
+            for entry in reversed(all_entries):
+                op = entry[0]
+                try:
+                    if op == "set":
+                        _, name, subscripts, old_val = entry
+                        key = self._make_key(name, subscripts)
+                        if old_val is None:
+                            # Node didn't exist before — delete it
+                            key.delete_node()
+                        else:
+                            key.value = old_val.encode("utf-8")
+                    elif op == "kill":
+                        _, name, subscripts, subtree = entry
+                        # Restore all nodes from snapshot
+                        for subs, val in subtree:
+                            if val is not None:
+                                key = self._make_key(name, subs)
+                                key.value = val.encode("utf-8")
+                    elif op == "incr":
+                        _, name, subscripts, old_val = entry
+                        key = self._make_key(name, subscripts)
+                        if old_val is None:
+                            key.delete_node()
+                        else:
+                            key.value = old_val.encode("utf-8")
+                except Exception:
+                    pass  # Best-effort rollback
 
     def get_tlevel(self) -> int:
         """Return current transaction nesting level ($TLEVEL)."""

@@ -62,8 +62,8 @@ class TestStringSubscripts:
         assert backend.get("TEST", ("A1",)) == "mixed"
 
     def test_empty_string_subscript(self, backend, backend_name):
-        if backend_name == "iris":
-            pytest.skip("IRIS does not support empty string subscripts")
+        if backend_name in ("iris", "yottadb"):
+            pytest.skip(f"{backend_name} does not support empty string subscripts")
         backend.set("TEST", ("",), "empty")
         assert backend.get("TEST", ("",)) == "empty"
 
