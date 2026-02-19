@@ -113,6 +113,75 @@ bash utils/iris.sh --status   # Show container status
 
 ---
 
+## IRIS Namespace Isolation
+
+### Overview
+
+IRIS organizes globals into **namespaces** — isolated containers that provide logical separation of data. Each namespace has its own set of globals, routines, and class definitions. The m2py IRIS backend connects to a single namespace at initialization time (default: `USER`).
+
+### Default Namespace: USER
+
+When no namespace is specified, m2py connects to the `USER` namespace:
+
+```bash
+export M2PY_GLOBAL_BACKEND=iris
+# M2PY_IRIS_NAMESPACE defaults to "USER"
+bash utils/iris.sh uv run python myprogram.py
+```
+
+The `USER` namespace is a general-purpose namespace included in every IRIS installation. It is suitable for development and testing.
+
+### Switching Namespaces
+
+To use a different namespace, set the `M2PY_IRIS_NAMESPACE` environment variable:
+
+```bash
+export M2PY_IRIS_NAMESPACE=SAMPLES
+bash utils/iris.sh uv run python myprogram.py
+```
+
+Common IRIS namespaces:
+| Namespace | Purpose | Writable |
+|-----------|---------|----------|
+| `USER` | General-purpose (default) | Yes |
+| `SAMPLES` | Sample data and demos | Yes |
+| `%SYS` | System namespace | Admin only |
+| `HSLIB` | HealthShare library | Read-only |
+
+### Namespace Isolation Semantics
+
+**Key principle**: Globals with the same name in different namespaces are completely independent.
+
+```
+Namespace USER:    ^Patient(1) = "John"
+Namespace SAMPLES: ^Patient(1) = "Jane"   ← Different data!
+```
+
+This means:
+- `kill_all()` only removes globals in the connected namespace
+- `ssvn_global("X")` only reports on globals in the current namespace
+- Lock names are scoped to the namespace (a lock on `^X` in USER does not block `^X` in SAMPLES)
+
+### Extended Reference Syntax (Future)
+
+MUMPS supports cross-namespace access via extended reference syntax:
+
+```mumps
+SET ^|"SAMPLES"|Data("key") = "value"
+WRITE ^|"SAMPLES"|Data("key")
+```
+
+> **Note**: Extended references are not yet implemented in the m2py IRIS backend. Currently, all operations target the namespace specified at connection time. Cross-namespace access will be added in a future release. As a workaround, create separate backend instances with different `M2PY_IRIS_NAMESPACE` values.
+
+### Cross-Namespace Limitations
+
+1. **Single-namespace connection**: Each `IRISGlobalStorage` instance connects to one namespace. Runtime namespace switching is not supported.
+2. **No extended references**: `^|"NS"|Global` syntax is not parsed or routed; all access goes to the configured namespace.
+3. **Transaction scope**: Transactions are scoped to the connected namespace.
+4. **Lock scope**: Locks acquired via the m2py backend are within the connected namespace only.
+
+---
+
 ## Testing Your Application
 
 ### Run Tests Against Specific Backend

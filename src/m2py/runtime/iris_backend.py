@@ -894,7 +894,28 @@ class IRISGlobalStorage:
         return ""
 
     def ssvn_routine(self, subscript: str) -> str:
-        """Query ^$ROUTINE(routinename) for routine metadata."""
+        """Query ^$ROUTINE(routinename) for routine metadata.
+
+        Checks if a routine is importable as a Python module under the
+        m2py.routines or m2py.runtime.routines namespace, or exists as a
+        .m file in the current directory.
+        """
+        import importlib.util
+
+        if not subscript:
+            return ""
+
+        for prefix in ("m2py.routines", "m2py.runtime.routines"):
+            try:
+                spec = importlib.util.find_spec(f"{prefix}.{subscript}")
+                if spec is not None:
+                    return "1"
+            except (ModuleNotFoundError, ValueError):
+                pass
+
+        if os.path.isfile(f"{subscript}.m"):
+            return "1"
+
         return ""
 
     # =========================================================================

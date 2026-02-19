@@ -538,6 +538,58 @@ Edge case rounding may differ slightly from YDB in the last significant digit.
 
 ---
 
+## Backend-Specific Limitations
+
+### Database Limits by Backend
+
+| Limit | InMemory/SQLite | YottaDB | IRIS |
+|-------|----------------|---------|------|
+| **Max global name length** | Unlimited | 31 chars (incl. `^`) | 31 chars (incl. `^`) |
+| **Max subscript length** | Unlimited | 1,019 bytes | 511 bytes |
+| **Max subscript depth** | Unlimited | 31 levels | 255 levels |
+| **Max key length** (name + all subscripts) | Unlimited | 1,019 bytes total | 511 bytes per subscript |
+| **Max node value size** | Unlimited | 1 MiB | 3,641,144 chars (~3.5 MiB) |
+| **Max subscripts per global ref** | Unlimited | 31 | 255 |
+| **Numeric precision** | Python Decimal (28 digits) | 18 significant digits | 18 significant digits (IEEE double) |
+| **Empty string subscripts** | Allowed | Allowed | **Not allowed** (raises `<SUBSCRIPT>`) |
+
+### YottaDB-Specific Limitations
+
+| Feature | Limitation | Workaround |
+|---------|-----------|------------|
+| **LOCK semantics** | `yottadb.lock()` replaces all held locks | Backend tracks locks in `_locks_held` dict and re-acquires on unlock |
+| **Transaction model** | Uses `yottadb.tp()` callback model (not imperative start/commit) | Backend adapts imperative API to callback model internally |
+| **Connection** | In-process only (C extension, no TCP) | Must run inside YDB container via `utils/ydb.sh` |
+| **Thread safety** | SDK is not thread-safe | All calls serialized via `threading.Lock` |
+| **$INCREMENT in transactions** | `$INCREMENT` is non-transactional in YDB | Behavior matches MUMPS spec (increments survive rollback) |
+
+### IRIS-Specific Limitations
+
+| Feature | Limitation | Workaround |
+|---------|-----------|------------|
+| **Empty string subscripts** | IRIS raises `<SUBSCRIPT>` error | Tests skip empty subscript cases on IRIS |
+| **Extended references** | `^|"NS"|Global` not yet implemented in m2py backend | Use separate backend instances with different `M2PY_IRIS_NAMESPACE` |
+| **Namespace switching** | Single namespace per connection | Set `M2PY_IRIS_NAMESPACE` before connecting |
+| **$INCREMENT in transactions** | `$INCREMENT` is non-transactional by design | Behavior matches IRIS semantics (increments survive rollback) |
+| **Connection model** | TCP connection (higher latency than YDB in-process) | Use connection pooling (future) or batch operations |
+| **Lock counting** | Incremental lock (`+`) counting differs from YDB | `ssvn_lock` nested count test skipped on IRIS |
+| **Thread safety** | IRIS connection is not thread-safe | All calls serialized via `threading.Lock` |
+
+### SSVN (Structured System Variable) Limitations
+
+| SSVN | InMemory | YottaDB | IRIS | Notes |
+|------|----------|---------|------|-------|
+| `^$GLOBAL(name)` | Checks in-memory store | Queries native `$DATA` | Queries native `isDefined` | Full implementation |
+| `^$JOB(pid)` | `os.kill(pid, 0)` | `os.kill(pid, 0)` | `os.kill(pid, 0)` | OS-level check, not database job table |
+| `^$LOCK(name)` | In-memory lock table | Python-side `_locks_held` dict | Python-side `_locks_held` dict | Only sees locks held by current process |
+| `^$ROUTINE(name)` | Python module check + .m file | Python module check + .m file | Python module check + .m file | Checks `m2py.runtime.routines.*` namespace |
+
+**`^$LOCK` limitation**: The `ssvn_lock()` implementation only reports locks held by the current process via the Python-side `_locks_held` tracking dictionary. It does not query the database's native lock table, so locks held by other processes or connections are not visible. This is sufficient for single-process MUMPS transpilation but does not provide the full multi-process `^$LOCK` semantics of native MUMPS.
+
+**`^$JOB` limitation**: Uses OS-level `os.kill(pid, 0)` to probe process existence rather than querying the database's native job table. This means it reports on OS processes, not MUMPS jobs specifically.
+
+---
+
 ## Limitation Management Workflow
 
 ### Adding a New Limitation

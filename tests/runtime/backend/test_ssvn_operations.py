@@ -173,3 +173,9 @@ class TestSSVNRoutine:
         """^$ROUTINE for empty string returns empty."""
         result = backend.ssvn_routine("")
         assert result == ""
+
+    def test_known_routine_returns_truthy(self, backend: GlobalStorageBackend):
+        """^$ROUTINE for a known bundled routine returns "1"."""
+        # MATH is bundled in m2py.runtime.routines.MATH
+        result = backend.ssvn_routine("MATH")
+        assert result == "1", "MATH routine should be discoverable"

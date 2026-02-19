@@ -230,8 +230,8 @@
 - [ ] T099 [P] Update CI/CD workflows to run tests against all three backends
 - [ ] T100 [P] Add backend performance benchmarks to tests/runtime/backend/ measuring get/set/order latency with acceptance criteria: 95th percentile <10ms for typical operations (≤3 subscript levels, ≤1KB values)
 - [ ] T101 [P] Validate quickstart.md examples work end-to-end with default Docker connection parameters matching yottadb/yottadb:latest and intersystems/iris-community:latest images
-- [ ] T102 [P] Document IRIS namespace isolation semantics in quickstart.md (how USER namespace is default, how extended references work, cross-namespace limitations)
-- [ ] T103 [P] Update docs/limitations.md with backend-specific limitations including database-specific limits (max key length, value size, subscript depth) for YottaDB and IRIS
+- [x] T102 [P] Document IRIS namespace isolation semantics in quickstart.md (how USER namespace is default, how extended references work, cross-namespace limitations)
+- [x] T103 [P] Update docs/limitations.md with backend-specific limitations including database-specific limits (max key length, value size, subscript depth) for YottaDB and IRIS
 - [x] T104 Code review and refactoring for consistency across backends (consistent error messages, method signatures, variable naming, exception handling patterns)
 - [x] T105 Security review of connection parameter handling (especially M2PY_IRIS_PASSWORD in environment)
 - [x] T106 [P] Validate InMemoryGlobalStorage implements all protocol methods correctly after protocol updates (including any new SSVN methods)

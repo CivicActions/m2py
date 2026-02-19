@@ -1179,12 +1179,13 @@ class InMemoryGlobalStorage:
             return ""
 
         # Check if the routine is importable as a Python module
-        try:
-            spec = importlib.util.find_spec(f"m2py.routines.{subscript}")
-            if spec is not None:
-                return "1"
-        except (ModuleNotFoundError, ValueError):
-            pass
+        for prefix in ("m2py.routines", "m2py.runtime.routines"):
+            try:
+                spec = importlib.util.find_spec(f"{prefix}.{subscript}")
+                if spec is not None:
+                    return "1"
+            except (ModuleNotFoundError, ValueError):
+                pass
 
         # Check if .m file exists in current directory or common paths
         if os.path.isfile(f"{subscript}.m"):
