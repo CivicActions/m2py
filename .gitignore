@@ -57,6 +57,9 @@ MANIFEST
 .python-version
 .worktrees
 
+# YottaDB local installation (created by utils/yottadb-install.sh)
+.yottadb/
+
 # Reference directories
 /mumps-reference
 /proleap-research

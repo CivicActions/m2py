@@ -1,18 +1,23 @@
-# M2PY Documentation
+# m2py Documentation
 
-M2PY is a MUMPS-to-Python transpiler that uses [textX](https://textx.github.io/textX/) to parse MUMPS source code into an Abstract Semantic Graph (ASG), enrich it through multi-pass analysis, and generate executable Python code.
+m2py is a MUMPS-to-Python transpiler that uses [textX](https://textx.github.io/textX/) to parse MUMPS source code into an Abstract Semantic Graph (ASG), enrich it through multi-pass analysis, and generate executable Python code.
 
 ## Quick Start
 
-```python
-from m2py.parser import MUMPSParser
-from m2py.codegen import generate_python
+### CLI
 
-# Parse and inspect
-parser = MUMPSParser()
-routine = parser.parse_file("MYROUTINE.m")
-for label in routine.labels:
-    print(f"{label.name}: {len(label.body.statements)} statements")
+```bash
+# Transpile a single file
+m2py MYROUTINE.m
+
+# Transpile a directory tree to an output directory
+m2py VistA-VEHU-M/ -o output/
+```
+
+### Python API
+
+```python
+from m2py.codegen import generate_python
 
 # Transpile to Python
 python_code = generate_python(open("MYROUTINE.m").read(), routine_name="MYROUTINE")
@@ -31,31 +36,15 @@ python_code = generate_python(open("MYROUTINE.m").read(), routine_name="MYROUTIN
 | [testing.md](testing.md) | Test organization, fixtures, running tests |
 | [limitations.md](limitations.md) | Known limitations (auto-generated) |
 
-## Guiding Principles
-
-The project constitution at [`.specify/memory/constitution.md`](../.specify/memory/constitution.md) defines eight core principles:
-
-1. **Semantic Correctness First** — generated Python must match MUMPS behavior exactly
-2. **YDB as Reference Implementation** — YottaDB output is the source of truth
-3. **Strict Layer Separation** — parse, analyze, generate are distinct phases with clear boundaries
-4. **Explicit Over Implicit** — MUMPS implicit behaviors made explicit via helpers (coercion, truth evaluation)
-5. **Foundational Correctness** — hard structural problems solved early (GOTO, scoping, control flow)
-6. **Cross-Cutting Semantics** — value model, `$TEST`, arrays, scoping correct from day one
-7. **Minimize Runtime Surface** — prefer inline Python; runtime only for truly dynamic cases
-8. **Research Before Implementation** — structured research before each phase
-
-## Reference Materials
-
-- **MUMPS Specification**: https://71.174.62.16/Demo/AnnoStd (local mirror in `mumps-reference/`)
-- **textX Documentation**: https://textx.github.io/textX/ (local mirror in `textX-reference/`)
-- **YDB Test Suite**: `YDBTest/` — YottaDB functional test corpus
-- **Spec History**: `specs/` — numbered feature specifications documenting design evolution
-
 ## Utilities
 
 | Script | Purpose |
 |--------|---------|
-| `utils/validate.py` | Compare m2py output against YottaDB (requires Docker) |
-| `utils/ydb.py` | Run MUMPS through YottaDB via Docker |
+| `utils/validate.py` | Compare m2py output against YottaDB and/or IRIS (requires Docker) |
+| `utils/ydb.sh` | Run commands inside a YottaDB Docker container (auto-builds image) |
+| `utils/iris.sh` | Run commands with IRIS Docker container available (auto-starts, exports connection env) |
+| `utils/run_mumps_ydb.py` | Run MUMPS through YottaDB via Docker |
+| `utils/run_mumps_iris.py` | Run MUMPS through InterSystems IRIS via Docker (persistent container) |
+| `utils/scan_vista.py` | Scan VistA-VEHU-M routines and report transpilation metrics with regression detection |
 | `utils/validate_asg.py` | Inspect ASG structure for a MUMPS file |
 | `utils/rebuild_docs.py` | Regenerate `docs/limitations.md` from source |

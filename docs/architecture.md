@@ -114,7 +114,12 @@ The runtime library imported by generated Python code. See [runtime.md](runtime.
 
 - `MArray` — MUMPS hierarchical sparse arrays (each node has both a value AND children)
 - `MUMPSRuntime` — central runtime instance: I/O, global variables, indirection resolution, XECUTE compilation, error handling, stack frames, intrinsic special variables
-- `GlobalStorageBackend` — pluggable global storage (`InMemoryGlobalStorage` default, `SQLiteGlobalStorage` for cross-process JOB/LOCK)
+- `GlobalStorageBackend` — pluggable global storage with multiple backends:
+  - `InMemoryGlobalStorage` — default in-process backend (no external database)
+  - `SQLiteGlobalStorage` — cross-process JOB/LOCK support
+  - `YottaDBGlobalStorage` — YottaDB database backend (requires YDB container)
+  - `IRISGlobalStorage` — InterSystems IRIS backend (requires IRIS container)
+  - Backend selection via `M2PY_GLOBAL_BACKEND` env var or `get_global_storage()` factory
 - Device layer — `PrincipalDevice` (stdin/stdout), `FileDevice`, `TCPDevice`
 - JOB subprocess support via `job_runner.py`
 
@@ -135,7 +140,12 @@ Canonical implementations of MUMPS semantics shared identically by both compile-
 
 ### `cli/` — Command-Line Interface
 
-Minimal placeholder. The primary CLI entry points are the utility scripts in `utils/`.
+The `m2py` CLI transpiles `.m` files and directories to Python. Entry point: `m2py.cli:main` (registered as `m2py` in `[project.scripts]`).
+
+| Module | Responsibility |
+|--------|----------------|
+| `__init__.py` | Argument parsing (`argparse`), summary output, exit codes |
+| `transpile.py` | Transpilation pipeline: `generate_python` → `ruff check --fix` → `ruff format` → write. Parallel batch transpilation via `ProcessPoolExecutor`. Result/summary dataclasses. |
 
 ## Design Decisions
 

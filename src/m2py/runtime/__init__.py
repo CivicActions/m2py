@@ -1557,15 +1557,29 @@ def get_global_storage(backend: str | None = None) -> GlobalStorageBackend:
         db_path = os.environ.get("M2PY_SQLITE_DB_PATH", None)
         return SQLiteGlobalStorage(db_path)
     elif backend == "yottadb":
-        raise ImportError(
-            "YottaDB backend requires the 'yottadb' package. "
-            "Install with: pip install yottadb"
-        )
+        try:
+            from m2py.runtime.yottadb_backend import YottaDBGlobalStorage
+
+            return YottaDBGlobalStorage()
+        except ImportError as e:
+            from m2py.runtime.backend_exceptions import BackendConnectionError
+
+            raise BackendConnectionError(
+                "YottaDB backend requires the 'yottadb' package. "
+                "Run inside the YDB container: bash utils/ydb.sh <command>"
+            ) from e
     elif backend == "iris":
-        raise ImportError(
-            "IRIS backend requires the 'intersystems-iris' package. "
-            "Install with: pip install intersystems-iris"
-        )
+        try:
+            from m2py.runtime.iris_backend import IRISGlobalStorage
+
+            return IRISGlobalStorage()
+        except ImportError as e:
+            from m2py.runtime.backend_exceptions import BackendConnectionError
+
+            raise BackendConnectionError(
+                "IRIS backend requires the 'intersystems-irispython' package. "
+                "Install with: uv add intersystems-irispython --optional backend"
+            ) from e
     else:
         raise ValueError(
             f"Unknown global storage backend: {backend!r}. "
@@ -1641,7 +1655,7 @@ class MUMPSRuntime:
         # $KEY — tracked per-device on device.key
         # Accessor key() delegates to _current_device.key
         # $SYSTEM - system identification (V,S format)
-        self._system: str = "47,M2PY"
+        self._system: str = "47,m2py"
         # Error processing special variables
         # $ECODE - comma-delimited list of active error codes (empty = no errors)
         self._ecode: str = ""
@@ -2713,7 +2727,7 @@ class MUMPSRuntime:
         pattern 1.N1\",\"1.E.
 
         Returns:
-            System identification string (e.g., "47,M2PY")
+            System identification string (e.g., "47,m2py")
         """
         return self._system
 

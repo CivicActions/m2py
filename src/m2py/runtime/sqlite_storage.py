@@ -988,12 +988,13 @@ class SQLiteGlobalStorage:
 
         if not subscript:
             return ""
-        try:
-            spec = importlib.util.find_spec(f"m2py.routines.{subscript}")
-            if spec is not None:
-                return "1"
-        except (ModuleNotFoundError, ValueError):
-            pass
+        for prefix in ("m2py.routines", "m2py.runtime.routines"):
+            try:
+                spec = importlib.util.find_spec(f"{prefix}.{subscript}")
+                if spec is not None:
+                    return "1"
+            except (ModuleNotFoundError, ValueError):
+                pass
         if os.path.isfile(f"{subscript}.m"):
             return "1"
         return ""

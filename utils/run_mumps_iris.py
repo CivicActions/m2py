@@ -6,17 +6,17 @@ IRIS startup time on every invocation.
 
 Usage:
     # Run a file
-    uv run python utils/iris.py tests/functional/mugj/inref/V1FORA.m
+    uv run python utils/run_mumps_iris.py tests/functional/mugj/inref/V1FORA.m
 
     # Run from stdin
-    echo -e 'TEST\\n write 1+2,!' | uv run python utils/iris.py -
+    echo -e 'TEST\\n write 1+2,!' | uv run python utils/run_mumps_iris.py -
 
     # Pass code directly
-    uv run python utils/iris.py --code 'TEST W "Hello" Q'
+    uv run python utils/run_mumps_iris.py --code 'TEST W "Hello" Q'
 
     # Container management
-    uv run python utils/iris.py --start   # Pre-start the container
-    uv run python utils/iris.py --stop    # Stop and remove the container
+    uv run python utils/run_mumps_iris.py --start   # Pre-start the container
+    uv run python utils/run_mumps_iris.py --stop    # Stop and remove the container
 """
 
 import argparse
@@ -272,17 +272,17 @@ def main() -> int:
         epilog="""
 Examples:
     # Run a file
-    uv run python utils/iris.py routine.m
+    uv run python utils/run_mumps_iris.py routine.m
 
     # Run from stdin
-    echo -e 'TEST\\n write 1+2,!' | uv run python utils/iris.py -
+    echo -e 'TEST\\n write 1+2,!' | uv run python utils/run_mumps_iris.py -
 
     # Pass code directly
-    uv run python utils/iris.py --code 'TEST W "Hello" Q'
+    uv run python utils/run_mumps_iris.py --code 'TEST W "Hello" Q'
 
     # Manage the container
-    uv run python utils/iris.py --start   # Start the container
-    uv run python utils/iris.py --stop    # Stop and remove
+    uv run python utils/run_mumps_iris.py --start   # Start the container
+    uv run python utils/run_mumps_iris.py --stop    # Stop and remove
         """,
     )
     parser.add_argument(

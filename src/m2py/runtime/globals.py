@@ -465,6 +465,9 @@ class InMemoryGlobalStorage:
         # Transaction support
         self._tlevel: int = 0
         self._transaction_snapshots: list[dict[str, MArray]] = []
+        # Lock snapshot for TROLLBACK — per spec §6.3.2, ROLLBACK removes
+        # any nrefs from the Lock-LIST not present when the TRANSACTION started
+        self._lock_snapshot: dict[tuple[str, tuple[str, ...]], tuple[int, int]] | None = None
 
         # $ZREFERENCE — last global reference string (e.g. "^ZZTEST(1,2)")
         self._last_global_ref: str = ""
@@ -1059,6 +1062,7 @@ class InMemoryGlobalStorage:
         """Begin a transaction (TSTART).
 
         Saves a deep copy snapshot of globals for rollback.
+        Per spec §6.3.2: also snapshots Lock-LIST for TROLLBACK.
         """
 
         # Deep copy the entire globals dictionary
@@ -1067,6 +1071,11 @@ class InMemoryGlobalStorage:
             snapshot[name] = self._deep_copy_tree(array)
 
         self._transaction_snapshots.append(snapshot)
+
+        # Snapshot lock state at outermost TSTART only
+        if self._tlevel == 0:
+            self._lock_snapshot = dict(self._lock_table)
+
         self._tlevel += 1
 
     def transaction_commit(self) -> None:
@@ -1084,11 +1093,18 @@ class InMemoryGlobalStorage:
         self._transaction_snapshots.pop()
         self._tlevel -= 1
 
+        # Clear lock snapshot on outermost commit
+        if self._tlevel == 0:
+            self._lock_snapshot = None
+
     def transaction_rollback(self) -> None:
         """Rollback current transaction (TROLLBACK).
 
-        Restores globals from snapshot.
-        Per MUMPS spec 8.2.21: Argumentless TROLLBACK rolls back ALL levels.
+        Restores globals and locks from snapshot.
+        Per MUMPS spec §6.3.2: Argumentless TROLLBACK rolls back ALL levels.
+        ROLLBACK "rescinds all global variable modifications" and "removes
+        any nrefs from the Lock-LIST that were not included in the Lock-LIST
+        when the TRANSACTION started."
 
         Raises:
             RuntimeError: If $TLEVEL = 0 (M44 error)
@@ -1101,6 +1117,12 @@ class InMemoryGlobalStorage:
         while len(self._transaction_snapshots) > 1:
             self._transaction_snapshots.pop()
         self._globals = self._transaction_snapshots.pop()
+
+        # Restore lock state to what it was at outermost TSTART
+        if self._lock_snapshot is not None:
+            self._lock_table = self._lock_snapshot
+            self._lock_snapshot = None
+
         self._tlevel = 0
 
     def get_tlevel(self) -> int:
@@ -1179,12 +1201,13 @@ class InMemoryGlobalStorage:
             return ""
 
         # Check if the routine is importable as a Python module
-        try:
-            spec = importlib.util.find_spec(f"m2py.routines.{subscript}")
-            if spec is not None:
-                return "1"
-        except (ModuleNotFoundError, ValueError):
-            pass
+        for prefix in ("m2py.routines", "m2py.runtime.routines"):
+            try:
+                spec = importlib.util.find_spec(f"{prefix}.{subscript}")
+                if spec is not None:
+                    return "1"
+            except (ModuleNotFoundError, ValueError):
+                pass
 
         # Check if .m file exists in current directory or common paths
         if os.path.isfile(f"{subscript}.m"):

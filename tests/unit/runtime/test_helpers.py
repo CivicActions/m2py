@@ -1918,7 +1918,7 @@ class TestMJustify:
 class TestZabsRuntime:
     """$ZABS runtime helper tests (T066).
 
-    IRIS reference output validated via utils/iris.py:
+    IRIS reference output validated via utils/run_mumps_iris.py:
     - $ZABS(-42) → 42
     - $ZABS(0) → 0
     - $ZABS(3.14) → 3.14
@@ -2198,7 +2198,7 @@ class TestZgetsyiRuntime:
 class TestZtimeRuntime:
     """$ZTIME runtime helper tests (T071).
 
-    IRIS reference output validated via utils/iris.py:
+    IRIS reference output validated via utils/run_mumps_iris.py:
     - $ZT(0) → 00:00:00
     - $ZT(1) → 00:00:01
     - $ZT(60) → 00:01:00

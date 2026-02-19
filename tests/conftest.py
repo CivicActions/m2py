@@ -1,4 +1,4 @@
-"""Pytest configuration and fixtures for M2PY tests.
+"""Pytest configuration and fixtures for m2py tests.
 
 Provides fixtures for loading MUMPS test files from multiple test suites:
 - MUGJ: MUMPS User Group Japan validation suite (376 files)

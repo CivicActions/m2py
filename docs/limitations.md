@@ -1,6 +1,6 @@
-# M2PY Parser Limitations
+# m2py Parser Limitations
 
-This document describes known limitations of the M2PY parser and commands
+This document describes known limitations of the m2py parser and commands
 that are not currently supported. Each limitation has a unique ID (LIM-XXX)
 for traceability to test files.
 
@@ -10,7 +10,7 @@ for traceability to test files.
 
 ## Limitation Types
 
-| Type | Description | M2PY Behavior |
+| Type | Description | m2py Behavior |
 |------|-------------|---------------|
 | **Parse Error** | Syntax is recognized but explicitly rejected | Parser raises `MUMPSParseError` |
 | **Parses OK** | Syntax is valid but runtime/codegen behavior is undefined | Parser accepts, codegen may be incomplete |
@@ -76,7 +76,7 @@ production MUMPS systems:
 | ESTOP | Stop synchronous event processing |
 | ETRIGGER | Trigger an event |
 
-**M2PY Behavior**: Parser raises `MUMPSParseError` for these commands.
+**m2py Behavior**: Parser raises `MUMPSParseError` for these commands.
 
 ### LIM-002: THEN Command
 
@@ -85,7 +85,7 @@ production MUMPS systems:
 The THEN command is a standard MUMPS command but has zero usage in YottaDB
 tests and VA Vista. It will be implemented if encountered in real codebases.
 
-**M2PY Behavior**: Parser raises `MUMPSParseError`.
+**m2py Behavior**: Parser raises `MUMPSParseError`.
 
 ### LIM-009: RLOAD/RSAVE Commands
 
@@ -96,14 +96,14 @@ ANSI M X11.1-1995 §8.2.17 and §8.2.18 for dynamic routine management at
 runtime. These commands have **zero usage** in both the YottaDB test suite
 and VA VistA codebase.
 
-**M2PY Behavior**: Parser raises `MUMPSParseError`.
+**m2py Behavior**: Parser raises `MUMPSParseError`.
 
 ### LIM-012: Unknown Z-Extensions
 
 **Type**: Parse Error
 
 Per the MUMPS standard, all names beginning with 'Z' are reserved for
-vendor-specific extensions (FR-017). M2PY implements support for:
+vendor-specific extensions (FR-017). m2py implements support for:
 
 **YottaDB Z-commands**: ZBREAK, ZCOMPILE, ZGOTO, ZHALT, ZHELP, ZKILL, ZLINK,
 ZLOAD, ZMESSAGE, ZPRINT, ZSHOW, ZSTEP, ZSYSTEM, ZTRIGGER, ZWRITE, ZALLOCATE,
@@ -115,7 +115,7 @@ ZDEALLOCATE.
 $ZF(-1/-2/-100), $ZU (selected codes). These are parsed and produce working
 generated code for the subset of features used by VA VistA.
 
-**M2PY Behavior**: Known YottaDB and IRIS/Caché Z-extensions are parsed and produce ASG nodes.
+**m2py Behavior**: Known YottaDB and IRIS/Caché Z-extensions are parsed and produce ASG nodes.
 Unknown Z-commands or Z-functions from other MUMPS implementations (MicroM,
 DSM, etc.) raise `MUMPSParseError`. See LIM-017 for IRIS/Caché support scope.
 
@@ -127,11 +127,11 @@ The ASSIGN command is defined in ANSI M X11.1-1995 for structured system
 variable assignment as part of the MWAPI event model. It has **zero usage**
 in both the YottaDB test suite and VA VistA codebase.
 
-**M2PY Behavior**: Parser raises `MUMPSParseError`.
+**m2py Behavior**: Parser raises `MUMPSParseError`.
 
 ### Vendor-Specific Commands
 
-M2PY targets standard MUMPS with YottaDB/GT.M extensions. Commands specific to
+m2py targets standard MUMPS with YottaDB/GT.M extensions. Commands specific to
 other implementations (InterSystems Caché/IRIS, MicroM, DSM, etc.) are not currently
 supported and will trigger the unknown command error.
 
@@ -143,7 +143,7 @@ If you encounter a command that should be supported, please open an issue.
 **Type**: Parses OK
 
 The MUMPS Windowing API (MWAPI, defined in ANSI M X11.6) provides GUI capabilities
-through structured system variables and event processing. M2PY does **not** support
+through structured system variables and event processing. m2py does **not** support
 MWAPI because:
 
 1. **Limited real-world usage** - Only 5 files in VA VistA reference MWAPI (`ZISG*.m`)
@@ -162,7 +162,7 @@ MWAPI because:
 Event processing commands (ABLOCK, AUNBLOCK, ASTART, ASTOP, ESTART, ESTOP, ETRIGGER)
 listed above are also part of the MWAPI event model.
 
-**M2PY Behavior**: Parser accepts `^$EVENT`, `^$WINDOW`, `^$DISPLAY` syntax (valid SSVN grammar).
+**m2py Behavior**: Parser accepts `^$EVENT`, `^$WINDOW`, `^$DISPLAY` syntax (valid SSVN grammar).
 ASG produces `MStructuredSystemVariable`. Codegen raises
 `NotImplementedError("LIM-003: MWAPI SSVNs not supported")`.
 
@@ -173,7 +173,7 @@ ASG produces `MStructuredSystemVariable`. Codegen raises
 These functions were proposed for the 1984/1990 standards but never included in
 the final ANSI standard. They follow valid intrinsic function syntax.
 
-**M2PY Behavior**: Parser accepts `$DEXTRACT` and `$DPIECE` (valid function syntax). ASG produces
+**m2py Behavior**: Parser accepts `$DEXTRACT` and `$DPIECE` (valid function syntax). ASG produces
 `MFunctionCall`. Codegen behavior is undefined as these functions have no standard
 semantics.
 
@@ -194,7 +194,7 @@ Parser accepts VIEW commands with YottaDB/GT.M syntax:
 **Common YottaDB VIEW keywords**: `BADCHAR`, `BREAKMSG`, `GDSCERT`, `GVDUPSETNOOP`,
 `LVNULLSUBS`, `NOUNDEF`, `PATCODE`, `TRACE`, etc.
 
-**M2PY Behavior**: The ASG produces `MViewStatement` with raw arguments preserved. Code generation
+**m2py Behavior**: The ASG produces `MViewStatement` with raw arguments preserved. Code generation
 must handle VIEW commands on a per-implementation basis since semantics vary
 significantly between MUMPS platforms.
 
@@ -222,7 +222,7 @@ variable and are implementation-specific.
 environment variable, but the specific character handling behaviors are outside
 the scope of standard MUMPS and must be handled at code generation time.
 
-**M2PY Behavior**: M2PY implements charset M (ASCII 0-127) as the default. Extended character sets
+**m2py Behavior**: m2py implements charset M (ASCII 0-127) as the default. Extended character sets
 beyond ASCII are not fully supported. String handling assumes ASCII/UTF-8
 compatibility. The `^$CHARACTER` SSVN is parsed but charset-specific operations
 (transforms, collation algorithms) are implementation-defined.
@@ -235,7 +235,7 @@ Section 5 of the MUMPS standard describes the BNF notation used throughout
 the specification. This section is **informative only** and contains no
 executable semantics to implement or test.
 
-**M2PY Behavior**: No parser or ASG implementation needed. Test files contain comments only,
+**m2py Behavior**: No parser or ASG implementation needed. Test files contain comments only,
 documenting this as informational content.
 
 ## LIM-008: Embedded Programs
@@ -247,7 +247,7 @@ languages (e.g., C, FORTRAN). This involves host language interoperability,
 foreign function interfaces, and runtime integration that is outside the
 scope of a source-to-source transpiler.
 
-**M2PY Behavior**: Not applicable. M2PY transpiles standalone MUMPS routines to Python, not MUMPS
+**m2py Behavior**: Not applicable. m2py transpiles standalone MUMPS routines to Python, not MUMPS
 embedded within other host programs. Test files contain comments only.
 
 ## LIM-011: ^$LIBRARY SSVN
@@ -257,7 +257,7 @@ embedded within other host programs. Test files contain comments only.
 The `^$LIBRARY` SSVN provides access to routine library information. This
 has **zero usage** in the VA VistA codebase.
 
-**M2PY Behavior**: Parser accepts `^$LIBRARY` syntax (valid SSVN grammar). ASG produces
+**m2py Behavior**: Parser accepts `^$LIBRARY` syntax (valid SSVN grammar). ASG produces
 `MStructuredSystemVariable`. Codegen raises
 `NotImplementedError("LIM-011: ^$LIBRARY SSVN not supported")`.
 
@@ -291,7 +291,7 @@ Library Functions (`^XLFMTH`, `^XLFHYPER`, `^XLFCRC`, etc.).
 and their aliases (LN, ASIN, ACOS, ATAN) are implemented via the bundled `%MATH`
 routine in `m2py.runtime.routines.MATH`.
 
-**M2PY Behavior**: Parser accepts extrinsic function syntax `$$%FUNC^ROUTINE(args)` (valid grammar).
+**m2py Behavior**: Parser accepts extrinsic function syntax `$$%FUNC^ROUTINE(args)` (valid grammar).
 ASG produces `MExtrinsicFunction`. Code generation behavior:
 
 - **STRING, CHARACTER libraries**: Raises `NotImplementedError("LIM-014: ...")`
@@ -333,7 +333,7 @@ stub codegen, and some require YDB infrastructure not available in transpiled co
 
 | Function/Variable | Description | Status |
 |-------------------|-------------|--------|
-| $ZVERSION/$ZV | Version string | Returns M2PY version |
+| $ZVERSION/$ZV | Version string | Returns m2py version |
 | $ZTRAP/$ZT | Error trapping | Full implementation |
 | $ZSTATUS/$ZS | Last error status | Full implementation |
 | $ZDATE | Date formatting | Full implementation |
@@ -410,7 +410,7 @@ Features with zero VistA usage are deferred indefinitely.
 - 4 MWAPI routines (LIM-003: ^$EVENT/^$WINDOW/^$DISPLAY SSVNs)
 - 1 malformed source file (ZZBACSUA)
 
-**M2PY Behavior**: Parser accepts Z-commands (valid YDB grammar). ASG produces appropriate nodes.
+**m2py Behavior**: Parser accepts Z-commands (valid YDB grammar). ASG produces appropriate nodes.
 Implemented features generate working Python code. Stub features generate no-op
 or error-signaling code. Unimplemented features raise
 `NotImplementedError("LIM-015: {feature} not supported")`.
@@ -435,14 +435,14 @@ indefinitely due to lack of real-world demand:
 **Note**: KSUBSCRIPTS and KVALUE are ANSI MUMPS commands (§8.2) that YottaDB does not
 implement. Since m2py targets YDB compatibility, these commands raise NotImplementedError.
 
-**M2PY Behavior**: Parser accepts syntax. ASG produces appropriate nodes. Codegen raises
+**m2py Behavior**: Parser accepts syntax. ASG produces appropriate nodes. Codegen raises
 `NotImplementedError("LIM-016: {feature} not supported")`.
 
 ## LIM-017: Partial IRIS/Caché Support
 
 **Type**: Parses OK
 
-M2PY implements partial support for InterSystems Caché/IRIS vendor-specific functions
+m2py implements partial support for InterSystems Caché/IRIS vendor-specific functions
 as used by VA VistA. This covers the subset of IRIS features actually used in
 VistA-VEHU-M routines. IRIS features not used by VistA are not supported.
 
@@ -461,7 +461,7 @@ VistA-VEHU-M routines. IRIS features not used by VistA are not supported.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `$ZVERSION`/`$ZV` | Version string | "M2PY for Python 1.0..." |
+| `$ZVERSION`/`$ZV` | Version string | "m2py for Python 1.0..." |
 | `$ZA` | I/O activity status | 0 |
 | `$ZREFERENCE`/`$ZR` | Last global reference | "" (tracks SET/GET/KILL) |
 | `$DEVICE`/`$D` | Device status | "" |
@@ -499,7 +499,7 @@ VistA-VEHU-M routines. IRIS features not used by VistA are not supported.
 | IRIS class methods | `##class(...)` syntax not supported |
 | IRIS SQL embedding | Embedded SQL not supported |
 
-**M2PY Behavior**: Implemented IRIS features generate working Python code with correct semantics.
+**m2py Behavior**: Implemented IRIS features generate working Python code with correct semantics.
 Stub features return empty string with a warning. Unrecognized `$ZU` codes
 log a warning and return empty string. IRIS-specific language extensions
 (class methods, SQL embedding) are not supported and raise parse errors.
@@ -508,11 +508,11 @@ log a warning and return empty string. IRIS-specific language extensions
 
 **Type**: Parses OK
 
-MUMPS specifies 18 significant digits for numeric precision. M2PY uses Python's
+MUMPS specifies 18 significant digits for numeric precision. m2py uses Python's
 Decimal library to implement this precision. However, there are minor differences
 in edge cases when results approach the 18-digit boundary:
 
-| Case | YDB | M2PY | Difference |
+| Case | YDB | m2py | Difference |
 |------|-----|------|------------|
 | -1 + .000000000000000001 | -1 | -.999999999999999999 | Rounding to integer |
 | -37 * 1.00000000111111111 | -37.000000041111111 | -37.0000000411111111 | Last digit |
@@ -533,8 +533,60 @@ All test cases are verified against YDB output and cover:
 - 18-digit precision for repeating decimals
 - Result formatting via m_str (no scientific notation)
 
-**M2PY Behavior**: Arithmetic operations produce correct results to 18 significant digits.
+**m2py Behavior**: Arithmetic operations produce correct results to 18 significant digits.
 Edge case rounding may differ slightly from YDB in the last significant digit.
+
+---
+
+## Backend-Specific Limitations
+
+### Database Limits by Backend
+
+| Limit | InMemory/SQLite | YottaDB | IRIS |
+|-------|----------------|---------|------|
+| **Max global name length** | Unlimited | 31 chars (incl. `^`) | 31 chars (incl. `^`) |
+| **Max subscript length** | Unlimited | 1,019 bytes | 511 bytes |
+| **Max subscript depth** | Unlimited | 31 levels | 255 levels |
+| **Max key length** (name + all subscripts) | Unlimited | 1,019 bytes total | 511 bytes per subscript |
+| **Max node value size** | Unlimited | 1 MiB | 3,641,144 chars (~3.5 MiB) |
+| **Max subscripts per global ref** | Unlimited | 31 | 255 |
+| **Numeric precision** | Python Decimal (28 digits) | 18 significant digits | 18 significant digits (IEEE double) |
+| **Empty string subscripts** | Allowed | Allowed | **Not allowed** (raises `<SUBSCRIPT>`) |
+
+### YottaDB-Specific Limitations
+
+| Feature | Limitation | Workaround |
+|---------|-----------|------------|
+| **LOCK semantics** | `yottadb.lock()` replaces all held locks | Backend tracks locks in `_locks_held` dict and re-acquires on unlock |
+| **Transaction model** | Uses `yottadb.tp()` callback model (not imperative start/commit) | Backend adapts imperative API to callback model internally |
+| **Connection** | In-process only (C extension, no TCP) | Must run inside YDB container via `utils/ydb.sh` |
+| **Thread safety** | SDK is not thread-safe | All calls serialized via `threading.Lock` |
+| **$INCREMENT in transactions** | `$INCREMENT` is non-transactional in YDB | Behavior matches MUMPS spec (increments survive rollback) |
+
+### IRIS-Specific Limitations
+
+| Feature | Limitation | Workaround |
+|---------|-----------|------------|
+| **Empty string subscripts** | IRIS raises `<SUBSCRIPT>` error | Tests skip empty subscript cases on IRIS |
+| **Extended references** | `^|"NS"|Global` not yet implemented in m2py backend | Use separate backend instances with different `M2PY_IRIS_NAMESPACE` |
+| **Namespace switching** | Single namespace per connection | Set `M2PY_IRIS_NAMESPACE` before connecting |
+| **$INCREMENT in transactions** | `$INCREMENT` is non-transactional by design | Behavior matches IRIS semantics (increments survive rollback) |
+| **Connection model** | TCP connection (higher latency than YDB in-process) | Use connection pooling (future) or batch operations |
+| **Lock counting** | Incremental lock (`+`) counting differs from YDB | `ssvn_lock` nested count test skipped on IRIS |
+| **Thread safety** | IRIS connection is not thread-safe | All calls serialized via `threading.Lock` |
+
+### SSVN (Structured System Variable) Limitations
+
+| SSVN | InMemory | YottaDB | IRIS | Notes |
+|------|----------|---------|------|-------|
+| `^$GLOBAL(name)` | Checks in-memory store | Queries native `$DATA` | Queries native `isDefined` | Full implementation |
+| `^$JOB(pid)` | `os.kill(pid, 0)` | `os.kill(pid, 0)` | `os.kill(pid, 0)` | OS-level check, not database job table |
+| `^$LOCK(name)` | In-memory lock table | Python-side `_locks_held` dict | Python-side `_locks_held` dict | Only sees locks held by current process |
+| `^$ROUTINE(name)` | Python module check + .m file | Python module check + .m file | Python module check + .m file | Checks `m2py.runtime.routines.*` namespace |
+
+**`^$LOCK` limitation**: The `ssvn_lock()` implementation only reports locks held by the current process via the Python-side `_locks_held` tracking dictionary. It does not query the database's native lock table, so locks held by other processes or connections are not visible. This is sufficient for single-process MUMPS transpilation but does not provide the full multi-process `^$LOCK` semantics of native MUMPS.
+
+**`^$JOB` limitation**: Uses OS-level `os.kill(pid, 0)` to probe process existence rather than querying the database's native job table. This means it reports on OS processes, not MUMPS jobs specifically.
 
 ---
 

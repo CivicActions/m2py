@@ -34,8 +34,8 @@ from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
-from iris import run_iris
-from ydb import run_ydb
+from run_mumps_iris import run_iris
+from run_mumps_ydb import run_ydb
 
 
 # ANSI colors for terminal output

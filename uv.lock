@@ -191,6 +191,18 @@ wheels = [
 ]
 
 [[package]]
+name = "intersystems-irispython"
+version = "5.3.1"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/5b/8eac672a6ef26bef6ef79a7c9557096167b50c4d3577d558ae6999c195fe/intersystems_irispython-5.3.1-cp38.cp39.cp310.cp311.cp312.cp313.cp314-cp38.cp39.cp310.cp311.cp312.cp313.cp314-macosx_10_9_universal2.whl", hash = "sha256:634c9b4ec620837d830ff49543aeb2797a1ce8d8570a0e868398b85330dfcc4d", size = 6736686, upload-time = "2025-12-19T16:24:57.734Z" },
+    { url = "https://files.pythonhosted.org/packages/ba/17/bab3e525ffb6711355f7feea18c1b7dced9c2484cecbcdd83f74550398c0/intersystems_irispython-5.3.1-cp38.cp39.cp310.cp311.cp312.cp313.cp314-cp38.cp39.cp310.cp311.cp312.cp313.cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:cf912f30f85e2a42f2c2ea77fbeb98a24154d5ea7428a50382786a684ec4f583", size = 16005259, upload-time = "2025-12-19T16:25:05.578Z" },
+    { url = "https://files.pythonhosted.org/packages/39/59/9bb79d9e32e3e55fc9aed8071a797b4497924cbc6457cea9255bb09320b7/intersystems_irispython-5.3.1-cp38.cp39.cp310.cp311.cp312.cp313.cp314-cp38.cp39.cp310.cp311.cp312.cp313.cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:be5659a6bb57593910f2a2417eddb9f5dc2f93a337ead6ddca778f557b8a359a", size = 15638040, upload-time = "2025-12-19T16:24:54.429Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/47/654ccf9c5cca4f5491f070888544165c9e2a6a485e320ea703e4e38d2358/intersystems_irispython-5.3.1-cp38.cp39.cp310.cp311.cp312.cp313.cp314-cp38.cp39.cp310.cp311.cp312.cp313.cp314-win32.whl", hash = "sha256:583e4f17088c1e0530f32efda1c0ccb02993cbc22035bc8b4c71d8693b04ee7e", size = 2879644, upload-time = "2025-12-19T16:24:59.945Z" },
+    { url = "https://files.pythonhosted.org/packages/68/95/19cc13d09f1b4120bd41b1434509052e1d02afd27f2679266d7ad9cc1750/intersystems_irispython-5.3.1-cp38.cp39.cp310.cp311.cp312.cp313.cp314-cp38.cp39.cp310.cp311.cp312.cp313.cp314-win_amd64.whl", hash = "sha256:1d5d40450a0cdeec2a1f48d12d946a8a8ffc7c128576fcae7d58e66e3a127eae", size = 3522092, upload-time = "2025-12-19T16:25:01.834Z" },
+]
+
+[[package]]
 name = "m2py"
 version = "0.1.0"
 source = { editable = "." }
@@ -201,6 +213,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+backend = [
+    { name = "intersystems-irispython" },
+]
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -215,9 +230,13 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
 ]
+yottadb = [
+    { name = "yottadb" },
+]
 
 [package.metadata]
 requires-dist = [
+    { name = "intersystems-irispython", marker = "extra == 'backend'", specifier = ">=5.3.1" },
     { name = "pyright", specifier = ">=1.1.408" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0" },
@@ -225,7 +244,7 @@ requires-dist = [
     { name = "ruff", specifier = ">=0.15.0" },
     { name = "textx", specifier = ">=4.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "backend"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -235,6 +254,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
 ]
+yottadb = [{ name = "yottadb", specifier = ">=2.0.0" }]
 
 [[package]]
 name = "nodeenv"
@@ -528,3 +548,9 @@ sdist = { url = "https://files.pythonhosted.org/packages/20/28/e6f1a6f655d620846
 wheels = [
     { url = "https://files.pythonhosted.org/packages/79/0c/c05523fa3181fdf0c9c52a6ba91a23fbf3246cc095f26f6516f9c60e6771/virtualenv-20.35.4-py3-none-any.whl", hash = "sha256:c21c9cede36c9753eeade68ba7d523529f228a403463376cf821eaae2b650f1b", size = 6005095, upload-time = "2025-10-29T06:57:37.598Z" },
 ]
+
+[[package]]
+name = "yottadb"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/ee/074895adef8ba5916d69b91d28b1bfeb9be2436f78e6d6ccefdf0553676d/yottadb-2.0.0.tar.gz", hash = "sha256:7c912fcdaf7affe06084da3f02402704bacb4121161e492053267243c429d098", size = 84626, upload-time = "2025-06-03T19:53:02.089Z" }

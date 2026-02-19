@@ -20,7 +20,7 @@ uv sync
 uv run pytest --tb=short -q
 
 # Verify YDB is available
-uv run python utils/ydb.py --code 'TEST W "Hello" Q'
+uv run python utils/run_mumps_ydb.py --code 'TEST W "Hello" Q'
 ```
 
 ## Per-Track Development Workflow
@@ -113,7 +113,7 @@ uv run python utils/validate.py --code 'ROUTINE W "test" Q'
 uv run python utils/validate.py --debug --code 'ROUTINE W "test" Q'
 
 # Run MUMPS through YDB only (reference output)
-uv run python utils/ydb.py --code 'ROUTINE W "test" Q'
+uv run python utils/run_mumps_ydb.py --code 'ROUTINE W "test" Q'
 ```
 
 ## Implementation Order
