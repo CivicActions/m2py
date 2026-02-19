@@ -52,6 +52,9 @@ class YottaDBGlobalStorage:
         # Transaction state
         self._tlevel: int = 0
         self._transaction_journal: list[list[tuple]] = []  # Stack of change logs
+        # Lock snapshot for TROLLBACK — per spec §6.3.2, ROLLBACK removes
+        # any nrefs from the Lock-LIST not present when the TRANSACTION started
+        self._lock_snapshot: dict[tuple[str, tuple[str, ...]], int] | None = None
 
         # $ZREFERENCE
         self._last_global_ref: str = ""
@@ -691,9 +694,12 @@ class YottaDBGlobalStorage:
         """Begin a transaction (TSTART).
 
         Journals all modifications so rollback can undo them.
-        YottaDB uses tp() callback model natively, but the start/commit/rollback
-        protocol uses journal-based undo to match the MUMPS semantic interface.
+        Per spec §6.3.2: also snapshots Lock-LIST for TROLLBACK.
         """
+        # Snapshot lock state at outermost TSTART only
+        if self._tlevel == 0:
+            self._lock_snapshot = dict(self._locks_held)
+
         self._transaction_journal.append([])
         self._tlevel += 1
 
@@ -705,6 +711,10 @@ class YottaDBGlobalStorage:
             )
         self._transaction_journal.pop()
         self._tlevel -= 1
+
+        # Clear lock snapshot on outermost commit
+        if self._tlevel == 0:
+            self._lock_snapshot = None
 
     def transaction_rollback(self) -> None:
         """Rollback current transaction (TROLLBACK).
@@ -753,6 +763,33 @@ class YottaDBGlobalStorage:
                             key.value = old_val.encode("utf-8")
                 except Exception:
                     pass  # Best-effort rollback
+
+            # Restore lock state to what it was at outermost TSTART
+            if self._lock_snapshot is not None:
+                # Release native locks that were acquired during the transaction
+                for lock_key, count in self._locks_held.items():
+                    if lock_key not in self._lock_snapshot:
+                        # This lock was acquired during the txn — release it
+                        name, subs = lock_key
+                        for _ in range(count):
+                            try:
+                                self._ydb.lock_decr(f"^{name}", list(subs))
+                            except Exception:
+                                pass
+                    else:
+                        # Lock existed before, but count may have grown
+                        orig_count = self._lock_snapshot[lock_key]
+                        extra = count - orig_count
+                        if extra > 0:
+                            name, subs = lock_key
+                            for _ in range(extra):
+                                try:
+                                    self._ydb.lock_decr(f"^{name}", list(subs))
+                                except Exception:
+                                    pass
+                # Restore the Python-side lock tracking dict
+                self._locks_held = dict(self._lock_snapshot)
+                self._lock_snapshot = None
 
     def get_tlevel(self) -> int:
         """Return current transaction nesting level ($TLEVEL)."""

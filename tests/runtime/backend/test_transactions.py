@@ -211,3 +211,99 @@ class TestTransactionIsolation:
         assert result == "5"
         backend.transaction_commit()
         assert backend.get("TEST", ("counter",)) == "5"
+
+
+class TestTransactionLockRollback:
+    """Test that TROLLBACK restores Lock-LIST per MUMPS spec §6.3.2.
+
+    The spec states: A ROLLBACK "removes any nrefs from the Lock-LIST
+    that were not included in the Lock-LIST when the TRANSACTION started
+    (i.e. when $TLevel changed from zero to one)."
+    """
+
+    def test_rollback_releases_lock_acquired_in_txn(self, backend):
+        """LOCK+ inside rolled-back transaction should be released."""
+        backend.transaction_start()
+        backend.lock("TLCK", ("1",), lock_type="+")
+        locks = backend.get_locks()
+        assert any(r[0] == "TLCK" for r in locks), "lock should be held in txn"
+        backend.transaction_rollback()
+        locks = backend.get_locks()
+        assert not any(r[0] == "TLCK" for r in locks), (
+            "lock acquired in txn should be released on rollback"
+        )
+
+    def test_rollback_preserves_lock_held_before_txn(self, backend):
+        """Locks held before TSTART should survive TROLLBACK."""
+        backend.lock("TLCK", ("pre",), lock_type="+")
+        backend.transaction_start()
+        backend.set("TEST", ("x",), "val")
+        backend.transaction_rollback()
+        locks = backend.get_locks()
+        assert any(r[0] == "TLCK" for r in locks), (
+            "pre-transaction lock should survive rollback"
+        )
+        # Clean up
+        backend.lock("TLCK", ("pre",), lock_type="-")
+
+    def test_rollback_preserves_pre_and_removes_new(self, backend):
+        """Pre-txn locks stay, in-txn locks removed."""
+        backend.lock("TLCK", ("pre",), lock_type="+")
+        backend.transaction_start()
+        backend.lock("TLCK", ("new",), lock_type="+")
+        backend.transaction_rollback()
+        locks = backend.get_locks()
+        lock_names = {(r[0], r[1]) for r in locks}
+        import json
+        assert ("TLCK", json.dumps(["pre"])) in lock_names, (
+            "pre-txn lock should survive"
+        )
+        assert ("TLCK", json.dumps(["new"])) not in lock_names, (
+            "in-txn lock should be removed"
+        )
+        # Clean up
+        backend.lock("TLCK", ("pre",), lock_type="-")
+
+    def test_rollback_restores_incremented_lock_count(self, backend):
+        """LOCK+ that incremented an existing lock's count should undo the increment."""
+        backend.lock("TLCK", ("cnt",), lock_type="+")  # count=1
+        backend.transaction_start()
+        backend.lock("TLCK", ("cnt",), lock_type="+")  # count=2
+        backend.transaction_rollback()
+        locks = backend.get_locks()
+        for name, subs_json, count in locks:
+            if name == "TLCK":
+                import json
+                if json.loads(subs_json) == ["cnt"]:
+                    assert count == 1, (
+                        f"lock count should restore to 1, got {count}"
+                    )
+                    break
+        else:
+            pytest.fail("lock should still exist with count=1")
+        # Clean up
+        backend.lock("TLCK", ("cnt",), lock_type="-")
+
+    def test_commit_keeps_locks_acquired_in_txn(self, backend):
+        """LOCK+ inside committed transaction should persist."""
+        backend.transaction_start()
+        backend.lock("TLCK", ("com",), lock_type="+")
+        backend.transaction_commit()
+        locks = backend.get_locks()
+        assert any(r[0] == "TLCK" for r in locks), (
+            "lock acquired in committed txn should persist"
+        )
+        # Clean up
+        backend.lock("TLCK", ("com",), lock_type="-")
+
+    def test_nested_txn_rollback_releases_all_txn_locks(self, backend):
+        """TROLLBACK from nested level should release all locks from all levels."""
+        backend.transaction_start()
+        backend.lock("TLCK", ("l1",), lock_type="+")
+        backend.transaction_start()
+        backend.lock("TLCK", ("l2",), lock_type="+")
+        backend.transaction_rollback()
+        locks = backend.get_locks()
+        assert not any(r[0] == "TLCK" for r in locks), (
+            "all txn locks should be released on rollback from nested level"
+        )
