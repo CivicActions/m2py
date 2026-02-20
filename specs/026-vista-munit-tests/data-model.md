@@ -60,15 +60,15 @@ class FailureDetail:
 
 ### 3. BaselineData
 
-Top-level container for VEHU baseline results, serialized to JSON.
+Top-level container for VistA baseline results, serialized to JSON.
 
 ```python
 @dataclass
 class BaselineData:
-    """Complete VEHU baseline for all M-Unit test routines."""
+    """Complete VistA baseline for all M-Unit test routines."""
     version: str                      # Schema version, e.g. "1.0"
     captured_at: str                  # ISO 8601 timestamp
-    vehu_image: str                   # Docker image tag, e.g. "worldvista/vehu:latest"
+    docker_image: str                 # Docker image tag, e.g. "worldvista/osehravista:latest"
     packages: dict[str, PackageBaseline]  # Keyed by package name
 ```
 
@@ -150,11 +150,11 @@ TestRoutineConfig  ←→  MUnitResult  (linked by routine_name + package_name)
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "VistA M-Unit Baseline",
   "type": "object",
-  "required": ["version", "captured_at", "vehu_image", "packages"],
+  "required": ["version", "captured_at", "docker_image", "packages"],
   "properties": {
     "version": { "type": "string", "const": "1.0" },
     "captured_at": { "type": "string", "format": "date-time" },
-    "vehu_image": { "type": "string" },
+    "docker_image": { "type": "string" },
     "packages": {
       "type": "object",
       "additionalProperties": {

@@ -18,11 +18,11 @@
 
 **Purpose**: Project scaffolding — create package structure, add dependencies, wire up test directories.
 
-- [ ] T001 [P] Create munit package directory with `__init__.py` at `vista-test/src/vista_test/munit/__init__.py`
-- [ ] T002 [P] Create munit test directories: `vista-test/tests/vista/munit/` and `vista-test/tests/unit/` with `__init__.py` files
-- [ ] T003 [P] Create baselines directory at `vista-test/baselines/` with `.gitkeep`
-- [ ] T004 Add m2py as path dependency (`m2py = {path = ".."}`) in `vista-test/pyproject.toml`
-- [ ] T005 Verify dependency resolution: run `cd vista-test && uv sync` and confirm `from m2py.codegen import generate_python` imports
+- [x] T001 [P] Create munit package directory with `__init__.py` at `vista-test/src/vista_test/munit/__init__.py`
+- [x] T002 [P] Create munit test directories: `vista-test/tests/vista/munit/` and `vista-test/tests/unit/` with `__init__.py` files
+- [x] T003 [P] Create baselines directory at `vista-test/baselines/` with `.gitkeep`
+- [x] T004 Add m2py as path dependency (`m2py = {path = ".."}`) in `vista-test/pyproject.toml`
+- [x] T005 Verify dependency resolution: run `cd vista-test && uv sync` and confirm `from m2py.codegen import generate_python` imports
 
 **Checkpoint**: Package structure exists, m2py importable from vista-test.
 
@@ -36,54 +36,56 @@
 
 ### Data Models (US2 prerequisite)
 
-- [ ] T006 [P] [US2] Implement `FailureDetail` dataclass per contracts/models.md in `vista-test/src/vista_test/munit/models.py`
-- [ ] T007 [P] [US2] Implement `MUnitResult` dataclass with `to_dict()`/`from_dict()` in `vista-test/src/vista_test/munit/models.py`
-- [ ] T008 [P] [US2] Implement `PackageBaseline` and `BaselineData` with `to_json()`/`from_json()` in `vista-test/src/vista_test/munit/models.py`
-- [ ] T009 [P] [US2] Implement `TestRoutineConfig` dataclass in `vista-test/src/vista_test/munit/models.py`
+- [x] T006 [P] [US2] Implement `FailureDetail` dataclass per contracts/models.md in `vista-test/src/vista_test/munit/models.py`
+- [x] T007 [P] [US2] Implement `MUnitResult` dataclass with `to_dict()`/`from_dict()` in `vista-test/src/vista_test/munit/models.py`
+- [x] T008 [P] [US2] Implement `PackageBaseline` and `BaselineData` with `to_json()`/`from_json()` in `vista-test/src/vista_test/munit/models.py`
+- [x] T009 [P] [US2] Implement `TestRoutineConfig` dataclass in `vista-test/src/vista_test/munit/models.py`
 
 ### Model Tests
 
-- [ ] T010 [P] [US2] Write model unit tests: `MUnitResult` round-trip (to_dict/from_dict), status derivation, validation in `vista-test/tests/unit/test_munit_models.py`
-- [ ] T011 [P] [US2] Write model unit tests: `BaselineData` JSON serialization, `FailureDetail` CHKEQ vs CHKTF in `vista-test/tests/unit/test_munit_models.py`
+- [x] T010 [P] [US2] Write model unit tests: `MUnitResult` round-trip (to_dict/from_dict), status derivation, validation in `vista-test/tests/unit/test_munit_models.py`
+- [x] T011 [P] [US2] Write model unit tests: `BaselineData` JSON serialization, `FailureDetail` CHKEQ vs CHKTF in `vista-test/tests/unit/test_munit_models.py`
 
 ### M-Unit Output Parser (US2)
 
-- [ ] T012 [US2] Implement `parse_munit_output()` per contracts/munit-parser.md: summary regex, failure extraction, error extraction in `vista-test/src/vista_test/munit/parser.py`
-- [ ] T013 [US2] Implement `parse_testlist()` per contracts/munit-parser.md: TestList file parsing, invocation pattern matching, tier assignment in `vista-test/src/vista_test/munit/parser.py`
+- [x] T012 [US2] Implement `parse_munit_output()` per contracts/munit-parser.md: summary regex, failure extraction, error extraction in `vista-test/src/vista_test/munit/parser.py`
+- [x] T013 [US2] Implement `parse_testlist()` per contracts/munit-parser.md: TestList file parsing, invocation pattern matching, tier assignment in `vista-test/src/vista_test/munit/parser.py`
 
 ### Parser Tests
 
-- [ ] T014 [P] [US2] Write parser unit tests: all-pass output, CHKTF failure, CHKEQ failure with `<expected> vs <actual>`, error output in `vista-test/tests/unit/test_munit_parser.py`
-- [ ] T015 [P] [US2] Write parser unit tests: empty output, partial output (no summary), self-referential %utt output, multi-line messages in `vista-test/tests/unit/test_munit_parser.py`
-- [ ] T016 [US2] Write parser unit tests: `parse_testlist()` with MASH Utilities and M XML Parser TestList files from VistA submodule in `vista-test/tests/unit/test_munit_parser.py`
+- [x] T014 [P] [US2] Write parser unit tests: all-pass output, CHKTF failure, CHKEQ failure with `<expected> vs <actual>`, error output in `vista-test/tests/unit/test_munit_parser.py`
+- [x] T015 [P] [US2] Write parser unit tests: empty output, partial output (no summary), self-referential %utt output, multi-line messages in `vista-test/tests/unit/test_munit_parser.py`
+- [x] T016 [US2] Write parser unit tests: `parse_testlist()` with MASH Utilities and M XML Parser TestList files from VistA submodule in `vista-test/tests/unit/test_munit_parser.py`
 
 **Checkpoint**: `uv run pytest vista-test/tests/unit/test_munit_models.py vista-test/tests/unit/test_munit_parser.py` passes. Foundation ready.
 
 ---
 
-## Phase 3: User Story 1 — Capture VEHU Baseline (Priority: P1)
+## Phase 3: User Story 1 — Capture Baseline (Priority: P1)
 
-**Goal**: Establish ground truth by running all M-Unit test routines against the VEHU Docker container via SSH and persisting structured JSON results.
+**Goal**: Establish ground truth by running all M-Unit test routines against the osehravista Docker container (worldvista/osehravista, built from VistA-M with M-Unit v1.5 + Enhanced XML Tools pre-installed) via SSH and persisting structured JSON results.
 
-**Independent Test**: Start VEHU Docker, run `uv run python -m vista_test.munit.baseline --output baselines/vehu-baseline.json`, verify JSON contains results for all discovered routines.
+**Independent Test**: Start osehravista Docker, run `uv run python -m vista_test.munit.baseline --output baselines/osehravista-baseline.json`, verify JSON contains results for all discovered routines.
+
+**Note**: Switched from VEHU to osehravista because VEHU (built from VistA-VEHU-M) was missing production routines (MXMLTMP1, MXMLPATH, MXMLTMPL) that M-Unit tests depend on.
 
 ### Implementation
 
-- [ ] T017 [US1] Implement `BaselineRunner.__init__()` and `_connect()` SSH setup (lazy connect via `VistATerminal`) in `vista-test/src/vista_test/munit/baseline.py`
-- [ ] T018 [US1] Implement `BaselineRunner.import_routine()`: read `.m` source from VistA submodule, send to VEHU via programmer mode in `vista-test/src/vista_test/munit/baseline.py`
-- [ ] T019 [US1] Implement `BaselineRunner.run_routine()`: send invocation command, capture output with timeout, parse via `parse_munit_output()` in `vista-test/src/vista_test/munit/baseline.py`
-- [ ] T020 [US1] Implement `BaselineRunner.run_package()` and `BaselineRunner.run_all()`: group by package, aggregate results in `vista-test/src/vista_test/munit/baseline.py`
-- [ ] T021 [US1] Implement CLI entry point `__main__.py` with `--output`, `--package`, `--routine`, `--tier` options in `vista-test/src/vista_test/munit/__main__.py`
-- [ ] T022 [US1] Capture Tier 1 baseline: run `%utt1`–`%utt7`, `%uttcovr` against VEHU; commit JSON to `vista-test/baselines/vehu-baseline.json`
-- [ ] T023 [US1] Capture Tier 2 baseline: run MXMLBLD, MXMLDOMT, MXMLPATT, MXMLTMPT against VEHU; update `vista-test/baselines/vehu-baseline.json`
+- [x] T017 [US1] Implement `BaselineRunner.__init__()` and `_connect()` SSH setup (lazy connect via `VistATerminal`) in `vista-test/src/vista_test/munit/baseline.py`
+- [x] T018 [US1] Implement `BaselineRunner.import_routine()`: read `.m` source from VistA submodule, send to VEHU via programmer mode in `vista-test/src/vista_test/munit/baseline.py`
+- [x] T019 [US1] Implement `BaselineRunner.run_routine()`: send invocation command, capture output with timeout, parse via `parse_munit_output()` in `vista-test/src/vista_test/munit/baseline.py`
+- [x] T020 [US1] Implement `BaselineRunner.run_package()` and `BaselineRunner.run_all()`: group by package, aggregate results in `vista-test/src/vista_test/munit/baseline.py`
+- [x] T021 [US1] Implement CLI entry point `__main__.py` with `--output`, `--package`, `--routine`, `--tier` options in `vista-test/src/vista_test/munit/__main__.py`
+- [x] T022 [US1] Capture Tier 1 baseline: run `%utt1`–`%utt7`, `%uttcovr` against osehravista; commit JSON to `vista-test/baselines/osehravista-baseline.json`
+- [x] T023 [US1] Capture Tier 2 baseline: run MXMLBLD, MXMLDOMT, MXMLPATT, MXMLTMPT against osehravista; update `vista-test/baselines/osehravista-baseline.json`
 
-**Checkpoint**: `baselines/vehu-baseline.json` contains results for all Tier 1+2 routines (12 routines). Can inspect pass/fail counts per routine.
+**Checkpoint**: `baselines/osehravista-baseline.json` contains results for all Tier 1+2 routines (12 routines, 303 assertions). Can inspect pass/fail counts per routine.
 
 ---
 
 ## Phase 4: User Story 3 — pytest M-Unit Adapter: Tier 1 Self-Tests (Priority: P2) 🎯 MVP Part 1
 
-**Goal**: Transpile and run M-Unit self-tests (%utt1–%utt7, %uttcovr) in Python via pytest, comparing to VEHU baseline. This validates the M-Unit framework itself works in transpiled form.
+**Goal**: Transpile and run M-Unit self-tests (%utt1–%utt7, %uttcovr) in Python via pytest, comparing to osehravista baseline. This validates the M-Unit framework itself works in transpiled form.
 
 **Independent Test**: `cd vista-test && uv run pytest tests/vista/munit/ -v -k "mash_utilities"` — all 8 routines pass or xfail.
 
@@ -129,16 +131,18 @@
 
 ## Phase 6: User Story 1 continued — Capture Stretch Goal Baselines (Priority: P1)
 
-**Goal**: Capture VEHU baselines for ALL remaining packages (Tiers 3–4) so stretch goal work can proceed.
+**Goal**: Capture baselines for ALL remaining packages (Tiers 3–4) so stretch goal work can proceed.
 
-**Independent Test**: `baselines/vehu-baseline.json` contains results for all 38 routines across all 5 packages.
+**Note**: Completed early during Phase 3 by switching to osehravista and capturing all tiers at once.
 
-- [ ] T041 [P] [US1] Capture Tier 3 baseline: run ZZUTDIDT, DMUDIC00, DMUDT000, DMUDTC00, DMUDIQ00 against VEHU; update `vista-test/baselines/vehu-baseline.json`
-- [ ] T042 [P] [US1] Capture Tier 4a baseline: run ZZRGUT–ZZRGUT5, ZZRGUTRB, ZZRGUTEX against VEHU; update `vista-test/baselines/vehu-baseline.json`
-- [ ] T043 [P] [US1] Capture Tier 4b baseline: run all 12 Scheduling routines against VEHU; update `vista-test/baselines/vehu-baseline.json`
-- [ ] T044 [P] [US1] Capture Tier 4c baseline: run ZZDGPTCO1 against VEHU; update `vista-test/baselines/vehu-baseline.json`
+**Independent Test**: `baselines/osehravista-baseline.json` contains results for all 38 routines across all 6 packages.
 
-**Checkpoint**: `baselines/vehu-baseline.json` has all 38 routines. Full ground truth for 100% comparison.
+- [x] T041 [P] [US1] Capture Tier 3 baseline: run ZZUTDIDT, DMUDIC00, DMUDT000, DMUDTC00, DMUDIQ00 against osehravista; update `vista-test/baselines/osehravista-baseline.json`
+- [x] T042 [P] [US1] Capture Tier 4a baseline: run ZZRGUT–ZZRGUT5, ZZRGUTRB, ZZRGUTEX against osehravista; update `vista-test/baselines/osehravista-baseline.json`
+- [x] T043 [P] [US1] Capture Tier 4b baseline: run all 12 Scheduling routines against osehravista; update `vista-test/baselines/osehravista-baseline.json`
+- [x] T044 [P] [US1] Capture Tier 4c baseline: run ZZDGPTCO1 against osehravista; update `vista-test/baselines/osehravista-baseline.json`
+
+**Checkpoint**: `baselines/osehravista-baseline.json` has all 38 routines (22 pass, 3 intentional fail, 13 error/silent-quit). 640 assertions. Full ground truth for 100% comparison.
 
 ---
 
@@ -146,11 +150,11 @@
 
 **Goal**: Build the global export/import tool so Tier 3+ tests have the data they need. This is the critical enabler for all stretch goals.
 
-**Independent Test**: Export `^DD(2,0)` from VEHU, import into m2py `MDict`, query it back — values match.
+**Independent Test**: Export `^DD(2,0)` from osehravista, import into m2py `MDict`, query it back — values match.
 
 ### Global Bootstrap Tool (US4)
 
-- [ ] T045 [US4] Implement `GlobalBootstrap.__init__()` and `export_globals()`: SSH to VEHU, traverse globals via `$ORDER`, write ZWR format in `vista-test/src/vista_test/munit/bootstrap.py`
+- [ ] T045 [US4] Implement `GlobalBootstrap.__init__()` and `export_globals()`: SSH to osehravista, traverse globals via `$ORDER`, write ZWR format in `vista-test/src/vista_test/munit/bootstrap.py`
 - [ ] T046 [US4] Implement `GlobalBootstrap.import_globals()`: parse ZWR format, load entries into m2py `MDict` global store in `vista-test/src/vista_test/munit/bootstrap.py`
 - [ ] T047 [US4] Implement `GlobalBootstrap.bootstrap_tier()`: Tier 3 exports `^DD`, `^DIC`, `^%ZOSF`; Tier 4 adds `^DPT`, `^SC`, `^AUPNPROB`, `^GMPL*`, `^SD*`, `^DG*` in `vista-test/src/vista_test/munit/bootstrap.py`
 - [ ] T048 [US4] Implement caching: skip re-export if ZWR files already exist on disk in `vista-test/src/vista_test/munit/bootstrap.py`
@@ -159,7 +163,7 @@
 ### Global Bootstrap Tests
 
 - [ ] T050 [P] [US4] Write unit test: ZWR parsing round-trip (export → import → query) for simple globals in `vista-test/tests/unit/test_munit_bootstrap.py`
-- [ ] T051 [US4] Integration test: export `^DD(2,0)` from VEHU, import into `MDict`, verify value matches VEHU in `vista-test/tests/unit/test_munit_bootstrap.py`
+- [ ] T051 [US4] Integration test: export `^DD(2,0)` from osehravista, import into `MDict`, verify value matches osehravista in `vista-test/tests/unit/test_munit_bootstrap.py`
 
 **Checkpoint**: Global bootstrap works for FileMan globals. Path to Tier 3 is unblocked.
 
@@ -181,7 +185,7 @@
 
 ### FileMan Global Bootstrap (US4 + US6)
 
-- [ ] T057 [US4] Export FileMan globals from VEHU: `^DD`, `^DIC`, `^%ZOSF`; cache ZWR files in `vista-test/baselines/globals/`
+- [ ] T057 [US4] Export FileMan globals from osehravista: `^DD`, `^DIC`, `^%ZOSF`; cache ZWR files in `vista-test/baselines/globals/`
 - [ ] T058 [US6] Import FileMan globals into m2py `MDict` via `fileman_bootstrap` fixture; verify `^DD(2,0)` accessible
 
 ### FileMan Test Routines (US6) — ordered by complexity
@@ -212,7 +216,7 @@
 
 ### Problem List Global Bootstrap (US4 + US6)
 
-- [ ] T069 [US4] Export Problem List globals from VEHU: `^AUPNPROB`, `^GMPL*`, `^SC`, `^VA`; cache ZWR files in `vista-test/baselines/globals/`
+- [ ] T069 [US4] Export Problem List globals from osehravista: `^AUPNPROB`, `^GMPL*`, `^SC`, `^VA`; cache ZWR files in `vista-test/baselines/globals/`
 - [ ] T070 [US6] Import Problem List globals via `clinical_bootstrap` fixture; verify `^AUPNPROB` accessible
 
 ### Problem List Test Routines (US6) — ordered by fewest dependencies
@@ -245,7 +249,7 @@
 
 ### Scheduling Global Bootstrap (US4 + US6)
 
-- [ ] T083 [US4] Export Scheduling globals from VEHU: `^DPT`, `^SC`, `^SD*`; cache ZWR files in `vista-test/baselines/globals/`
+- [ ] T083 [US4] Export Scheduling globals from osehravista: `^DPT`, `^SC`, `^SD*`; cache ZWR files in `vista-test/baselines/globals/`
 - [ ] T084 [US6] Import Scheduling globals via `clinical_bootstrap` fixture; verify `^DPT` and `^SC` accessible
 
 ### Group A — SDK Tests (6 routines, ~84 assertions, simpler) (US6)
@@ -283,7 +287,7 @@
 
 ### Registration Global Bootstrap (US4 + US6)
 
-- [ ] T099 [US4] Export Registration globals from VEHU: `^DG*`; cache ZWR files in `vista-test/baselines/globals/` (may share `^DPT` from Tier 4b)
+- [ ] T099 [US4] Export Registration globals from osehravista: `^DG*`; cache ZWR files in `vista-test/baselines/globals/` (may share `^DPT` from Tier 4b)
 
 ### Registration Test Routine (US6)
 
@@ -316,7 +320,7 @@ Phase 1 (Setup) ─────────────────────�
     │                                                                             │
 Phase 2 (Foundational: models + parser) ──────────────────────────────────────────┤
     │                                                                             │
-    ├── Phase 3 (US1: Capture VEHU Baseline — Tiers 1+2)                         │
+    ├── Phase 3 (US1: Capture Baseline — Tiers 1+2)                               │
     │       │                                                                     │
     │       ├── Phase 4 (US3: Tier 1 M-Unit self-tests)                          │
     │       │       │                                                             │
@@ -344,7 +348,7 @@ Phase 12 (Polish) ────────────────────�
 
 | User Story | Description | Phases | Priority |
 |------------|-------------|--------|----------|
-| US1 | Capture VEHU Baseline | 3, 6 | P1 |
+| US1 | Capture osehravista Baseline | 3, 6 | P1 |
 | US2 | M-Unit Output Parser + Models | 2 | P1 |
 | US3 | Run Transpiled Tests via pytest | 4, 5 | P2 |
 | US4 | Global Bootstrap | 7 | P3 (Stretch) |
@@ -372,7 +376,7 @@ Phase 12 (Polish) ────────────────────�
 
 **Phase 10** (T080–T082 scheduling APIs): SDK, Management, and test commons transpilation are independent.
 
-**Cross-phase**: Phase 6 (stretch baselines) can run in parallel with Phases 4–5 (MVP transpilation) since they only need VEHU Docker.
+**Cross-phase**: Phase 6 (stretch baselines) can run in parallel with Phases 4–5 (MVP transpilation) since they only need osehravista Docker.
 
 ---
 
@@ -419,6 +423,6 @@ Phase 12 (Polish) ────────────────────�
 - vista-test/ tasks execute in the vista-test repository context
 - m2py root tasks (tests/, src/m2py/) execute in the workspace root context
 - Each m2py bug fix (US5) follows: discover → extract minimal MUMPS → fix → standalone test → verify M-Unit re-run
-- VEHU Docker is only needed for baseline capture (Phases 3, 6) and global export (Phases 7, 8, 9, 10, 11); transpiled tests run offline
+- osehravista Docker is only needed for baseline capture (Phases 3, 6) and global export (Phases 7, 8, 9, 10, 11); transpiled tests run offline
 - Stretch goal phases (7–11) can be attempted incrementally — each tier adds value independently
 - Registration (Phase 11) has fewest tests and could be attempted anytime after Phase 8 (FileMan infrastructure)
