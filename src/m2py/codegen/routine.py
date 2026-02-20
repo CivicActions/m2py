@@ -740,55 +740,66 @@ class RoutineGenerator:
                 original_formal_params = label.signature.formal_params
 
             # Wrap body in try/except for $ETRAP error handling
-            # at stack frame boundaries
-            ctx.emitter.line("try:")
-            with ctx.emitter.indented():
-                # Use NewScopeManager if label has:
-                # - Explicit NEW statements, OR
-                # - Formal parameters (implicitly NEWed per MUMPS spec)
-                needs_scope_manager = label.has_new_statements or bool(
-                    original_formal_params
-                )
-                if needs_scope_manager:
-                    ctx.emitter.line("with NewScopeManager(_scope) as _new_mgr:")
-                    ctx.new_scope_manager_var = "_new_mgr"
-                    with ctx.emitter.indented():
-                        # NEW formal parameters first (saves caller's values).
-                        # Then assign parameter values to _scope.
-                        # Only assign if parameter was actually passed (not None)
-                        # to ensure $D(param)=0 for undefined parameters.
-                        # If param is an MArray, it's a by-ref alias — use directly.
-                        for orig_name in original_formal_params:
-                            python_name = translate_name(orig_name)
-                            # Use python_name for scope key to match GET/SET in body
-                            # (e.g., %1 → _pct_1 so reads/writes use same key)
-                            ctx.emitter.line(f"_new_mgr.new_var({python_name!r})")
-                            ctx.emitter.line(f"if {python_name} is not None:")
+            # at stack frame boundaries.
+            # IMPORTANT: When NewScopeManager is used (for NEW $ETRAP etc.),
+            # the try/except MUST be INSIDE the with block. Otherwise,
+            # NewScopeManager.__exit__ restores $ETRAP to "" before
+            # _handle_etrap() sees the current $ETRAP value.
+            needs_scope_manager = label.has_new_statements or bool(
+                original_formal_params
+            )
+            if needs_scope_manager:
+                ctx.emitter.line("with NewScopeManager(_scope) as _new_mgr:")
+                ctx.new_scope_manager_var = "_new_mgr"
+                with ctx.emitter.indented():
+                    # NEW formal parameters first (saves caller's values).
+                    # Then assign parameter values to _scope.
+                    # Only assign if parameter was actually passed (not None)
+                    # to ensure $D(param)=0 for undefined parameters.
+                    # If param is an MArray, it's a by-ref alias — use directly.
+                    for orig_name in original_formal_params:
+                        python_name = translate_name(orig_name)
+                        # Use python_name for scope key to match GET/SET in body
+                        # (e.g., %1 → _pct_1 so reads/writes use same key)
+                        ctx.emitter.line(f"_new_mgr.new_var({python_name!r})")
+                        ctx.emitter.line(f"if {python_name} is not None:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(f"if isinstance({python_name}, MArray):")
                             with ctx.emitter.indented():
                                 ctx.emitter.line(
-                                    f"if isinstance({python_name}, MArray):"
+                                    f"_scope[{python_name!r}] = {python_name}"
                                 )
-                                with ctx.emitter.indented():
-                                    ctx.emitter.line(
-                                        f"_scope[{python_name!r}] = {python_name}"
-                                    )
-                                ctx.emitter.line("else:")
-                                with ctx.emitter.indented():
-                                    ctx.emitter.line(
-                                        f"_scope[{python_name!r}] = MArray(value={python_name})"
-                                    )
+                            ctx.emitter.line("else:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(
+                                    f"_scope[{python_name!r}] = MArray(value={python_name})"
+                                )
+                    ctx.emitter.line("try:")
+                    with ctx.emitter.indented():
                         self._generate_label_body(label, ctx)
-                    ctx.new_scope_manager_var = None
-                else:
-                    self._generate_label_body(label, ctx)
-
-            # Error handling — invoke $ETRAP if set
-            ctx.emitter.line("except Exception as _e:")
-            with ctx.emitter.indented():
-                ctx.emitter.line("if _rt._handle_etrap(_e, _scope):")
+                    # Error handling — invoke $ETRAP if set
+                    ctx.emitter.line("except Exception as _e:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("if _rt._handle_etrap(_e, _scope):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                "return  # $ETRAP cleared $ECODE, implicit QUIT"
+                            )
+                        ctx.emitter.line("raise  # Propagate to caller")
+                ctx.new_scope_manager_var = None
+            else:
+                ctx.emitter.line("try:")
                 with ctx.emitter.indented():
-                    ctx.emitter.line("return  # $ETRAP cleared $ECODE, implicit QUIT")
-                ctx.emitter.line("raise  # Propagate to caller")
+                    self._generate_label_body(label, ctx)
+                # Error handling — invoke $ETRAP if set
+                ctx.emitter.line("except Exception as _e:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("if _rt._handle_etrap(_e, _scope):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            "return  # $ETRAP cleared $ECODE, implicit QUIT"
+                        )
+                    ctx.emitter.line("raise  # Propagate to caller")
 
         ctx.emitter.blank()
         ctx.current_label = None

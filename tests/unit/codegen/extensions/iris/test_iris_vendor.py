@@ -409,7 +409,8 @@ class TestZUHelper:
     def test_zu_unknown_empty(self):
         from m2py.runtime.helpers import m_zu
 
-        result = m_zu(9999)
+        with pytest.warns(UserWarning, match=r"\$ZU\(9999\) not implemented"):
+            result = m_zu(9999)
         assert result == ""
 
 

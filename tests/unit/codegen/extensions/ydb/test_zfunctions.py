@@ -1154,12 +1154,17 @@ class TestZdirectorySetExecution:
     def test_set_and_get_zd(self, execute_mumps):
         """SET $ZD changes directory, GET $ZD reads it back."""
         result = execute_mumps('TEST\n S $ZD="/tmp" W $ZD\n Q')
-        assert result.output == "/tmp"
+        # On macOS, /tmp is a symlink to /private/tmp; os.getcwd() resolves it
+        import os
+
+        assert result.output == os.path.realpath("/tmp")
 
     def test_set_zdirectory_changes_dir(self, execute_mumps):
         """SET $ZDIRECTORY changes directory."""
         result = execute_mumps('TEST\n S $ZDIRECTORY="/tmp" W $ZD\n Q')
-        assert result.output == "/tmp"
+        import os
+
+        assert result.output == os.path.realpath("/tmp")
 
 
 # ── $ZPIECE alias ─────────────────────────────────────────────────────

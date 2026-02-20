@@ -553,12 +553,14 @@ class CallTarget(NamedTuple):
         - "LABEL+5" → CallTarget(label="LABEL", routine=None, offset=5)
         - "LABEL+5^ROUTINE" → CallTarget(label="LABEL", routine="ROUTINE", offset=5)
         - "LABEL:cond" → CallTarget(label="LABEL", postcondition="cond")
+        - 'LABEL("arg")^RTN' → CallTarget(label="LABEL", routine="RTN", args_str='("arg")')
     """
 
     label: Optional[str] = None
     routine: Optional[str] = None
     offset: Optional[int] = None
     postcondition: Optional[str] = None  # Unevaluated postcondition string
+    args_str: Optional[str] = None  # Parenthesized argument string, e.g. '("World")'
 
 
 # Global storage backend protocol
@@ -1655,7 +1657,7 @@ class MUMPSRuntime:
         # $KEY — tracked per-device on device.key
         # Accessor key() delegates to _current_device.key
         # $SYSTEM - system identification (V,S format)
-        self._system: str = "47,m2py"
+        self._system: str = "47,M2PY"
         # Error processing special variables
         # $ECODE - comma-delimited list of active error codes (empty = no errors)
         self._ecode: str = ""
@@ -1840,37 +1842,75 @@ class MUMPSRuntime:
     def get_text_indirect(self, label: str, offset: int = 0, module: Any = None) -> str:
         """Get source text line with indirected label ($TEXT with @).
 
-        Handles $TEXT(@X) and $TEXT(@X+N) where X contains a label name.
-        The resolved label is used to look up the source line.
+        Handles $TEXT(@X) where X can be:
+        - A simple label name: "LABEL"
+        - A label with offset: "LABEL+N"
+        - An absolute offset: "+N"
+        - An external reference: "+N^ROUTINE", "LABEL^ROUTINE", "LABEL+N^ROUTINE"
+
+        When X contains a full text reference (with ^ for external routines
+        or + for offsets), the string is parsed and the appropriate module and
+        line are resolved dynamically.
 
         Args:
-            label: Label name (resolved from indirection)
-            offset: Line offset from label (default 0)
-            module: Optional external routine module. If provided, use its
-                    _source_lines and _label_lines instead of the current routine's.
+            label: Text reference string (resolved from indirection)
+            offset: Additional line offset from label (default 0).
+                    Combined with any offset parsed from the label string.
+            module: Optional external routine module. If provided AND the
+                    label string does not contain a ``^ROUTINE`` part, this
+                    module's _source_lines/_label_lines are used.
 
         Returns:
-            Source line text, or empty string if label not found or offset
-            is out of bounds.
+            Source line text, or empty string if label/offset not found or
+            out of bounds.
         """
-        if module is not None:
-            lines = getattr(module, "_source_lines", [])
-            label_lines = getattr(module, "_label_lines", {})
-        else:
-            lines = self._current_source_lines or []
-            label_lines = self._current_label_lines or {}
+        import re as _re
 
-        # Look up the label
-        base_idx = label_lines.get(label, -1)
-        if base_idx < 0:
-            return ""  # Label not found
+        ref = str(label).strip()
+        if not ref:
+            return ""
 
-        line_idx = base_idx + offset
+        # Parse the reference: [LABEL][+N][^ROUTINE]
+        parsed_label: Optional[str] = None
+        parsed_offset: int = offset  # start with any additional offset
+        parsed_module: Any = module
 
-        # Bounds check and return
-        if 0 <= line_idx < len(lines):
-            return lines[line_idx].replace("\t", " ")
-        return ""
+        # Check for ^ROUTINE part
+        if "^" in ref:
+            ref_part, routine_part = ref.split("^", 1)
+            routine_part = routine_part.strip()
+            if routine_part:
+                parsed_module = self._get_module_safe(routine_part)
+                if parsed_module is None:
+                    return ""  # External routine not found
+            ref = ref_part
+
+        # Now ref is [LABEL][+N] or +N or LABEL
+        plus_match = _re.match(r"^(\w*)\+(\d+)$", ref)
+        if plus_match:
+            label_part = plus_match.group(1)
+            offset_part = int(plus_match.group(2))
+            if label_part:
+                parsed_label = label_part
+                parsed_offset += offset_part
+            else:
+                # Pure offset like "+1" — absolute line reference
+                parsed_label = None
+                parsed_offset += offset_part
+        elif ref.startswith("+"):
+            # Just "+" with no number? Treat as +0
+            parsed_label = None
+        elif ref:
+            # Pure label name, no offset
+            parsed_label = ref
+
+        # Now resolve using the parsed components — delegate to get_text
+        return self.get_text(
+            offset=parsed_offset,
+            label=parsed_label,
+            module=parsed_module,
+            is_external=(parsed_module is not None and parsed_module is not module),
+        )
 
     def write(self, value: Any) -> None:
         """Capture WRITE output and update $X/$Y position tracking.
@@ -2727,7 +2767,7 @@ class MUMPSRuntime:
         pattern 1.N1\",\"1.E.
 
         Returns:
-            System identification string (e.g., "47,m2py")
+            System identification string (e.g., "47,M2PY")
         """
         return self._system
 
@@ -7071,6 +7111,32 @@ class MUMPSRuntime:
         else:
             label = target_str if target_str else None
 
+        # Extract parenthesized arguments from the label.
+        # In MUMPS, D @X where X="LABEL(args)^RTN" embeds actual parameters
+        # in the indirection string. Extract them so the dispatch code can
+        # pass them when calling the resolved function.
+        # e.g. 'GREET("World")' → label='GREET', args_str='("World")'
+        args_str: Optional[str] = None
+        if label and "(" in label:
+            paren_pos = label.index("(")
+            # Verify the parentheses are balanced and at the end
+            remainder = label[paren_pos:]
+            depth = 0
+            balanced = False
+            for i, c in enumerate(remainder):
+                if c == "(":
+                    depth += 1
+                elif c == ")":
+                    depth -= 1
+                    if depth == 0:
+                        # Check this closing paren is at the end
+                        if i == len(remainder) - 1:
+                            balanced = True
+                        break
+            if balanced:
+                args_str = remainder
+                label = label[:paren_pos]
+
         # Validate label name if present
         # Note: use _is_valid_label, not _is_valid_varname, since labels can be numeric
         if label and not _is_valid_label(label):
@@ -7080,7 +7146,11 @@ class MUMPSRuntime:
             )
 
         return CallTarget(
-            label=label, routine=routine, offset=offset, postcondition=postcondition
+            label=label,
+            routine=routine,
+            offset=offset,
+            postcondition=postcondition,
+            args_str=args_str,
         )
 
     def execute_mumps(

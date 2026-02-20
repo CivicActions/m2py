@@ -796,6 +796,110 @@ class TestGetTextIndirect:
 
         assert rt.get_text_indirect("TEST", module=None) == "TEST W 1 Q"
 
+    def test_indirect_full_reference_plus_n_caret_routine(self):
+        """$TEXT(@X) where X='+1^ROUTINE' parses offset and resolves module."""
+        import sys
+        import types
+
+        from m2py.codegen import generate_python
+        from m2py.runtime import MUMPSRuntime
+
+        source = "MYROU ; This is line one\n W 1,!\n Q\n"
+        py = generate_python(source)
+        mod = types.ModuleType("MYROU")
+        exec(py, mod.__dict__)
+        sys.modules["MYROU"] = mod
+
+        rt = MUMPSRuntime()
+        result = rt.get_text_indirect("+1^MYROU")
+        assert "This is line one" in result
+
+    def test_indirect_full_reference_plus_zero_returns_name(self):
+        """$TEXT(@X) where X='+0^ROUTINE' returns routine name."""
+        import sys
+        import types
+
+        from m2py.codegen import generate_python
+        from m2py.runtime import MUMPSRuntime
+
+        source = "MYROU2 ; comment\n Q\n"
+        py = generate_python(source)
+        mod = types.ModuleType("MYROU2")
+        exec(py, mod.__dict__)
+        sys.modules["MYROU2"] = mod
+
+        rt = MUMPSRuntime()
+        assert rt.get_text_indirect("+0^MYROU2") == "MYROU2"
+
+    def test_indirect_full_reference_label_caret_routine(self):
+        """$TEXT(@X) where X='LABEL^ROUTINE' returns label line."""
+        import sys
+        import types
+
+        from m2py.codegen import generate_python
+        from m2py.runtime import MUMPSRuntime
+
+        source = "R3 ; first\n Q\nFOO ; the foo label\n Q\n"
+        py = generate_python(source)
+        mod = types.ModuleType("R3")
+        exec(py, mod.__dict__)
+        sys.modules["R3"] = mod
+
+        rt = MUMPSRuntime()
+        result = rt.get_text_indirect("FOO^R3")
+        assert "the foo label" in result
+
+    def test_indirect_full_reference_label_plus_n(self):
+        """$TEXT(@X) where X='LABEL+1^ROUTINE' returns line after label."""
+        import sys
+        import types
+
+        from m2py.codegen import generate_python
+        from m2py.runtime import MUMPSRuntime
+
+        source = "R4 ; first\n Q\nDATA ;\n ;;item1\n ;;item2\n"
+        py = generate_python(source)
+        mod = types.ModuleType("R4")
+        exec(py, mod.__dict__)
+        sys.modules["R4"] = mod
+
+        rt = MUMPSRuntime()
+        result = rt.get_text_indirect("DATA+1^R4")
+        assert "item1" in result
+
+    def test_indirect_full_reference_nonexistent_routine(self):
+        """$TEXT(@X) where X='+1^NOEXIST' returns empty for missing routine."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt.get_text_indirect("+1^NOSUCHROUTINE") == ""
+
+    def test_indirect_full_reference_scan_all_lines(self):
+        """Scan all lines of a routine via $TEXT(@('+N^ROUTINE')) loop."""
+        import sys
+        import types
+
+        from m2py.codegen import generate_python
+        from m2py.runtime import MUMPSRuntime
+
+        source = "SCANME ; first\n ; @TEST test one\nT1 ; @TEST test two\n Q\n"
+        py = generate_python(source)
+        mod = types.ModuleType("SCANME")
+        exec(py, mod.__dict__)
+        sys.modules["SCANME"] = mod
+
+        rt = MUMPSRuntime()
+        lines = []
+        for i in range(1, 100):
+            line = rt.get_text_indirect(f"+{i}^SCANME")
+            if not line:
+                break
+            lines.append(line)
+
+        assert len(lines) == 4
+        test_lines = [l for l in lines if "@TEST" in l]
+        assert len(test_lines) == 2
+
 
 @pytest.mark.runtime
 class TestExecuteMumpsWithMArray:

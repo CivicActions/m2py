@@ -547,3 +547,212 @@ class TestSetIndirected:
         rt.set_indirected("X", "", scope, levels=1)
         assert scope["Y"].value == ""
         assert type(scope["Y"].value) is str
+
+
+# =============================================================================
+# DO @var Indirection (Transpile + Execute)
+# =============================================================================
+
+
+def _run_routine(source: str) -> str:
+    """Transpile MUMPS source and run it, returning captured output."""
+    import sys
+    import types
+
+    from m2py.codegen import generate_python
+    from m2py.runtime import run_with_goto_support
+
+    py = generate_python(source)
+    rt = MUMPSRuntime()
+    rt._capture_output = True
+
+    scope: dict = {}
+    exec(py, scope)
+
+    # Register as module so D LABEL^ROUTINE can import it
+    routine_name = scope.get("_routine_name", "TEST")
+    mod = types.ModuleType(routine_name)
+    mod.__dict__.update(scope)
+    sys.modules[routine_name] = mod
+
+    entry = scope.get(routine_name, None)
+    if entry is None:
+        entry = scope.get("TEST", None)
+    assert entry is not None, "No entry point found"
+
+    try:
+        run_with_goto_support(entry, rt, {})
+    finally:
+        sys.modules.pop(routine_name, None)
+    return rt.get_output()
+
+
+class TestDoAtVariableIndirection:
+    """Transpile-level tests for DO @var dynamic dispatch.
+
+    Verifies that indirected DO calls (DO @X) are correctly
+    transpiled and dispatched at runtime, including local labels,
+    constructed label^routine strings, and conditional invocations.
+    """
+
+    def test_do_at_variable_local_label(self):
+        """DO @X where X='LABEL^ROUTINE' dispatches to the label."""
+        source = """\
+TEST ; Test DO @var with local label
+ N X S X="HELLO^TEST"
+ D @X
+ Q
+HELLO ;
+ W "hello world",!
+ Q
+"""
+        output = _run_routine(source)
+        assert "hello world" in output
+
+    def test_do_at_variable_constructed_string(self):
+        """DO @X where X is built by concatenation dispatches correctly."""
+        source = """\
+TEST ; Test DO @var with concatenated string
+ N TAG,ROU,X
+ S TAG="SAY"
+ S ROU="TEST"
+ S X=TAG_"^"_ROU
+ D @X
+ Q
+SAY ;
+ W "dynamic call",!
+ Q
+"""
+        output = _run_routine(source)
+        assert "dynamic call" in output
+
+    def test_do_at_subscripted_variable(self):
+        """DO @X(subs) resolves subscripted variable and DOs the result.
+
+        In MUMPS, D @X("key") always treats ("key") as subscripts on X,
+        NOT as call arguments. The value X("key") is resolved and used
+        as the DO target. This is the pattern used by M-Unit test runner.
+        """
+        source = """\
+TEST ; Test DO @var(subs) - subscript lookup
+ N A
+ S A("ENT")="GREET"
+ D @A("ENT")
+ Q
+GREET ;
+ W "Hello",!
+ Q
+"""
+        output = _run_routine(source)
+        assert "Hello" in output
+
+    def test_do_at_variable_conditional(self):
+        """Indirected DO in a conditional context sets variables correctly."""
+        source = """\
+TEST ; Test conditional indirected DO
+ N X,Y
+ S X="SETVAL^TEST"
+ D @X
+ W Y,!
+ Q
+SETVAL ;
+ S Y=42
+ Q
+"""
+        output = _run_routine(source)
+        assert "42" in output
+
+    def test_do_at_subscripted_variable_external(self):
+        """DO @A("key") with value containing ^ calls external label."""
+        source = """\
+TEST ; Test DO @var(subs) external
+ N A
+ S A("run")="SAY^TEST"
+ D @A("run")
+ Q
+SAY ;
+ W "external",!
+ Q
+"""
+        output = _run_routine(source)
+        assert "external" in output
+
+    def test_do_at_subscripted_variable_multiple_keys(self):
+        """DO @A(k1,k2) resolves multi-subscript variable."""
+        source = """\
+TEST ; Test DO @var(k1,k2) - multi-subscript
+ N A
+ S A("pkg","run")="HELLO"
+ D @A("pkg","run")
+ Q
+HELLO ;
+ W "multi-key",!
+ Q
+"""
+        output = _run_routine(source)
+        assert "multi-key" in output
+
+    def test_do_at_subscripted_variable_numeric_key(self):
+        """DO @A(1) resolves numeric subscript."""
+        source = """\
+TEST ; Test DO @var(num) - numeric subscript
+ N A
+ S A(1)="FIRST"
+ D @A(1)
+ Q
+FIRST ;
+ W "first",!
+ Q
+"""
+        output = _run_routine(source)
+        assert "first" in output
+
+    def test_do_at_subscripted_dispatch_table(self):
+        """DO @A(key) implements dispatch table pattern (common in VistA)."""
+        source = """\
+TEST ; Dispatch table pattern
+ N TBL
+ S TBL("add")="DOADD"
+ S TBL("sub")="DOSUB"
+ D @TBL("add")
+ D @TBL("sub")
+ Q
+DOADD ;
+ W "adding,",!
+ Q
+DOSUB ;
+ W "subbing,",!
+ Q
+"""
+        output = _run_routine(source)
+        assert "adding," in output
+        assert "subbing," in output
+
+    def test_do_at_variable_no_subscripts(self):
+        """DO @X without subscripts continues to work (simple indirection)."""
+        source = """\
+TEST ; Test DO @var without subscripts
+ N X S X="NOOP^TEST"
+ D @X
+ W "done",!
+ Q
+NOOP ;
+ Q
+"""
+        output = _run_routine(source)
+        assert "done" in output
+
+    def test_do_at_args_embedded_in_string(self):
+        """To pass args through indirection, embed them in the string value."""
+        source = """\
+TEST ; Args embedded in indirection string
+ N X
+ S X="GREET(""World"")^TEST"
+ D @X
+ Q
+GREET(NAME) ;
+ W "Hello, "_NAME,!
+ Q
+"""
+        output = _run_routine(source)
+        assert "Hello, World" in output

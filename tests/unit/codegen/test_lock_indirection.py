@@ -8,9 +8,12 @@ with the appropriate arguments for lock operations, timeouts, and
 multi-level indirection.
 """
 
+import pytest
+
 from m2py.codegen import generate_python
 
 
+@pytest.mark.codegen
 class TestGenerateLockIndirectionCode:
     """Tests for generated LOCK indirection code patterns."""
 
@@ -101,6 +104,7 @@ class TestGenerateLockIndirectionCode:
         assert 'per_level_subscripts=["1", "2"]' in code
 
 
+@pytest.mark.codegen
 class TestLockIndirectionCodegenIntegration:
     """Integration tests for LOCK indirection code generation."""
 
@@ -144,6 +148,7 @@ class TestLockIndirectionCodegenIntegration:
         assert "lock_indirected" in code
 
 
+@pytest.mark.codegen
 class TestLockIndirectionStmtLevelPattern:
     """Tests for statement-level lock patterns with indirection."""
 

@@ -43,7 +43,7 @@ def _has_cli_opt(args: tuple, short: str, long: str) -> bool:
 
     Handles short forms (``-n``, ``-n0``, ``-nauto``), long forms
     (``--numprocesses``, ``--numprocesses=4``), and the two-arg form
-    (``-n auto``).
+    (``-n 4``).
     """
     for arg in args:
         # Short flag: exact match or combined value (-n0, -nauto)
@@ -60,6 +60,7 @@ def _has_cli_opt(args: tuple, short: str, long: str) -> bool:
 # =============================================================================
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_configure(config):
     """Register custom markers, apply smart defaults, and propagate --backend."""
     config.addinivalue_line("markers", "parser: Tests at textX grammar/parser level")
@@ -73,11 +74,11 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "ydb: YottaDB-specific extension test")
 
     # ── Smart defaults ────────────────────────────────────────────────
-    # Formerly handled by addopts = "-n auto -m 'not slow'" in
+    # Formerly handled by addopts = "-n 4 -m 'not slow'" in
     # pyproject.toml.  Now applied programmatically so users never need
     # the awkward -o "addopts=" escape hatch.
     #
-    # • -n auto   → parallel via pytest-xdist (skip if user passed -n)
+    # • -n 4   → parallel via pytest-xdist (skip if user passed -n)
     # • -m 'not slow' → skip slow-marked tests (skip if user passed -m)
     import os
 
@@ -85,11 +86,16 @@ def pytest_configure(config):
 
     if not _has_cli_opt(user_args, "-n", "--numprocesses"):
         if hasattr(config.option, "numprocesses"):  # xdist installed
-            config.option.numprocesses = os.cpu_count() or 1
+            num_workers = os.cpu_count() or 1
+            config.option.numprocesses = num_workers
             # xdist also needs dist mode enabled (defaults to "no"
             # when -n is absent from the CLI)
             if getattr(config.option, "dist", "no") == "no":
                 config.option.dist = "load"
+            # xdist requires tx (test execution environments) to be populated
+            # with one entry per worker to actually create the workers
+            if getattr(config.option, "tx", None) == []:
+                config.option.tx = ["popen"] * num_workers
 
     if not _has_cli_opt(user_args, "-m", "--markexpr"):
         config.option.markexpr = "not slow"

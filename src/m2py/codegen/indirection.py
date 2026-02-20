@@ -881,8 +881,23 @@ def generate_indirect_do(
                 ctx.emitter.line("continue")
 
         # External vs local dispatch
+        # When args_str is present (e.g., target was 'GREET("World")^RTN'),
+        # use execute_mumps to handle argument passing via MUMPS evaluation.
+        # The grammar requires standard MUMPS order: D LABEL^ROUTINE(args)
+        # (args come AFTER the routine reference, not before it).
+        ctx.emitter.line("if _call_target.args_str:")
+        with ctx.emitter.indented():
+            ctx.emitter.line('_xecute_target = (_call_target.label or "")')
+            ctx.emitter.line("if _call_target.routine:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    '_xecute_target = _xecute_target + "^" + _call_target.routine'
+                )
+            ctx.emitter.line("_xecute_target = _xecute_target + _call_target.args_str")
+            ctx.emitter.line('_rt.execute_mumps("D " + _xecute_target, _scope)')
+
         ctx.emitter.line(
-            "if _call_target.routine and _call_target.routine != _routine_name:"
+            "elif _call_target.routine and _call_target.routine != _routine_name:"
         )
         with ctx.emitter.indented():
             _emit_external_do_call(ctx)

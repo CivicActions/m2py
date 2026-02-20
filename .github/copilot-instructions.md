@@ -17,7 +17,7 @@ uv sync                          # Sync environment
 
 - Never use bare `python`, `pip`, or `pytest` commands.
 - **Never use `-o "addopts="`** — smart defaults in `tests/conftest.py` auto-inject
-  `-n auto` and `-m 'not slow'` only when the user hasn't passed `-n` or `-m`. Avoid -n0 unless debugging issues with parallel test execution.
+  `-n 4` and `-m 'not slow'` only when the user hasn't passed `-n` or `-m`. Avoid -n0 unless debugging issues with parallel test execution.
 - Run short Python snippets with pylanceRunCodeSnippet or create a permanent helper script in `/utils`. *Don't* use `uv python -c` or cat to /tmp files.
 - If you need to use a tmp directory for m files, use the one in the workspace - do not use `/tmp`.
 - Avoid `2> /dev/null` and `&> /dev/null` redirection.
