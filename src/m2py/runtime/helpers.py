@@ -1752,7 +1752,10 @@ class NewScopeManager:
         """NEW a single variable - save and remove from scope.
 
         If the variable has already been individually NEWed at the current
-        scope level, this is a no-op (first NEW wins per MUMPS spec).
+        scope level, the restore point is preserved (first NEW wins) but
+        the variable is still cleared from scope.  YDB/GT.M behavior:
+        repeated NEW at the same level makes the variable undefined again
+        without adding another restore entry.
 
         Uses _individually_newed set for dedup tracking, and
         appends to _restore_actions list for proper stack-based unwinding.
@@ -1761,7 +1764,10 @@ class NewScopeManager:
             var_name: The translated Python variable name (as stored in _scope)
         """
         if var_name in self._individually_newed:
-            # Already NEWed at this scope level - skip
+            # Already NEWed at this scope level — don't stack again,
+            # but DO clear the variable (make it undefined).
+            if var_name in self._scope:
+                del self._scope[var_name]
             return
         self._individually_newed.add(var_name)
 

@@ -4685,7 +4685,9 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # actual variable.
         new_arg_parts = []
         for arg_node in actual_args:
-            if (
+            if arg_node.passing_mode == PassingMode.OMITTED:
+                new_arg_parts.append("None")
+            elif (
                 arg_node.passing_mode == PassingMode.BY_REFERENCE
                 and arg_node.variable_name
             ):
@@ -4708,7 +4710,9 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # the same object the caller reads/writes from.
         new_arg_parts = []
         for arg_node in actual_args:
-            if (
+            if arg_node.passing_mode == PassingMode.OMITTED:
+                new_arg_parts.append("None")
+            elif (
                 arg_node.passing_mode == PassingMode.BY_REFERENCE
                 and arg_node.variable_name
             ):

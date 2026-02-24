@@ -23,7 +23,7 @@ ADD(A,B)
  Q A+B
 """
         code = generate_python(source)
-        assert "_call_extrinsic(_rt, ADD" in code
+        assert "_call_extrinsic(_rt, _globals['ADD']" in code
         # Verify the generated code is syntactically valid
         compile(code, "<test>", "exec")
 
@@ -40,7 +40,7 @@ CALC(A,B,C)
 """
         code = generate_python(source)
         # Arguments should be passed to _call_extrinsic with _scope
-        assert "_call_extrinsic(_rt, CALC, 1, 2, 3, _scope=_scope)" in code
+        assert "_call_extrinsic(_rt, _globals['CALC'], 1, 2, 3, _scope=_scope)" in code
 
     def test_external_routine_call(self, generate_python):
         """External routine generates module import and call (§7.1.6).

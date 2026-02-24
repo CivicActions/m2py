@@ -1127,21 +1127,28 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     # Translate label name to Python function name
     func_name = translate_name(label_name)
 
+    # Use _globals[func_name] to avoid shadowing by formal parameters.
+    # In MUMPS, labels and variables live in separate namespaces, so $$ATT(.ATT)
+    # calls label ATT passing variable ATT by-ref.  In Python, a formal parameter
+    # named ATT would shadow the module-level function ATT, so we look it up
+    # explicitly via _globals.
+    func_ref = f"_globals[{func_name!r}]"
+
     # For internal calls with by-ref, need _scope for by-ref unpacking
     if byref_names:
         if args:
             return (
-                f"_call_extrinsic(_rt, {func_name}, {args}, _scope=_scope{byref_param})"
+                f"_call_extrinsic(_rt, {func_ref}, {args}, _scope=_scope{byref_param})"
             )
         else:
-            return f"_call_extrinsic(_rt, {func_name}, _scope=_scope{byref_param})"
+            return f"_call_extrinsic(_rt, {func_ref}, _scope=_scope{byref_param})"
 
     # Generate: _call_extrinsic(_rt, FUNC, arg1, arg2, _scope=_scope)
     # Always pass _scope for cross-routine variable visibility
     if args:
-        return f"_call_extrinsic(_rt, {func_name}, {args}, _scope=_scope)"
+        return f"_call_extrinsic(_rt, {func_ref}, {args}, _scope=_scope)"
     else:
-        return f"_call_extrinsic(_rt, {func_name}, _scope=_scope)"
+        return f"_call_extrinsic(_rt, {func_ref}, _scope=_scope)"
 
 
 def _generate_external_function(
@@ -1206,7 +1213,7 @@ def _generate_extrinsic_arguments_with_byref(
             has_byref = True
             if arg.variable_name:
                 # Direct by-ref (.X): pass the MArray object from scope
-                var_name = arg.variable_name
+                var_name = translate_name(arg.variable_name)
                 parts.append(f"_scope.get({var_name!r}, MArray())")
                 byref_names.append(var_name)
             elif arg.expression and isinstance(arg.expression, MIndirection):

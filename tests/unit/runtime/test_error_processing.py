@@ -367,19 +367,24 @@ class TestNewScopeManagerNestedNew:
         assert scope["Z"].value == 3
 
     def test_new_var_dedup_within_scope(self):
-        """Duplicate new_var() for same variable is no-op (first wins)."""
+        """Duplicate new_var() clears variable but keeps first restore point.
+
+        YDB/GT.M behavior: repeated NEW at the same stack level makes the
+        variable undefined again (clears current value/subscripts) but the
+        restore point established by the first NEW is preserved.
+        """
         scope = {"X": MArray(value=1)}
 
         with NewScopeManager(scope) as mgr:
             mgr.new_var("X")
             assert "X" not in scope
             scope["X"] = MArray(value=99)
-            # Second NEW of X should be ignored
+            # Second NEW of X clears X (makes it undefined again)
             mgr.new_var("X")
-            # X should remain 99 (not removed again)
-            assert scope["X"].value == 99
+            # X should be removed (cleared by second NEW)
+            assert "X" not in scope
 
-        # Restores to original
+        # Restores to original value from first NEW
         assert scope["X"].value == 1
 
     def test_new_var_undefined_variable(self):
