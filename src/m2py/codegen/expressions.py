@@ -708,7 +708,8 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     # $PRINCIPAL / $P - principal I/O device
     # Returns the principal device identifier.
     # $P without arguments is $PRINCIPAL (not $PIECE which requires args).
-    if name in ("PRINCIPAL", "P", "PIOR", "PIOREFERENCE"):
+    # $PRINCIPLE is a common misspelling found in VistA-M v1.5 MASH Utilities.
+    if name in ("PRINCIPAL", "PRINCIPLE", "P", "PIOR", "PIOREFERENCE"):
         return "_rt.principal()"
 
     # $KEY / $K - terminal input key

@@ -122,6 +122,7 @@ _STRING_SVARS = frozenset(
         "STORAGE",
         "SYSTEM",
         "PRINCIPAL",
+        "PRINCIPLE",
         "DEVICE",
         "KEY",
         "NAMESPACE",
