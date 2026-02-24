@@ -1403,7 +1403,7 @@ def run_with_goto_support(
 
     # Save/restore _in_extrinsic for $QUIT tracking
     # DO calls are subroutine invocations, so $QUIT=0 inside them
-    _saved_extrinsic = _rt._in_extrinsic
+    _rt._extrinsic_stack.append(_rt._in_extrinsic)
     _rt._in_extrinsic = False
 
     current_func = entry_func
@@ -1412,7 +1412,7 @@ def run_with_goto_support(
     while True:
         try:
             _result = current_func(current_rt, *extra_args, _scope=_scope)
-            _rt._in_extrinsic = _saved_extrinsic
+            _rt._in_extrinsic = _rt._extrinsic_stack.pop()
             return _result
         except GotoExternal as goto:
             # Transfer to external routine
@@ -1648,6 +1648,7 @@ class MUMPSRuntime:
         # $IO — tracked via _current_device.name
         # Extrinsic function context for $QUIT
         self._in_extrinsic: bool = False
+        self._extrinsic_stack: list[bool] = []
         # $ZJOB - last JOB'd process ID
         self._zjob: str = "0"
         # Track all JOB'd child processes for cleanup

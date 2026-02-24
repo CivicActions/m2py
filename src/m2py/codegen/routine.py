@@ -539,7 +539,7 @@ class RoutineGenerator:
             ctx.emitter.line("global _test")
             ctx.emitter.line("_saved = _test")
             # Save/restore _in_extrinsic for $QUIT tracking
-            ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
+            ctx.emitter.line("_rt._extrinsic_stack.append(_rt._in_extrinsic)")
             # Push $$ stack frame for extrinsic function call
             # Pass label from the function being called for $STACK introspection
             ctx.emitter.line(
@@ -589,7 +589,7 @@ class RoutineGenerator:
                 # Sync $TEST to runtime after restore (extrinsic preserves caller's $TEST)
                 ctx.emitter.line("_rt._test = _test")
                 # Restore extrinsic flag for nested calls
-                ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
+                ctx.emitter.line("_rt._in_extrinsic = _rt._extrinsic_stack.pop()")
         ctx.emitter.blank()
 
         # _LoopExit exception for multi-loop exit via GOTO.

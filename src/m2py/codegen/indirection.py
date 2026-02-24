@@ -891,7 +891,7 @@ def generate_indirect_do(
                     '_xecute_target = _xecute_target + "^" + _call_target.routine'
                 )
             ctx.emitter.line("_xecute_target = _xecute_target + _call_target.args_str")
-            ctx.emitter.line('_rt.execute_mumps("D " + _xecute_target, _scope)')
+            ctx.emitter.line(f'_rt.execute_mumps("D " + _xecute_target, {scope_ref})')
 
         ctx.emitter.line(
             "elif _call_target.routine and _call_target.routine != _routine_name:"
@@ -906,6 +906,7 @@ def generate_indirect_do(
 
 def _emit_external_do_call(ctx: "GeneratorContext") -> None:
     """Emit external DO call dispatch (import module, find function, call)."""
+    _sd = scope_dict_expr(ctx)
     ctx.emitter.line("import importlib")
     ctx.emitter.line("from m2py.core.names import NameTranslator")
     ctx.emitter.line("_module = importlib.import_module(_call_target.routine)")
@@ -945,11 +946,11 @@ def _emit_external_do_call(ctx: "GeneratorContext") -> None:
         ctx.emitter.line("_target_line = (_label_line + 1) + _call_target.offset")
         ctx.emitter.line("_label_name, _line_offset = _module._line_map[_target_line]")
         ctx.emitter.line(
-            "getattr(_module, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset)"
+            f"getattr(_module, _label_name)(_rt, _scope={_sd}, _start_offset=_line_offset)"
         )
     ctx.emitter.line("else:")
     with ctx.emitter.indented():
-        ctx.emitter.line("_func(_rt, _scope=_scope)")
+        ctx.emitter.line(f"_func(_rt, _scope={_sd})")
 
     # Sync scope back to state after external call in TRAMPOLINE mode
     if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:

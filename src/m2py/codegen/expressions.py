@@ -1370,9 +1370,13 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Local variable: m_get(_scope.get('VAR', None), subscripts, default)
-        python_name = translate_name(var_name)
-        return f"m_get(_scope.get({python_name!r}), {subscripts_tuple}, {default_code})"
+        # Local variable: m_get(var_base, subscripts, default)
+        # Uses var_base_expr for strategy-aware scope dispatch
+        # (state._locals for TRAMPOLINE, _scope for SIMPLE_FUNCTIONS)
+        from m2py.codegen.var_access import var_base_expr
+
+        base = var_base_expr(var_name, ctx)
+        return f"m_get({base}, {subscripts_tuple}, {default_code})"
     elif isinstance(var, GlobalVariable):
         # Global variable: use lambda to evaluate subscripts once and pre-set
         # naked indicator before evaluating default, so global refs in default
@@ -1400,8 +1404,11 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         )
     else:
         # Fallback for any other variable type - treat as local
-        python_name = translate_name(var_name)
-        return f"m_get(_scope.get({python_name!r}), {subscripts_tuple}, {default_code})"
+        # Uses var_base_expr for strategy-aware scope dispatch
+        from m2py.codegen.var_access import var_base_expr
+
+        base = var_base_expr(var_name, ctx)
+        return f"m_get({base}, {subscripts_tuple}, {default_code})"
 
 
 def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1449,6 +1456,9 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         from m2py.codegen.indirection import (
             _count_indirection_levels_with_subscripts,
         )
+        from m2py.codegen.var_access import scope_dict_expr
+
+        _sd = scope_dict_expr(ctx)
 
         levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(
             var
@@ -1492,9 +1502,9 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
                 return (
                     f"_rt.get_order("
-                    f"_rt.resolve_order_name({name_expr}, _scope, "
+                    f"_rt.resolve_order_name({name_expr}, {_sd}, "
                     f"levels_remaining={levels - 1}{pls_arg}), "
-                    f"_scope, {direction_code})"
+                    f"{_sd}, {direction_code})"
                 )
             else:
                 # Single level: use get_order with additional_subscripts
@@ -1508,7 +1518,7 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
                     additional_subs_arg = ""
 
                 return (
-                    f"_rt.get_order({name_expr}, _scope, "
+                    f"_rt.get_order({name_expr}, {_sd}, "
                     f"{direction_code}{additional_subs_arg})"
                 )
         elif isinstance(inner_expr, (MVariable, MLocalVariable)):
@@ -1532,7 +1542,7 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             # Use resolve_for_target (unified method) to get the variable NAME.
             # $ORDER/$NEXT just need the name to find the next subscript.
             name_expr = (
-                f"_rt.resolve_for_target({full_name_expr}, _scope, levels={levels})"
+                f"_rt.resolve_for_target({full_name_expr}, {_sd}, levels={levels})"
             )
         else:
             name_expr_base = generate_expr(inner_expr, ctx)
@@ -1553,7 +1563,7 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         # Use _rt.get_order which handles indirected variable names
         # Pass additional_subscripts separately for proper merging
         return (
-            f"_rt.get_order({name_expr}, _scope, {direction_code}{additional_subs_arg})"
+            f"_rt.get_order({name_expr}, {_sd}, {direction_code}{additional_subs_arg})"
         )
 
     # Generate subscript tuple for non-indirection cases

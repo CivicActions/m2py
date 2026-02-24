@@ -1236,9 +1236,9 @@ class TestDoBlockExtrinsicSave:
         an extrinsic function context.
         """
         code = generate_python("TEST\n D\n . W 1\n Q\n")
-        assert "_saved_extrinsic = _rt._in_extrinsic" in code
+        assert "_rt._extrinsic_stack.append(_rt._in_extrinsic)" in code
         assert "_rt._in_extrinsic = False" in code
-        assert "_rt._in_extrinsic = _saved_extrinsic" in code
+        assert "_rt._in_extrinsic = _rt._extrinsic_stack.pop()" in code
 
     def test_do_target_saves_extrinsic(self, generate_python):
         """D SUB generates save/restore of _in_extrinsic for subroutine call.
@@ -1246,7 +1246,7 @@ class TestDoBlockExtrinsicSave:
         Phase 21: Subroutine calls should see $QUIT=0.
         """
         code = generate_python("TEST\n D SUB\n Q\nSUB\n Q\n")
-        assert "_saved_extrinsic = _rt._in_extrinsic" in code
+        assert "_rt._extrinsic_stack.append(_rt._in_extrinsic)" in code
         assert "_rt._in_extrinsic = False" in code
 
 
@@ -1370,3 +1370,253 @@ class TestTrampolineByRefPass2:
         """D:cond SUB — postconditioned DO (coverage: codegen DO path)."""
         result = execute_mumps('TEST\n S X=1\n D:X SUB\n Q\nSUB\n W "called",!\n Q\n')
         assert "called" in result.output
+
+
+# =============================================================================
+# DO indirection scope: execute_mumps and _emit_external_do_call scope fix
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestDoIndirectionScopeDispatch:
+    """DO indirection passes correct scope to execute_mumps and external calls.
+
+    Fix: generate_indirect_do() and _emit_external_do_call() were hardcoded
+    to pass _scope instead of the strategy-appropriate scope dictionary.
+    Now uses scope_dict_expr(ctx) which returns state._locals for
+    TRAMPOLINE+dynamic_locals routines.
+
+    The symptom was that D @CMD with arguments (going through execute_mumps)
+    or external routine calls would not see local variables from the caller,
+    because the wrong scope dict was passed.
+    """
+
+    def test_indirect_do_passes_variables(self, execute_mumps):
+        """D @CMD — indirect DO sees caller's local variables.
+
+        The subroutine should be able to read variables set by the caller
+        when dispatched through indirection.
+        """
+        result = execute_mumps(
+            'TEST\n S X="hello"\n S CMD="SUB"\n D @CMD\n Q\nSUB\n W X\n Q\n'
+        )
+        assert result.output == "hello"
+
+    def test_indirect_do_modifies_caller_scope(self, execute_mumps):
+        """D @CMD — indirect DO can SET variables visible to caller."""
+        result = execute_mumps(
+            'TEST\n S CMD="SUB"\n D @CMD\n W X\n Q\nSUB\n S X="set-by-sub"\n Q\n'
+        )
+        assert result.output == "set-by-sub"
+
+    def test_indirect_do_callback_pattern(self, execute_mumps):
+        """D @CB with computed callback name — real-world pattern.
+
+        This mimics the MXML callback dispatch pattern where a callback
+        name is stored in a variable and dispatched via D @CB.
+        The callee must receive the correct local variables.
+        """
+        result = execute_mumps(
+            "TEST\n"
+            ' S ATTR="value"\n'
+            ' S CB="HANDLER"\n'
+            " D @CB\n"
+            " Q\n"
+            "HANDLER\n"
+            ' W "attr="_ATTR\n'
+            " Q\n"
+        )
+        assert result.output == "attr=value"
+
+    def test_indirect_do_in_loop_scope(self, execute_mumps):
+        """D @CMD in FOR loop passes correct scope each iteration."""
+        result = execute_mumps(
+            'TEST\n S CMD="SUB"\n F I=1:1:3 D @CMD\n Q\nSUB\n W I\n Q\n'
+        )
+        assert result.output == "123"
+
+    def test_indirect_do_codegen_scope_ref(self, generate_python):
+        """D @CMD codegen uses scope_dict_expr for execute_mumps scope.
+
+        In SIMPLE_FUNCTIONS strategy, this should be _scope.
+        """
+        code = generate_python('TEST\n S CMD="SUB"\n D @CMD\n Q\nSUB\n W 1\n Q\n')
+        # Should reference resolve_do_targets with _scope
+        assert "resolve_do_targets" in code
+        assert "_scope" in code
+
+
+@pytest.mark.codegen
+class TestDoIndirectionTrampolineScope:
+    """DO indirection with TRAMPOLINE strategy scope dispatching.
+
+    In routines that use GOTO (TRAMPOLINE strategy), the scope dict
+    is state._locals instead of _scope. Indirect DO must use the
+    correct scope dict for both execute_mumps() and external calls.
+    """
+
+    def test_indirect_do_goto_routine_passes_vars(self, execute_mumps):
+        """D @CMD reads variables in GOTO routine (TRAMPOLINE).
+
+        GOTO forces TRAMPOLINE strategy. Indirect DO must use
+        state._locals, not _scope.
+        """
+        result = execute_mumps(
+            "TEST\n"
+            ' S X="from-test"\n'
+            ' S CMD="SUB"\n'
+            " G DISPATCH\n"
+            " Q\n"
+            "DISPATCH\n"
+            " D @CMD\n"
+            " Q\n"
+            "SUB\n"
+            " W X\n"
+            " Q\n"
+        )
+        assert result.output == "from-test"
+
+    def test_indirect_do_codegen_trampoline(self, generate_python):
+        """D @CMD in TRAMPOLINE+dynamic_locals generates state._locals.
+
+        GOTO forces TRAMPOLINE, K forces dynamic_locals.
+        """
+        code = generate_python(
+            "TEST\n"
+            " K\n"
+            ' S CMD="SUB"\n'
+            " G DISPATCH\n"
+            " Q\n"
+            "DISPATCH\n"
+            " D @CMD\n"
+            " Q\n"
+            "SUB\n"
+            " W 1\n"
+            " Q\n"
+        )
+        assert "state._locals" in code
+
+
+# =============================================================================
+# $QUIT stack: nested DO / extrinsic collision fix
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestQuitStackNestedExtrinsic:
+    """$QUIT stack-based save/restore for nested DO blocks and extrinsics.
+
+    Fix: Nested DO blocks both used the same _saved_extrinsic variable,
+    causing the inner block to clobber the outer's save. After inner
+    restore, the outer would restore the wrong value.
+
+    Now uses _rt._extrinsic_stack with push/pop to maintain a proper
+    stack of $QUIT states.
+    """
+
+    def test_nested_do_blocks_quit_zero(self, execute_mumps):
+        """Nested DO blocks: $QUIT=0 in both inner and outer blocks.
+
+        $QUIT should be 0 inside DO blocks (non-extrinsic context).
+        The inner block must not corrupt the outer's $QUIT restore.
+        """
+        result = execute_mumps(
+            "TEST\n"
+            " D\n"
+            ' . W "outer:"_$Q\n'
+            " . D\n"
+            ' . . W "inner:"_$Q_","\n'
+            ' . W ",after-inner:"_$Q\n'
+            " Q\n"
+        )
+        assert "inner:0" in result.output
+        assert "outer:0" in result.output
+        assert "after-inner:0" in result.output
+
+    def test_extrinsic_nested_do_quit(self, execute_mumps):
+        """Extrinsic function with nested DO: $QUIT correct at all levels.
+
+        Inside $$FUNC: $QUIT=1 (extrinsic context).
+        Inside DO block within $$FUNC: $QUIT=0 (DO block resets).
+        After DO block returns: $QUIT=1 (restored from stack).
+        """
+        result = execute_mumps(
+            "TEST\n"
+            " W $$FUNC\n"
+            " Q\n"
+            "FUNC()\n"
+            ' N R S R="before:"_$Q\n'
+            " D\n"
+            ' . S R=R_",in-do:"_$Q\n'
+            ' S R=R_",after-do:"_$Q\n'
+            " Q R\n"
+        )
+        # $QUIT=1 in extrinsic, $QUIT=0 in DO block, $QUIT=1 after DO
+        assert "before:1" in result.output
+        assert "in-do:0" in result.output
+        assert "after-do:1" in result.output
+
+    def test_extrinsic_inside_do_block(self, execute_mumps):
+        """$$FUNC called from inside a DO block returns correctly.
+
+        This is the pattern that caused the original bug: an extrinsic
+        function called from within a DO block. The nested save/restore
+        must not interfere.
+        """
+        result = execute_mumps("TEST\n D\n . W $$ADD(2,3)\n Q\nADD(A,B)\n Q A+B\n")
+        assert result.output == "5"
+
+    def test_deeply_nested_extrinsic_quit(self, execute_mumps):
+        """Multiple levels of nesting: extrinsic → DO → extrinsic → DO.
+
+        Each level pushes/pops _extrinsic_stack correctly.
+        """
+        result = execute_mumps(
+            "TEST\n"
+            " W $$OUTER\n"
+            " Q\n"
+            "OUTER()\n"
+            ' N V S V=""\n'
+            " D\n"
+            " . S V=V_$$INNER\n"
+            " Q V\n"
+            "INNER()\n"
+            ' N R S R=""\n'
+            " D\n"
+            ' . S R="deep"\n'
+            " Q R\n"
+        )
+        assert result.output == "deep"
+
+    def test_extrinsic_stack_codegen_pattern(self, generate_python):
+        """DO block codegen uses _extrinsic_stack.append/pop pattern."""
+        code = generate_python("TEST\n D\n . W 1\n Q\n")
+        assert "_rt._extrinsic_stack.append(_rt._in_extrinsic)" in code
+        assert "_rt._in_extrinsic = _rt._extrinsic_stack.pop()" in code
+
+    def test_subroutine_call_stack_codegen(self, generate_python):
+        """D SUB codegen uses _extrinsic_stack.append/pop pattern."""
+        code = generate_python("TEST\n D SUB\n Q\nSUB\n W 1\n Q\n")
+        assert "_rt._extrinsic_stack.append(_rt._in_extrinsic)" in code
+        assert "_rt._in_extrinsic = False" in code
+
+    def test_consecutive_do_blocks_quit_isolation(self, execute_mumps):
+        """Multiple consecutive DO blocks each see $QUIT=0.
+
+        Each block independently pushes/pops the stack.
+        """
+        result = execute_mumps(
+            'TEST\n D\n . W "A"_$Q_","\n D\n . W "B"_$Q_","\n D\n . W "C"_$Q\n Q\n'
+        )
+        assert result.output == "A0,B0,C0"
+
+    def test_quit_value_from_extrinsic_after_nested_do(self, execute_mumps):
+        """Extrinsic actually returns value after nested DO blocks.
+
+        This is the end-to-end test: $$FUNC with nested DO blocks
+        must still return a value via QUIT expr.
+        """
+        result = execute_mumps(
+            "TEST\n W $$CALC(10,20)\n Q\nCALC(A,B)\n N SUM\n D\n . S SUM=A+B\n Q SUM\n"
+        )
+        assert result.output == "30"

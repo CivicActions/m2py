@@ -4323,7 +4323,8 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         # Save and clear _in_extrinsic for $QUIT tracking (spec §6.3)
         # Inside an argumentless DO block, QUIT exits the block (not the function),
         # so $QUIT must be 0 even if we're inside an extrinsic function.
-        ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
+        # Uses stack push/pop to avoid variable name collisions in nested blocks.
+        ctx.emitter.line("_rt._extrinsic_stack.append(_rt._in_extrinsic)")
         ctx.emitter.line("_rt._in_extrinsic = False")
 
         # Increment execution level (spec §6.3) - $STACK increases inside DO blocks
@@ -4364,7 +4365,7 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         # Restore $TEST and _in_extrinsic after block
         ctx.emitter.line("_test = _saved_test")
         ctx.emitter.line("_rt._test = _test")
-        ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
+        ctx.emitter.line("_rt._in_extrinsic = _rt._extrinsic_stack.pop()")
         return
 
     # Argumentless DO without body - this should not happen as parser sets
@@ -4562,7 +4563,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
 
     # Save/restore _in_extrinsic for $QUIT tracking
     # Internal DO calls are subroutine invocations, so $QUIT=0 inside them
-    ctx.emitter.line("_saved_extrinsic = _rt._in_extrinsic")
+    # Uses stack push/pop to avoid variable name collisions in nested calls.
+    ctx.emitter.line("_rt._extrinsic_stack.append(_rt._in_extrinsic)")
     ctx.emitter.line("_rt._in_extrinsic = False")
 
     # Push DO stack frame for internal subroutine call
@@ -4664,7 +4666,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # Pop DO stack frame
         ctx.emitter.line("_rt.pop_stack_frame()")
         # Restore _in_extrinsic for $QUIT tracking
-        ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
+        ctx.emitter.line("_rt._in_extrinsic = _rt._extrinsic_stack.pop()")
         return
 
     # Check if any argument is passed by-reference (.VAR syntax).
@@ -4787,7 +4789,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
     # Pop DO stack frame
     ctx.emitter.line("_rt.pop_stack_frame()")
     # Restore _in_extrinsic for $QUIT tracking
-    ctx.emitter.line("_rt._in_extrinsic = _saved_extrinsic")
+    ctx.emitter.line("_rt._in_extrinsic = _rt._extrinsic_stack.pop()")
 
 
 def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
