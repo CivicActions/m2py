@@ -17,6 +17,8 @@ Usage:
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import sys
 import types
@@ -40,6 +42,9 @@ SUITE_NAME = "mugj"
 MUGJ_DIR = FUNCTIONAL_BASE / SUITE_NAME
 MUGJ_INREF = MUGJ_DIR / "inref"
 MUGJ_OUTREF = MUGJ_DIR / "outref" / "mugj.txt"
+
+# Workspace tmp/ directory for cache files (not system /tmp)
+_WORKSPACE_TMP = FUNCTIONAL_BASE.parent.parent / "tmp"
 
 
 # =============================================================================
@@ -215,31 +220,78 @@ def _load_all_mugj_routines() -> tuple[
     This loads all routines upfront so that inter-routine calls
     (D ^VREPORT, G ^V1WR1, etc.) can resolve properly.
 
+    Under pytest-xdist, multiple workers share the same deterministic cache
+    directory.  A filelock ensures only one worker transpiles; others wait
+    and reuse the cached .py files, avoiding a thundering-herd of redundant
+    grammar compilations.
+
     Note: Files starting with _ (like _.m, _1A.m) are registered with _pct_
     prefix module names since they represent MUMPS % routines.
 
     Returns:
         Tuple of (routine_modules dict, transpile_errors dict)
     """
+    from filelock import FileLock
+
     from m2py.codegen import generate_python
+
+    # Deterministic cache directory (shared across xdist workers)
+    _WORKSPACE_TMP.mkdir(exist_ok=True)
+    cache_dir = str(_WORKSPACE_TMP / "mugj_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    manifest_path = os.path.join(cache_dir, "_manifest.json")
+    lock_path = str(_WORKSPACE_TMP / "mugj_cache.lock")
 
     all_routine_files = list(MUGJ_INREF.glob("*.m"))
     routine_modules: dict[str, types.ModuleType | None] = {}
     transpile_errors: dict[str, str] = {}
 
+    # Acquire lock — first worker transpiles, others wait and reuse
+    with FileLock(lock_path, timeout=300):
+        if os.path.exists(manifest_path):
+            # Another worker (or previous run) already transpiled — reuse
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            transpile_errors = manifest.get("errors", {})
+        else:
+            # First worker: transpile all routines and write to disk
+            for source_path in all_routine_files:
+                filename_stem = source_path.stem
+                module_name = filename_to_module_name(filename_stem)
+                source = source_path.read_text()
+
+                try:
+                    python_code = generate_python(source)
+
+                    py_path = os.path.join(cache_dir, f"{module_name}.py")
+                    with open(py_path, "w") as f:
+                        f.write(python_code)
+                except Exception as e:
+                    transpile_errors[module_name] = str(e)
+
+            # Write manifest so other workers know transpilation is done
+            with open(manifest_path, "w") as f:
+                json.dump({"errors": transpile_errors}, f)
+
+    # Load modules from disk (each worker does this independently since
+    # module objects aren't shared across processes)
     for source_path in all_routine_files:
         filename_stem = source_path.stem
         module_name = filename_to_module_name(filename_stem)
-        source = source_path.read_text()
 
+        if module_name in transpile_errors:
+            routine_modules[module_name] = None
+            continue
+
+        py_path = os.path.join(cache_dir, f"{module_name}.py")
         try:
-            python_code = generate_python(source)
+            python_code = open(py_path).read()
             module = types.ModuleType(module_name)
             sys.modules[module_name] = module
             exec(python_code, module.__dict__)
             routine_modules[module_name] = module
         except Exception as e:
-            # Mark routine as failed to transpile
             routine_modules[module_name] = None
             transpile_errors[module_name] = str(e)
 

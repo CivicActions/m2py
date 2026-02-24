@@ -43,7 +43,7 @@ def _has_cli_opt(args: tuple, short: str, long: str) -> bool:
 
     Handles short forms (``-n``, ``-n0``, ``-nauto``), long forms
     (``--numprocesses``, ``--numprocesses=4``), and the two-arg form
-    (``-n 4``).
+    (``-n auto``).
     """
     for arg in args:
         # Short flag: exact match or combined value (-n0, -nauto)
@@ -74,20 +74,30 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "ydb: YottaDB-specific extension test")
 
     # ── Smart defaults ────────────────────────────────────────────────
-    # Formerly handled by addopts = "-n 4 -m 'not slow'" in
-    # pyproject.toml.  Now applied programmatically so users never need
-    # the awkward -o "addopts=" escape hatch.
+    # Formerly handled by addopts in pyproject.toml.  Now applied
+    # programmatically so users never need the awkward -o "addopts="
+    # escape hatch.
     #
-    # • -n 4   → parallel via pytest-xdist (skip if user passed -n)
+    # • -n auto → parallel via pytest-xdist (skip if user passed -n)
     # • -m 'not slow' → skip slow-marked tests (skip if user passed -m)
     import os
 
     user_args = config.invocation_params.args
 
-    if not _has_cli_opt(user_args, "-n", "--numprocesses"):
+    # Guard: xdist workers set PYTEST_XDIST_WORKER *before* running
+    # _prepareconfig() (which triggers pytest_configure hooks).  Without
+    # this check, every worker would re-apply the numprocesses/dist/tx
+    # settings and try to spawn its own sub-workers — creating an
+    # infinite recursive fork bomb.
+    _is_xdist_worker = os.environ.get("PYTEST_XDIST_WORKER") is not None
+
+    if not _is_xdist_worker and not _has_cli_opt(user_args, "-n", "--numprocesses"):
         if hasattr(config.option, "numprocesses"):  # xdist installed
-            num_workers = os.cpu_count() or 1
-            config.option.numprocesses = num_workers
+            # Use all available CPUs.  Functional tests that spawn
+            # multiprocessing.Process children use the 'spawn' start
+            # method (see tests/functional/conftest.py) so they don't
+            # deadlock inside multi-threaded xdist workers.
+            config.option.numprocesses = os.cpu_count() or 1
             # xdist also needs dist mode enabled (defaults to "no"
             # when -n is absent from the CLI)
             if getattr(config.option, "dist", "no") == "no":
@@ -95,7 +105,7 @@ def pytest_configure(config):
             # xdist requires tx (test execution environments) to be populated
             # with one entry per worker to actually create the workers
             if getattr(config.option, "tx", None) == []:
-                config.option.tx = ["popen"] * num_workers
+                config.option.tx = ["popen"] * config.option.numprocesses
 
     if not _has_cli_opt(user_args, "-m", "--markexpr"):
         config.option.markexpr = "not slow"
@@ -122,6 +132,33 @@ def pytest_addoption(parser):
             "Use 'yottadb' or 'iris' to validate against a real database."
         ),
     )
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Clean up shared transpile caches after the test session.
+
+    Only runs on the controller process (not xdist workers) to avoid
+    removing caches while other workers are still using them.
+    """
+    import shutil
+
+    # Skip cleanup on xdist workers — only the controller should clean up
+    if hasattr(session.config, "workerinput"):
+        return
+
+    cache_base = Path(__file__).parent.parent / "tmp"
+    for name in ("mvts_cache", "mugj_cache"):
+        cache_dir = cache_base / name
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir, ignore_errors=True)
+    # Also remove lockfiles
+    for name in ("mvts_cache.lock", "mugj_cache.lock"):
+        lock_file = cache_base / name
+        if lock_file.exists():
+            try:
+                lock_file.unlink()
+            except OSError:
+                pass
 
 
 # =============================================================================

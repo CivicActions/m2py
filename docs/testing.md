@@ -12,7 +12,7 @@ uv run pytest tests/unit/codegen/    # Run one directory
 ```
 
 **Smart defaults** are applied automatically by `tests/conftest.py`:
-- `-n 4` (parallel via pytest-xdist) unless you pass `-n`
+- `-n auto` (parallel via pytest-xdist, one worker per CPU) unless you pass `-n`
 - `-m 'not slow'` unless you pass `-m`
 
 No need for `-o "addopts="` — the smart defaults detect your CLI flags and stay out of the way.

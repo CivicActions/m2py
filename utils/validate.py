@@ -275,6 +275,11 @@ def _run_m2py_worker(
         result_queue.put((f"ERROR: {e}\n{traceback.format_exc()}", None, None))
 
 
+# Use 'spawn' context to avoid deadlocks when forking inside multi-threaded
+# processes (e.g. pytest-xdist workers).
+_MP_CTX = multiprocessing.get_context("spawn")
+
+
 def run_m2py(
     source: str, debug: bool = False, timeout: int = 5
 ) -> tuple[str, str | None, str | None]:
@@ -288,8 +293,8 @@ def run_m2py(
     Returns:
         Tuple of (output, ast_str, python_code) - ast_str and python_code are None if not debug
     """
-    result_queue: multiprocessing.Queue = multiprocessing.Queue()
-    process = multiprocessing.Process(
+    result_queue: multiprocessing.Queue = _MP_CTX.Queue()
+    process = _MP_CTX.Process(
         target=_run_m2py_worker, args=(source, debug, result_queue)
     )
 
@@ -317,6 +322,9 @@ def run_m2py(
     finally:
         # Ensure the process is terminated
         _force_kill(process)
+        # Clean up Queue resources (pipe fd + feeder thread)
+        result_queue.close()
+        result_queue.join_thread()
 
     return (
         f"ERROR: m2py execution timed out after {timeout}s (process killed)",
