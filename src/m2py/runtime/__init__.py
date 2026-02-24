@@ -3759,6 +3759,174 @@ class MUMPSRuntime:
 
         return True
 
+    def open_device_indirected(
+        self,
+        spec: str,
+        _scope: Dict[str, Any],
+    ) -> bool:
+        """Open a device via MUMPS OPEN command argument indirection.
+
+        Handles ``O @VAR`` where VAR contains a full OPEN specification
+        string like ``"device:(params):timeout"``.  The specification is
+        parsed at runtime.
+
+        The spec format follows MUMPS OPEN syntax::
+
+            device                   — just a device name
+            device:(param,param,...) — device with parameters
+            device:(params):timeout  — device with parameters and timeout
+            device::timeout          — device with timeout, no params
+
+        The device component may itself be a variable name (e.g. ``%IO``)
+        that needs resolving from scope.
+
+        Args:
+            spec: Full OPEN specification string
+            _scope: Current variable scope for resolving variable references
+
+        Returns:
+            True if device opened successfully, False on timeout
+        """
+        device_name, params, timeout = self._parse_open_spec(spec, _scope)
+        result = self.open_device(device_name, params, timeout)
+
+        # When a timeout is present, set $TEST
+        if timeout is not None:
+            self._test = result
+
+        return result
+
+    def _parse_open_spec(
+        self,
+        spec: str,
+        _scope: Dict[str, Any],
+    ) -> tuple[str, Optional[List[str]], Optional[float]]:
+        """Parse an OPEN specification string into (device, params, timeout).
+
+        Handles the MUMPS OPEN spec format used by ``O @VAR`` indirection.
+
+        The spec can be:
+        - ``device`` — just a device/file path
+        - ``device:(param1:param2:...):timeout`` — full form
+        - ``device:param:timeout`` — non-parenthesized params
+        - ``device::timeout`` — no params, just timeout
+
+        The device part may be a variable name that needs resolving
+        from scope (e.g. ``%IO`` → ``"/tmp/test.txt"``).
+
+        Returns:
+            Tuple of (device_name, parameters_list_or_None, timeout_or_None)
+        """
+        if not spec:
+            return ("", None, None)
+
+        # Split on top-level colons (not inside parentheses)
+        parts = self._split_open_spec(spec)
+
+        # First part is the device name (may be a variable reference)
+        raw_device = parts[0]
+        device_name = self._resolve_open_device_name(raw_device, _scope)
+
+        # Parse remaining parts: params and/or timeout
+        params: Optional[List[str]] = None
+        timeout: Optional[float] = None
+
+        if len(parts) >= 2:
+            param_part = parts[1]
+            if param_part.startswith("(") and param_part.endswith(")"):
+                # Parenthesized params: (param1:param2:...)
+                inner = param_part[1:-1]
+                if inner:
+                    params = [p.strip() for p in inner.split(":")]
+                else:
+                    params = []
+            elif param_part == "":
+                # Empty param part (device::timeout form)
+                params = None
+            else:
+                # Single non-parenthesized param
+                params = [param_part.strip()]
+
+        if len(parts) >= 3:
+            timeout_str = parts[2].strip()
+            if timeout_str:
+                try:
+                    timeout = float(timeout_str)
+                except ValueError:
+                    timeout = None
+
+        return (device_name, params, timeout)
+
+    @staticmethod
+    def _split_open_spec(spec: str) -> List[str]:
+        """Split an OPEN spec string on top-level colons.
+
+        Respects parentheses so that ``device:(p1:p2):timeout`` splits into
+        ``["device", "(p1:p2)", "timeout"]`` rather than splitting inside
+        the parenthesized group.
+
+        Returns:
+            List of spec components.
+        """
+        parts = []
+        current = []
+        depth = 0
+        for ch in spec:
+            if ch == "(":
+                depth += 1
+                current.append(ch)
+            elif ch == ")":
+                depth -= 1
+                current.append(ch)
+            elif ch == ":" and depth == 0:
+                parts.append("".join(current))
+                current = []
+            else:
+                current.append(ch)
+        parts.append("".join(current))
+        return parts
+
+    def _resolve_open_device_name(
+        self,
+        raw: str,
+        _scope: Dict[str, Any],
+    ) -> str:
+        """Resolve a device name component from an OPEN spec.
+
+        If *raw* looks like a MUMPS variable name (starts with letter or %,
+        no path separators), try to resolve it from scope.  Otherwise return
+        it as-is (already a file path or literal).
+
+        Returns:
+            Resolved device name / file path.
+        """
+        from m2py.core.names import NameTranslator
+
+        # If it's already a path (contains / or .), return as-is
+        if "/" in raw or "\\" in raw:
+            return raw
+
+        # If it's a quoted string, strip quotes
+        if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
+            return raw[1:-1]
+
+        # Try to resolve as a variable name
+        # Common patterns: %IO, IO, DEVICE, etc.
+        try:
+            py_name = NameTranslator.to_python(raw)
+            if py_name in _scope:
+                from m2py.runtime import MArray
+
+                val = _scope[py_name]
+                if isinstance(val, MArray):
+                    return str(val.value) if val.value is not None else ""
+                return str(val)
+        except Exception:
+            pass
+
+        # Return raw value as-is (might be a literal device name)
+        return raw
+
     def close_device(self, device: str, parameters: Optional[List[str]] = None) -> None:
         """Close a device (MUMPS CLOSE command).
 
@@ -3767,13 +3935,25 @@ class MUMPSRuntime:
         Closing $PRINCIPAL is a no-op. Closing the current device reverts
         to $PRINCIPAL. $IO is set to "0" after close.
 
+        Parameters:
+            DELETE — delete the file after closing (GT.M/YDB extension,
+                     used by ``C device:DELETE`` in %ZISH for file removal)
+            RENAME=newname — rename after close (not yet implemented)
+
         Args:
             device: Device name to close
-            parameters: Optional close parameters (usually ignored)
+            parameters: Optional close parameters
         """
+        import os
+
         # $PRINCIPAL cannot be closed
         if device == "0" or device == self._principal:
             return
+
+        # Parse parameters for DELETE
+        params = parameters or []
+        upper_params = [p.upper() for p in params]
+        should_delete = "DELETE" in upper_params
 
         # Close via device_table (preferred path — FileDevice.close() closes file handle)
         if device in self._device_table:
@@ -3783,6 +3963,13 @@ class MUMPSRuntime:
             except (OSError, IOError):
                 pass
             del self._device_table[device]
+
+        # DELETE parameter: remove the file after closing
+        if should_delete:
+            try:
+                os.remove(device)
+            except OSError:
+                pass
 
         # If closing current device, switch back to principal device
         if self._current_device.name == device:

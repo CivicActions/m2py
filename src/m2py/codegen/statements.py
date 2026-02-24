@@ -6091,6 +6091,36 @@ def _generate_open(stmt: MOpenStatement, ctx: "GeneratorContext") -> None:
         if device.device_expr is None:
             continue
 
+        # --- OPEN command argument indirection: O @VAR ---
+        # When the entire device spec is indirected (no separate params/timeout
+        # from the parser), the variable contains the full OPEN spec string
+        # e.g. %I2 = "%IO:(newversion:nowrap:stream):0"
+        # Delegate to open_device_indirected which parses at runtime.
+        from m2py.asg.expressions import MIndirection as _MIndirection
+
+        if (
+            isinstance(device.device_expr, _MIndirection)
+            and not device.parameters
+            and device.timeout is None
+        ):
+            # For command argument indirection, we need the RAW VALUE of the
+            # variable (the OPEN spec string), not a further indirection
+            # resolution. generate_expr on the operand gives us the variable
+            # value directly (e.g. _scope.get("%I2", "")), whereas
+            # generate_expr on the full MIndirection would try to resolve
+            # that value as yet another variable name.
+            indir_expr = device.device_expr.expression
+            assert indir_expr is not None, "MIndirection.expression is None"
+            spec_expr = generate_expr(indir_expr, ctx)
+            # The spec may contain a timeout (parsed at runtime), so always
+            # capture result and sync $TEST — open_device_indirected returns
+            # True/False and sets _rt._test when timeout is present.
+            ctx.emitter.line(
+                f"_test = _rt.open_device_indirected(m_str({spec_expr}), _scope)"
+            )
+            ctx.emitter.line("_rt._test = _test")
+            continue
+
         # Generate device name expression
         device_name = generate_expr(device.device_expr, ctx)
 
