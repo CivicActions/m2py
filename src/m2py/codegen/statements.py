@@ -4196,6 +4196,100 @@ def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
         ctx.emitter.line(f"raise GotoExternal({routine_name}, None, _rt=_rt)")
 
 
+# ---- DOT block helpers (Fix A/C: scoping and $ETRAP) ----
+
+# Counter for unique DOT-level scope manager variable names
+_dot_mgr_counter: int = 0
+
+
+def _dot_block_has_new(stmt: MDoStatement) -> bool:
+    """Check if a DOT block body contains any NEW statements (recursively).
+
+    Used to decide whether to wrap the DOT block in a nested NewScopeManager.
+    """
+    if not stmt.body:
+        return False
+    for s in stmt.body.walk_statements():
+        if isinstance(s, MNewStatement):
+            return True
+    return False
+
+
+def _dot_block_has_etrap(stmt: MDoStatement) -> bool:
+    """Check if a DOT block body sets $ETRAP (N $ETRAP or S $ETRAP=...).
+
+    Used to decide whether to wrap the DOT block body in try/except for
+    $ETRAP error handling at the DOT level (Fix C).
+    """
+    if not stmt.body:
+        return False
+    for s in stmt.body.statements:
+        # Check for N $ETRAP (direct child only — first level)
+        if isinstance(s, MNewStatement):
+            for var in s.variables:
+                if isinstance(var, MSpecialVariable) and var.name.upper() in (
+                    "ETRAP",
+                    "ET",
+                ):
+                    return True
+        # Check for S $ETRAP="..." (direct child only)
+        if isinstance(s, MSetStatement):
+            for assignment in s.assignments:
+                if isinstance(assignment, MAssignment):
+                    target = assignment.target
+                    if isinstance(target, MSpecialVariable) and target.name.upper() in (
+                        "ETRAP",
+                        "ET",
+                    ):
+                        return True
+    return False
+
+
+def _unique_dot_mgr_var(ctx: "GeneratorContext") -> str:
+    """Generate a unique variable name for a DOT block scope manager."""
+    global _dot_mgr_counter
+    _dot_mgr_counter += 1
+    return f"_dot_mgr_{_dot_mgr_counter}"
+
+
+def _generate_do_block_body(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
+    """Generate the inner body of a DO block (while True: ... break).
+
+    This is the core body generation shared by both scoped and unscoped
+    DO blocks.  When $ETRAP is set inside the block, wraps the body in
+    try/except so errors are caught at DOT level (Fix C), allowing
+    enclosing FOR loops to continue after error handling.
+    """
+    has_etrap = _dot_block_has_etrap(stmt)
+
+    if has_etrap:
+        # $ETRAP set inside this DOT block → catch errors at DOT level
+        # so the enclosing FOR loop can continue after error handling.
+        ctx.emitter.line("while True:  # DO block")
+        with ctx.emitter.indented():
+            ctx.emitter.line("try:")
+            with ctx.emitter.indented():
+                for body_stmt in stmt.body.statements:
+                    generate_statement(body_stmt, ctx)
+            ctx.emitter.line("except Exception as _e:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("if _rt._handle_etrap(_e, _scope):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(
+                        "break  # $ETRAP handled; exit DOT block, continue loop"
+                    )
+                ctx.emitter.line("raise  # Propagate unhandled error")
+            # Always break at end to ensure single iteration
+            ctx.emitter.line("break")
+    else:
+        # No $ETRAP in this DOT block — no try/except needed
+        ctx.emitter.line("while True:  # DO block")
+        with ctx.emitter.indented():
+            for body_stmt in stmt.body.statements:
+                generate_statement(body_stmt, ctx)
+            ctx.emitter.line("break")
+
+
 def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
     """Generate function call from MDoStatement.
 
@@ -4240,20 +4334,28 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
             f'_rt.push_stack_frame("DO", routine={_routine_name!r}, label={_label_name_str!r})'
         )
 
+        # Check whether this DOT block body contains NEW statements.
+        # If so, wrap in a nested NewScopeManager so each iteration of
+        # an enclosing FOR loop gets a fresh scope (Fix A: DOT block scoping).
+        dot_has_new = _dot_block_has_new(stmt)
+
         # Wrap in try/finally to ensure stack cleanup even on exceptions
         ctx.emitter.line("try:")
         with ctx.emitter.indented():
-            # Wrap in while True: so QUIT can use break to exit only the block
-            # This is a single-iteration "loop" used for early exit support
-            # The exits_do_block field is set by analyze_quit_context() during analysis,
-            # so no runtime depth tracking is needed here.
-            ctx.emitter.line("while True:  # DO block")
-            with ctx.emitter.indented():
-                # Generate block body
-                for body_stmt in stmt.body.statements:
-                    generate_statement(body_stmt, ctx)
-                # Always break at end to ensure single iteration
-                ctx.emitter.line("break")
+            if dot_has_new:
+                # Generate nested NewScopeManager for DOT block scope.
+                # This ensures N VAR inside a DOT block creates a fresh
+                # variable on each entry and restores it on exit — critical
+                # when the DOT block is inside a FOR loop.
+                _dot_mgr_var = _unique_dot_mgr_var(ctx)
+                ctx.emitter.line(f"with NewScopeManager(_scope) as {_dot_mgr_var}:")
+                _saved_scope_mgr = ctx.new_scope_manager_var
+                ctx.new_scope_manager_var = _dot_mgr_var
+                with ctx.emitter.indented():
+                    _generate_do_block_body(stmt, ctx)
+                ctx.new_scope_manager_var = _saved_scope_mgr
+            else:
+                _generate_do_block_body(stmt, ctx)
         ctx.emitter.line("finally:")
         with ctx.emitter.indented():
             # Decrement execution level (spec §6.3)

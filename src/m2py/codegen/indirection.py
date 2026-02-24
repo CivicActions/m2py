@@ -556,46 +556,43 @@ def generate_data_indirection_name(
 ) -> str:
     """Generate Python expression for $DATA indirection.
 
-    Resolves target name, appends post-resolution subscripts, calls get_data.
+    Resolves target name with proper subscript merging via data_indirected(),
+    paralleling get_indirected() for $GET.  Uses _count_indirection_levels_with_subscripts
+    and _build_per_level_subs_arg so that @VAR@(subs) correctly merges subscripts
+    instead of producing split-parentheses like name("s1")("s2").
     """
     from m2py.asg.expressions import MVariable
     from m2py.parser.textx_classes import LocalVariable as MLocalVariable
     from m2py.parser.textx_classes import GlobalVariable
     from m2py.codegen.expressions import generate_expr
 
-    levels, inner_expr = _count_indirection_levels(var)
-
-    # Build post-resolution subscript string using _format_subscript for proper quoting
-    if var.name_indirection_subscripts:
-        all_subs = []
-        for sub_list in var.name_indirection_subscripts:
-            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-            all_subs.extend(sub_exprs)
-        if len(all_subs) == 1:
-            # Use string concatenation instead of f-string to avoid nested
-            # quote incompatibility on Python 3.10 (PEP 701 is 3.12+)
-            subs_fstr = "'(' + _format_subscript(" + all_subs[0] + ") + ')'"
-        else:
-            # Multiple subscripts: build comma-separated format
-            subs_parts = " + ',' + ".join(
-                "_format_subscript(" + s + ")" for s in all_subs
-            )
-            subs_fstr = "'(' + " + subs_parts + " + ')'"
-    else:
-        subs_fstr = "''"
-
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(var)
     scope_expr = scope_dict_expr(ctx)
 
+    # Build source expression with type-specific handling
     if isinstance(inner_expr, (MVariable, MLocalVariable, GlobalVariable)):
         source_expr = _build_source_expr(inner_expr, ctx)
-        name_expr = (
-            f"_rt.resolve_for_target({source_expr}, {scope_expr}, levels={levels})"
-        )
     else:
+        # Complex expression: result IS first level, so levels-1
         inner_expr_code = generate_expr(inner_expr, ctx)
-        name_expr = f"str({inner_expr_code})"
+        # For @$P(...)@(subs): apply first subscript set to source
+        if all_subscripts and all_subscripts[0]:
+            first_subs = all_subscripts[0]
+            sub_exprs = [generate_expr(s, ctx) for s in first_subs]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = (
+                f"_rt.append_subscripts_to_name(str({inner_expr_code}), [{subs_str}])"
+            )
+            all_subscripts = all_subscripts[1:]
+        else:
+            source_expr = f"str({inner_expr_code})"
+        levels = levels - 1
 
-    return f"_rt.get_data({name_expr} + {subs_fstr}, {scope_expr})"
+    subs_arg = _build_per_level_subs_arg(all_subscripts, ctx)
+
+    return (
+        f"_rt.data_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
+    )
 
 
 def generate_get_indirection_name(

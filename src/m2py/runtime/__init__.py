@@ -4105,6 +4105,58 @@ class MUMPSRuntime:
                 return 0
         return m_data(arr, subs)
 
+    def data_indirected(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> int:
+        """$DATA via indirection with proper subscript merging.
+
+        Parallels get_indirected() but returns $DATA value instead of the
+        variable's value.  Resolves the indirection chain to a final name,
+        then delegates to get_data().
+
+        Args:
+            source: Source variable name for indirection (e.g., "X" for @X)
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+            per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+
+        Returns:
+            $DATA value (0, 1, 10, or 11)
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        if levels == 0:
+            # Source is already the resolved target name
+            if per_level_subscripts and any(per_level_subscripts):
+                cs = CurrentScope.from_generated_context(_scope)
+                resolver = IndirectionResolver(self, cs)
+                target_name = source
+                for sub_list in per_level_subscripts:
+                    if sub_list:
+                        target_name = resolver._append_subscripts(target_name, sub_list)
+                return self.get_data(target_name, _scope)
+            else:
+                return self.get_data(source, _scope)
+
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        try:
+            target_name = resolver.resolve_to_name(
+                source,
+                levels=levels,
+                per_level_subscripts=per_level_subscripts,
+            )
+        except Exception:
+            return 0  # Undefined on resolution failure
+
+        return self.get_data(target_name, _scope)
+
     def resolve_order_name(
         self,
         inner_value: str,

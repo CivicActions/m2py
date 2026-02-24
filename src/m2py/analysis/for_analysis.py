@@ -16,6 +16,7 @@ from ..asg.enums import ForLoopType, ForParamType, PassingMode
 from ..asg.expressions import MActualParameter, MVariable
 from ..asg.statements import (
     MDoStatement,
+    MElseStatement,
     MForStatement,
     MQuitStatement,
 )
@@ -341,6 +342,11 @@ def _check_quit_in_scope(scope: MScope) -> bool:
             if _check_quit_in_scope(else_scope):
                 return True
 
+        # ELSE is a separate statement type with its own body scope
+        if isinstance(stmt, MElseStatement) and stmt.body:
+            if _check_quit_in_scope(stmt.body):
+                return True
+
         # Do NOT recurse into nested FOR bodies - their QUIT exits THEM, not us
         # Also don't recurse into DO blocks - separate scope
 
@@ -432,3 +438,8 @@ def _analyze_quit_context_in_scope(
             _analyze_quit_context_in_scope(
                 else_scope, enclosing_for, enclosing_do_block
             )
+
+        # ELSE is a separate statement type with its own body scope
+        # (MUMPS ELSE is not structurally part of IF - it checks $TEST)
+        if isinstance(stmt, MElseStatement) and stmt.body:
+            _analyze_quit_context_in_scope(stmt.body, enclosing_for, enclosing_do_block)

@@ -1097,11 +1097,10 @@ class TestQuitContextInElse:
     """Tests for QUIT context in ELSE branches (L501, L410-411)."""
 
     def test_quit_in_else_within_for(self):
-        """QUIT inside ELSE within FOR — not detected by _check_quit_in_scope.
+        """QUIT inside ELSE within FOR — detected by _check_quit_in_scope.
 
         MElseStatement uses `body` not `else_scope`, and _check_quit_in_scope
-        only recurses into then_scope/else_scope (not body), so QUIT inside
-        ELSE is not detected. This tests the actual behavior.
+        recurses into MElseStatement.body to find QUITs inside ELSE blocks.
         """
         parser = MUMPSParser()
         source = "TEST\n\tF I=1:1:10 I I=5 W 5 E  Q\n\tQ\n"
@@ -1109,15 +1108,14 @@ class TestQuitContextInElse:
         analyze_for_loops(routine)
         for_stmt = routine.labels[0].body.statements[0]
         assert isinstance(for_stmt, MForStatement)
-        # QUIT inside ELSE body is NOT detected due to MElseStatement using
-        # `body` instead of `else_scope` — this is a known analysis gap
-        assert for_stmt.has_internal_quit is False
+        # QUIT inside ELSE body IS detected
+        assert for_stmt.has_internal_quit is True
 
     def test_quit_context_else_scope(self):
-        """Quit context analysis recurses into then_scope and else_scope.
+        """Quit context analysis recurses into then_scope and MElseStatement.body.
 
-        MElseStatement uses `body`, not `else_scope`, so _analyze_quit_context_in_scope
-        does not recurse into it. Test that the QUIT in then_scope IS handled.
+        The QUIT in the ELSE block should have exits_for set, and the QUIT
+        in the IF then_scope should also have exits_for set.
         """
         parser = MUMPSParser()
         # QUIT directly in IF then_scope (not inside ELSE)
