@@ -1144,7 +1144,8 @@ class RoutineGenerator:
 
             # Build parameter string
             if formal_params:
-                params_str = "_rt, " + ", ".join(formal_params) + ", _scope=None"
+                formal_with_defaults = [f"{p}=None" for p in formal_params]
+                params_str = "_rt, " + ", ".join(formal_with_defaults) + ", _scope=None"
                 args_str = ", ".join(formal_params)
             else:
                 params_str = "_rt, _scope=None"

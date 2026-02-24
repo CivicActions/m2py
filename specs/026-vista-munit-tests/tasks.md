@@ -118,12 +118,25 @@
 
 ### Tier 2: XML Parser Transpilation (US3 + US5)
 
-- [ ] T035 [P] [US3] Transpile XML parser dependency routines: MXMLDOM, MXMLPRSE, MXMLUTL, MXMLPATH, MXMLTMP1, MXMLTMPL; verify they load
-- [ ] T036 [US3] Run MXMLBLD test (13 assertions, lowest risk: deps = MXMLUTL + MXMLTMP1); compare output to baseline
-- [ ] T037 [US3] Run MXMLTMPT test (49 assertions, template engine; may need `DT^DICRW` stub); compare output to baseline
-- [ ] T038 [US3] Run MXMLPATT test (25 assertions, XPath; needs MXMLDOM + MXMLPATH); compare output to baseline
-- [ ] T039 [US3] Run MXMLDOMT test (9 assertions, **highest risk**: needs `%ZISH` file I/O); compare output to baseline — xfail if `%ZISH` not ready
-- [ ] T040 [US5] Fix m2py issues discovered during Tier 2 (e.g., `$NAME`, `$PIECE` on long strings, `$ORDER` on `^TMP` trees); add standalone tests in `tests/` (m2py root)
+- [X] T035 [P] [US3] Transpile XML parser dependency routines: MXMLDOM, MXMLPRSE, MXMLUTL, MXMLPATH, MXMLTMP1, MXMLTMPL; verify they load
+  - MXMLDOM, MXMLPRS0, MXMLPRS1, MXMLPRSE, MXMLTEST, MXMLUTL load OK
+  - MXMLTMP1, MXMLTMPL, MXMLPATH: not available in any open-source repo
+- [X] T036 [US3] Run MXMLBLD test (13 assertions, lowest risk: deps = MXMLUTL + MXMLTMP1); compare output to baseline
+  - 13/13 assertions pass
+- [X] T037 [US3] Run MXMLTMPT test (49 assertions, template engine; may need `DT^DICRW` stub); compare output to baseline
+  - xfail: missing MXMLTMP1/MXMLTMPL dependency routines
+- [X] T038 [US3] Run MXMLPATT test (25 assertions, XPath; needs MXMLDOM + MXMLPATH); compare output to baseline
+  - xfail: missing MXMLPATH dependency routine
+- [X] T039 [US3] Run MXMLDOMT test (8 tests, **highest risk**: needs `%ZISH` file I/O); compare output to baseline — xfail if `%ZISH` not ready
+  - 7/8 tests pass, 1 error (XMLFILE — requires real file I/O via $$FTG^%ZISH)
+- [X] T040 [US5] Fix m2py issues discovered during Tier 2 (e.g., `$NAME`, `$PIECE` on long strings, `$ORDER` on `^TMP` trees); add standalone tests in `tests/` (m2py root)
+  - Bug E: Extrinsic %-variable byref name encoding
+  - Bug F: DO omitted args with byref positional mapping
+  - Bug G: Internal extrinsic label/variable name collision
+  - Bug H: Repeated NEW at same scope level clears variable
+  - Bug I: TRAMPOLINE wrapper optional formal parameters
+  - Bug J: parse_call_target args extraction from routine part
+  - Bug L: MERGE codegen in TRAMPOLINE strategy (bare variable names → state._locals/state.field)
 
 **Checkpoint**: `cd vista-test && uv run pytest tests/vista/munit/ -v` — **MVP complete**: 12 routines (Tier 1+2) pass/xfail. ~124 assertions validated.
 

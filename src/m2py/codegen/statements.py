@@ -5316,24 +5316,32 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
             # Source is local variable: A or A(subs)
             src_var_name = src.name
 
-            if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
+            if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+                # TRAMPOLINE with dynamic_locals: variables live in state._locals
                 if src.subscripts:
-                    subs_code = []
-                    for sub in src.subscripts:
-                        subs_code.append(generate_expr(sub, ctx))
+                    subs_code = [generate_expr(sub, ctx) for sub in src.subscripts]
+                    src_tree_expr = f"state._locals.get({src_var_name!r}, MArray())[{', '.join(subs_code)}]"
+                else:
+                    src_tree_expr = f"state._locals.get({src_var_name!r}, MArray())"
+            elif (
+                ctx.strategy == GotoStrategy.TRAMPOLINE
+                and not ctx.uses_dynamic_locals
+                and src_var_name in ctx.array_vars
+            ):
+                # TRAMPOLINE static: variable is a field on RoutineState dataclass
+                src_translated = translate_name(src_var_name)
+                if src.subscripts:
+                    subs_code = [generate_expr(sub, ctx) for sub in src.subscripts]
+                    src_tree_expr = f"state.{src_translated}[{', '.join(subs_code)}]"
+                else:
+                    src_tree_expr = f"state.{src_translated}"
+            else:
+                # SIMPLE_FUNCTIONS or TRAMPOLINE fallback: use _scope
+                if src.subscripts:
+                    subs_code = [generate_expr(sub, ctx) for sub in src.subscripts]
                     src_tree_expr = f"_scope.get({src_var_name!r}, MArray())[{', '.join(subs_code)}]"
                 else:
                     src_tree_expr = f"_scope.get({src_var_name!r}, MArray())"
-            else:
-                # TRAMPOLINE strategy
-                src_translated = translate_name(src_var_name)
-                if src.subscripts:
-                    subs_code = []
-                    for sub in src.subscripts:
-                        subs_code.append(generate_expr(sub, ctx))
-                    src_tree_expr = f"{src_translated}[{', '.join(subs_code)}]"
-                else:
-                    src_tree_expr = src_translated
 
         elif isinstance(src, (ExtendedGlobalPipe, ExtendedGlobalBracket)):
             # Source is extended global: ^|"env"|name or ^["gld"]name
@@ -5421,14 +5429,30 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
                 ctx.emitter.dedent()
             else:
                 # TRAMPOLINE strategy
-                dest_translated = translate_name(dest_var_name)
-                if dest.subscripts:
-                    subs_code = []
-                    for sub in dest.subscripts:
-                        subs_code.append(generate_expr(sub, ctx))
-                    dest_expr = f"{dest_translated}[{', '.join(subs_code)}]"
+                if ctx.uses_dynamic_locals:
+                    # TRAMPOLINE with dynamic_locals: variables live in state._locals
+                    if dest.subscripts:
+                        subs_code = [generate_expr(sub, ctx) for sub in dest.subscripts]
+                        dest_expr = f"state._locals.setdefault({dest_var_name!r}, MArray())[{', '.join(subs_code)}]"
+                    else:
+                        dest_expr = (
+                            f"state._locals.setdefault({dest_var_name!r}, MArray())"
+                        )
+                elif dest_var_name in ctx.array_vars:
+                    # TRAMPOLINE static: variable is a field on RoutineState dataclass
+                    dest_translated = translate_name(dest_var_name)
+                    if dest.subscripts:
+                        subs_code = [generate_expr(sub, ctx) for sub in dest.subscripts]
+                        dest_expr = f"state.{dest_translated}[{', '.join(subs_code)}]"
+                    else:
+                        dest_expr = f"state.{dest_translated}"
                 else:
-                    dest_expr = dest_translated
+                    # TRAMPOLINE fallback: use _scope
+                    if dest.subscripts:
+                        subs_code = [generate_expr(sub, ctx) for sub in dest.subscripts]
+                        dest_expr = f"_scope.setdefault({dest_var_name!r}, MArray())[{', '.join(subs_code)}]"
+                    else:
+                        dest_expr = f"_scope.setdefault({dest_var_name!r}, MArray())"
 
                 ctx.emitter.line(f"_merge_src = {src_tree_expr}")
                 ctx.emitter.line("if _merge_src is not None:")

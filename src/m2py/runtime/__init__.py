@@ -7127,12 +7127,33 @@ class MUMPSRuntime:
 
         # Parse routine (^ROUTINE part)
         routine: Optional[str] = None
+        args_str: Optional[str] = None
         if "^" in target_str:
             parts = target_str.split("^", 1)
             target_str = parts[0]  # Label part (may be empty)
             routine = parts[1]
             if not routine:
                 raise IndirectionError(target_str, "empty routine name after ^")
+            # Extract parenthesized arguments from routine part.
+            # In MUMPS, D @("LABEL^ROUTINE(.P1)") means call LABEL^ROUTINE
+            # with .P1 as by-ref argument.  The args belong to the DO call,
+            # not the routine name.
+            if "(" in routine:
+                paren_pos = routine.index("(")
+                remainder = routine[paren_pos:]
+                depth = 0
+                balanced = False
+                for i, c in enumerate(remainder):
+                    if c == "(":
+                        depth += 1
+                    elif c == ")":
+                        depth -= 1
+                        if depth == 0 and i == len(remainder) - 1:
+                            balanced = True
+                            break
+                if balanced:
+                    args_str = remainder
+                    routine = routine[:paren_pos]
             # Validate routine name
             if not _is_valid_varname(routine):
                 raise IndirectionError(
@@ -7168,8 +7189,9 @@ class MUMPSRuntime:
         # in the indirection string. Extract them so the dispatch code can
         # pass them when calling the resolved function.
         # e.g. 'GREET("World")' → label='GREET', args_str='("World")'
-        args_str: Optional[str] = None
-        if label and "(" in label:
+        # Note: if args were already extracted from the routine part (above),
+        # skip this — args attach to the last component in the target string.
+        if args_str is None and label and "(" in label:
             paren_pos = label.index("(")
             # Verify the parentheses are balanced and at the end
             remainder = label[paren_pos:]
