@@ -4507,9 +4507,20 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         ctx.emitter.line("_saved_source_lines = _rt._current_source_lines")
         ctx.emitter.line("_saved_label_lines = _rt._current_label_lines")
 
-        # For TRAMPOLINE with dynamic locals, sync state._locals to _scope
-        # before calling external routine so callee can see caller's variables
-        emit_state_to_scope_sync(ctx)
+        # Sync state to _scope before calling external routine so callee
+        # can see caller's current variable values.
+        # - TRAMPOLINE + dynamic locals: bulk copy state._locals → _scope
+        # - TRAMPOLINE + static state_vars: per-field sync state.X → _scope['X']
+        if (
+            ctx.strategy == GotoStrategy.TRAMPOLINE
+            and ctx.state_vars
+            and not ctx.uses_dynamic_locals
+        ):
+            for var_name in sorted(ctx.state_vars):
+                py_name = translate_name(var_name)
+                emit_state_var_to_scope(ctx, var_name, py_name)
+        else:
+            emit_state_to_scope_sync(ctx)
 
         # Push DO stack frame for external subroutine call
         # Pass routine/label metadata for $STACK introspection
@@ -4620,10 +4631,20 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             else:
                 ctx.emitter.line(f"run_with_goto_support({entry_func}, _rt, _scope)")
 
-        # For TRAMPOLINE with dynamic locals, sync _scope back to state._locals
-        # after returning from external routine so caller can see callee's modifications
-        # Wrap plain values in MArray when syncing back (callee may use static state)
-        emit_scope_to_state_sync(ctx)
+        # Sync _scope back to state after returning from external routine
+        # so caller can see callee's modifications to shared variables.
+        # - TRAMPOLINE + static state_vars: per-field sync _scope['X'] → state.X
+        # - TRAMPOLINE + dynamic locals: bulk copy _scope → state._locals
+        if (
+            ctx.strategy == GotoStrategy.TRAMPOLINE
+            and ctx.state_vars
+            and not ctx.uses_dynamic_locals
+        ):
+            for var_name in sorted(ctx.state_vars):
+                py_name = translate_name(var_name)
+                emit_scope_var_to_state(ctx, var_name, py_name)
+        else:
+            emit_scope_to_state_sync(ctx)
 
         # Restore runtime context after external call returns
         ctx.emitter.line("_rt._current_routine = _saved_routine")
