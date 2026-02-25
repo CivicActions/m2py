@@ -173,6 +173,46 @@ def emit_state_to_scope_sync(ctx: "GeneratorContext") -> None:
     ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
 
 
+def emit_state_var_to_scope(
+    ctx: "GeneratorContext",
+    var_name: str,
+    py_name: str,
+    *,
+    scope_key: str | None = None,
+) -> None:
+    """Emit state→scope sync for a single static-field variable.
+
+    For **array** variables (those in ``ctx.array_vars``), the MArray is
+    assigned directly from state — preserving subscripts.
+
+    For **simple** variables, ``state.X`` is a plain scalar (str/number).
+    The generated code wraps it in an MArray before storing in ``_scope``
+    because called routines expect ``_scope`` entries to be MArray objects
+    (they use ``_scope['X'].value`` or ``_scope.setdefault('X', MArray()).value``).
+
+    This is the inverse of :func:`emit_scope_var_to_state`.
+
+    Args:
+        ctx: Current generator context with emitter.
+        var_name: Original MUMPS variable name (used for array_vars lookup).
+        py_name: Python-translated variable name (used for state attribute).
+        scope_key: Key used to store the variable in ``_scope``.
+            Defaults to *py_name*.
+    """
+    key = scope_key or py_name
+    if var_name in ctx.array_vars:
+        # Array vars: MArray already, assign directly
+        ctx.emitter.line(f"_scope[{key!r}] = state.{py_name}")
+    else:
+        # Simple vars: wrap scalar in MArray so called routines see MArray in _scope
+        ctx.emitter.line(f"_m = _scope.get({key!r})")
+        ctx.emitter.line("if not isinstance(_m, MArray):")
+        with ctx.emitter.indented():
+            ctx.emitter.line("_m = MArray()")
+            ctx.emitter.line(f"_scope[{key!r}] = _m")
+        ctx.emitter.line(f"_m.value = state.{py_name}")
+
+
 def emit_scope_to_state_sync(ctx: "GeneratorContext") -> None:
     """Emit _scope → state._locals synchronization code.
 
@@ -4785,7 +4825,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             # Sync state to _scope before call
             for var_name in sorted(ctx.state_vars):
                 py_name = translate_name(var_name)
-                ctx.emitter.line(f"_scope[{py_name!r}] = state.{py_name}")
+                emit_state_var_to_scope(ctx, var_name, py_name)
         # For TRAMPOLINE with dynamic_locals, sync state._locals to _scope
         # before internal DO calls so subroutine sees current variable values
         # Must remove stale keys too (e.g., after KILL clears _locals

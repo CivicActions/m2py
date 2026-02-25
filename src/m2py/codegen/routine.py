@@ -26,6 +26,7 @@ from m2py.codegen.statements import (
     emit_scope_to_state_sync,
     emit_scope_var_to_state,
     emit_state_to_scope_sync,
+    emit_state_var_to_scope,
     generate_offset_guarded_statements,
     generate_scope_statements,
 )
@@ -1077,9 +1078,7 @@ class RoutineGenerator:
                         if not ctx.uses_dynamic_locals:
                             for var_name in sorted(ctx.state_vars):
                                 py_name = translate_name(var_name)
-                                ctx.emitter.line(
-                                    f"_scope[{py_name!r}] = state.{py_name}"
-                                )
+                                emit_state_var_to_scope(ctx, var_name, py_name)
                         # Run the external GOTO chain to completion and sync back
                         _emit_goto_external_handler(ctx)
                         # Static scope→state sync after external call
@@ -1118,7 +1117,9 @@ class RoutineGenerator:
                 if not ctx.uses_dynamic_locals:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
-                        ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
+                        emit_state_var_to_scope(
+                            ctx, var_name, py_name, scope_key=var_name
+                        )
                 ctx.emitter.line("return state")
             ctx.emitter.blank()
 
@@ -1220,7 +1221,7 @@ class RoutineGenerator:
                     if not ctx.uses_dynamic_locals:
                         for var_name in sorted(ctx.state_vars):
                             py_name = translate_name(var_name)
-                            ctx.emitter.line(f"_scope[{py_name!r}] = state.{py_name}")
+                            emit_state_var_to_scope(ctx, var_name, py_name)
                     # Run the external GOTO chain to completion and sync back
                     _emit_goto_external_handler(ctx)
                     # Static scope→state sync after external call
@@ -1245,7 +1246,7 @@ class RoutineGenerator:
                 if not ctx.uses_dynamic_locals:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
-                        ctx.emitter.line(f"_scope[{py_name!r}] = state.{py_name}")
+                        emit_state_var_to_scope(ctx, var_name, py_name)
                 # Return extrinsic function return value if one was stored
                 # Otherwise return state for normal DO calls
                 ctx.emitter.line(

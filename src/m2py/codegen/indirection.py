@@ -802,7 +802,10 @@ def _emit_scope_to_state_sync(ctx: "GeneratorContext") -> None:
 
 def _emit_goto_external_catch(ctx: "GeneratorContext") -> None:
     """Emit 'except GotoExternal' block: sync state→scope, run external, sync back."""
-    from m2py.codegen.statements import emit_state_to_scope_sync
+    from m2py.codegen.statements import (
+        emit_state_to_scope_sync,
+        emit_state_var_to_scope,
+    )
 
     ctx.emitter.line("except GotoExternal as _goto:")
     with ctx.emitter.indented():
@@ -813,7 +816,7 @@ def _emit_goto_external_catch(ctx: "GeneratorContext") -> None:
 
             for var_name in sorted(ctx.state_vars):
                 py_name = translate_name(var_name)
-                ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
+                emit_state_var_to_scope(ctx, var_name, py_name, scope_key=var_name)
         ctx.emitter.line(
             "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)"
         )
