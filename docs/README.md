@@ -8,10 +8,17 @@ m2py is a MUMPS-to-Python transpiler that uses [textX](https://textx.github.io/t
 
 ```bash
 # Transpile a single file
-m2py MYROUTINE.m
+m2py transpile MYROUTINE.m
 
 # Transpile a directory tree to an output directory
-m2py VistA-VEHU-M/ -o output/
+m2py transpile VistA-VEHU-M/ -o output/
+
+# Import/export ZWR global data
+m2py globals import data.zwr
+m2py globals export out.zwr --globals '^DD,^DIC'
+
+# Show available commands
+m2py --help
 ```
 
 ### Python API

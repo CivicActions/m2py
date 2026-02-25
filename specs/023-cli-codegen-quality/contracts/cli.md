@@ -1,16 +1,28 @@
 # CLI Contract: m2py
 
-**Type**: Command-line interface  
+**Type**: Command-line interface (built with [click](https://click.palletsprojects.com/))  
 **Entry point**: `m2py.cli:main`  
 **Installable as**: `m2py` (via `[project.scripts]`)
 
 ## Synopsis
 
 ```
-m2py <PATH> [PATH ...] [-o OUTPUT_DIR] [-v] [--no-format]
+m2py <command> [options]
+m2py transpile <PATH> [PATH ...] [-o OUTPUT_DIR] [-v] [--no-format]
+m2py globals import <file.zwr> [--backend <type>]
+m2py globals export <file.zwr> [--globals '^DD,^DIC'] [--backend <type>]
 ```
 
-## Arguments
+Running `m2py` with no subcommand displays help.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `transpile` | Transpile MUMPS `.m` files or directories to Python |
+| `globals` | Import/export MUMPS globals in ZWR format |
+
+## `transpile` Arguments
 
 ### Positional
 
@@ -26,13 +38,28 @@ m2py <PATH> [PATH ...] [-o OUTPUT_DIR] [-v] [--no-format]
 | `--verbose` | `-v` | boolean | `False` | Print detailed progress (file names, timing, tracebacks on error). |
 | `--no-format` | | boolean | `False` | Skip ruff lint-fix and formatting on generated output. Useful for debugging raw codegen output or when ruff is unavailable. |
 
+## `globals import` Arguments
+
+| Argument/Flag | Type | Required | Description |
+|---------------|------|----------|-------------|
+| `FILE` | file path | Yes | ZWR file to import |
+| `--backend` | choice: `inmemory`, `sqlite` | No (default: `inmemory`) | Global storage backend |
+
+## `globals export` Arguments
+
+| Argument/Flag | Type | Required | Description |
+|---------------|------|----------|-------------|
+| `FILE` | file path | Yes | Destination ZWR file |
+| `--globals` | string | Yes | Comma-separated global names to export (e.g. `'^DD,^DIC'`) |
+| `--backend` | choice: `inmemory`, `sqlite` | No (default: `inmemory`) | Global storage backend |
+
 ## Exit Codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | All files transpiled successfully |
 | `1` | One or more files failed to transpile |
-| `2` | CLI usage error (invalid arguments) — argparse default |
+| `2` | CLI usage error (invalid arguments) — click default |
 
 ## Output Behavior
 
@@ -93,7 +120,7 @@ Resolve a list of paths (files and/or directories), discover all `.m` files, tra
 
 ### `main(argv=None) -> int`
 
-CLI entry point. Parses arguments, calls `transpile_paths()`, prints summary to stderr, returns exit code (0 or 1).
+CLI entry point. Dispatches to click subcommands (`transpile`, `globals`), returns exit code (0, 1, or 2).
 
 ## Error Handling
 

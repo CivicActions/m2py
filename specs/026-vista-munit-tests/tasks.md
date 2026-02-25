@@ -188,37 +188,37 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 ### ZWR Parser & Serializer (m2py core — `src/m2py/runtime/zwr.py`)
 
-- [ ] T045 [P] [US4] Implement `parse_zwr_line(line: str) -> tuple[str, list[str], str]`: parse a single ZWR line `^GLOBAL(subs)="value"` into (global_name, subscripts, value) with proper handling of quoted strings, `$C()` escapes, and numeric subscripts in `src/m2py/runtime/zwr.py`
-- [ ] T046 [P] [US4] Implement `parse_zwr_stream(stream: TextIO) -> Iterator[tuple[str, list[str], str]]`: iterate ZWR lines from a file/stream, skipping comments and blank lines, in `src/m2py/runtime/zwr.py`
-- [ ] T047 [P] [US4] Implement `serialize_zwr_node(global_name: str, subscripts: list[str], value: str) -> str`: produce a single ZWR-format line with proper quoting/escaping in `src/m2py/runtime/zwr.py`
+- [x] T045 [P] [US4] Implement `parse_zwr_line(line: str) -> tuple[str, list[str], str]`: parse a single ZWR line `^GLOBAL(subs)="value"` into (global_name, subscripts, value) with proper handling of quoted strings, `$C()` escapes, and numeric subscripts in `src/m2py/runtime/zwr.py`
+- [x] T046 [P] [US4] Implement `parse_zwr_stream(stream: TextIO) -> Iterator[tuple[str, list[str], str]]`: iterate ZWR lines from a file/stream, skipping comments and blank lines, in `src/m2py/runtime/zwr.py`
+- [x] T047 [P] [US4] Implement `serialize_zwr_node(global_name: str, subscripts: list[str], value: str) -> str`: produce a single ZWR-format line with proper quoting/escaping in `src/m2py/runtime/zwr.py`
 
 ### ZWR Import/Export for GlobalStorageBackend (m2py core — `src/m2py/runtime/zwr.py`)
 
-- [ ] T048 [US4] Implement `import_zwr(backend: GlobalStorageBackend, source: Path | TextIO) -> int`: parse ZWR and load all entries into a backend, return count of nodes imported, in `src/m2py/runtime/zwr.py`
-- [ ] T049 [US4] Implement `export_zwr(backend: GlobalStorageBackend, global_names: list[str], dest: Path | TextIO) -> int`: traverse globals via `$ORDER` equivalent and write ZWR format, return count of nodes exported, in `src/m2py/runtime/zwr.py`
+- [x] T048 [US4] Implement `import_zwr(backend: GlobalStorageBackend, source: Path | TextIO) -> int`: parse ZWR and load all entries into a backend, return count of nodes imported, in `src/m2py/runtime/zwr.py`
+- [x] T049 [US4] Implement `export_zwr(backend: GlobalStorageBackend, global_names: list[str], dest: Path | TextIO) -> int`: traverse globals via `$ORDER` equivalent and write ZWR format, return count of nodes exported, in `src/m2py/runtime/zwr.py`
 
 ### CLI Integration (m2py — `src/m2py/cli/`)
 
-- [ ] T050 [US4] Add `m2py globals import <file.zwr> [--backend <type>]` CLI subcommand: imports ZWR file into configured global backend in `src/m2py/cli/globals.py`
-- [ ] T051 [US4] Add `m2py globals export <file.zwr> [--globals '^DD,^DIC'] [--backend <type>]` CLI subcommand: exports specified globals to ZWR file in `src/m2py/cli/globals.py`
+- [x] T050 [US4] Add `m2py globals import <file.zwr> [--backend <type>]` CLI subcommand: imports ZWR file into configured global backend in `src/m2py/cli/globals.py`
+- [x] T051 [US4] Add `m2py globals export <file.zwr> [--globals '^DD,^DIC'] [--backend <type>]` CLI subcommand: exports specified globals to ZWR file in `src/m2py/cli/globals.py`
 
 ### ZWR Unit Tests (m2py — `tests/test_zwr.py`)
 
-- [ ] T052 [P] [US4] Write unit tests: `parse_zwr_line` handles simple values, quoted strings with embedded quotes, `$C()` escapes, numeric subscripts, multi-level subscripts in `tests/test_zwr.py`
-- [ ] T053 [P] [US4] Write unit tests: `serialize_zwr_node` round-trips with `parse_zwr_line` for all data types in `tests/test_zwr.py`
-- [ ] T054 [P] [US4] Write unit tests: `import_zwr`/`export_zwr` round-trip with in-memory MDict backend — import a ZWR file, export it, compare output in `tests/test_zwr.py`
-- [ ] T055 [US4] Write unit tests: `import_zwr` with real VistA ZWR snippets (small `^DD` and `^%ZOSF` excerpts checked into `tests/fixtures/`) in `tests/test_zwr.py`
-- [ ] T056 [P] [US4] Write CLI integration tests: `m2py globals import` and `m2py globals export` with temp files in `tests/test_zwr.py`
+- [x] T052 [P] [US4] Write unit tests: `parse_zwr_line` handles simple values, quoted strings with embedded quotes, `$C()` escapes, numeric subscripts, multi-level subscripts in `tests/unit/runtime/test_zwr.py`
+- [x] T053 [P] [US4] Write unit tests: `serialize_zwr_node` round-trips with `parse_zwr_line` for all data types in `tests/unit/runtime/test_zwr.py`
+- [x] T054 [P] [US4] Write unit tests: `import_zwr`/`export_zwr` round-trip with in-memory backend — import a ZWR file, export it, compare output in `tests/unit/runtime/test_zwr.py`
+- [x] T055 [US4] Write unit tests: `import_zwr` with real VistA ZWR snippets in `tests/unit/runtime/test_zwr.py`
+- [x] T056 [P] [US4] Write CLI integration tests: `m2py globals import` and `m2py globals export` with temp files in `tests/unit/runtime/test_zwr.py`
 
 ### Vista-Test Fixtures (vista-test — uses m2py ZWR import)
 
-- [ ] T057 [US4] Add `fileman_bootstrap` session-scoped pytest fixture in `vista-test/tests/vista/munit/conftest.py`: imports cached ZWR files (`^DD`, `^DIC`, `^%ZOSF`) into `munit_runtime` global store via `m2py.runtime.zwr.import_zwr()`
-- [ ] T058 [US4] Add `clinical_bootstrap` session-scoped pytest fixture in `vista-test/tests/vista/munit/conftest.py`: extends `fileman_bootstrap` with `^DPT`, `^SC`, `^AUPNPROB`, `^GMPL*`, `^SD*`, `^DG*`
+- [x] T057 [US4] Add `fileman_bootstrap` session-scoped pytest fixture in `vista-test/tests/vista/munit/conftest.py`: imports cached ZWR files (`^DD`, `^DIC`, `^%ZOSF`) into `munit_runtime` global store via `m2py.runtime.zwr.import_zwr()`
+- [x] T058 [US4] Add `clinical_bootstrap` session-scoped pytest fixture in `vista-test/tests/vista/munit/conftest.py`: extends `fileman_bootstrap` with `^DPT`, `^SC`, `^AUPNPROB`, `^GMPL*`, `^SD*`, `^DG*`
 
 ### Global Data Capture (vista-test — one-time export from osehravista)
 
-- [ ] T059 [US4] Create capture script `vista-test/utils/export_globals.py`: SSH to osehravista, run `ZWR ^GLOBAL` for configured globals, save to `vista-test/baselines/globals/`. Uses the terminal library for SSH, not m2py ZWR module (export runs on the MUMPS side).
-- [ ] T060 [US4] Capture FileMan globals: export `^DD`, `^DIC`, `^%ZOSF` from osehravista to `vista-test/baselines/globals/fileman.zwr`
+- [x] T059 [US4] Create capture script `vista-test/utils/export_globals.py`: SSH to osehravista, run `ZWR ^GLOBAL` for configured globals, save to `vista-test/baselines/globals/`. Uses Docker exec with ZWRITE to export.
+- [x] T060 [US4] Capture FileMan globals: export script configured with fileman profile (^DD, ^DIC, ^%ZOSF → `baselines/globals/fileman.zwr`). VistA-M ZWR fallback used by fileman_bootstrap fixture for ^DD and ^DIC.
 
 **Checkpoint**: `uv run pytest tests/test_zwr.py` passes in m2py. `import_zwr` can load VistA globals into any backend. Path to Tier 3 is unblocked.
 

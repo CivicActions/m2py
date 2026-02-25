@@ -1,7 +1,7 @@
 """Tests for the m2py CLI entry point (Phases 3-4, T012-T022).
 
 Tests cover:
-- argparse argument parsing
+- click argument parsing
 - main() exit codes and stderr output
 - Single-file transpilation (US1)
 - Directory transpilation (US2)
@@ -17,8 +17,9 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
-from m2py.cli import _build_parser, main
+from m2py.cli import cli, main
 from m2py.cli.transpile import (
     TranspileResult,
     TranspileSummary,
@@ -84,48 +85,50 @@ def batch_dir(tmp_dir: Path) -> Path:
 
 
 class TestArgParse:
-    """Test argument parser construction."""
+    """Test click CLI argument parsing via CliRunner."""
 
-    def test_single_path(self):
-        parser = _build_parser()
-        args = parser.parse_args(["FILE.m"])
-        assert args.paths == ["FILE.m"]
-        assert args.output is None
-        assert args.verbose is False
-        assert args.no_format is False
+    def test_single_path(self, sample_m_file: Path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["transpile", str(sample_m_file)])
+        assert result.exit_code == 0
 
-    def test_multiple_paths(self):
-        parser = _build_parser()
-        args = parser.parse_args(["A.m", "B.m", "dir/"])
-        assert args.paths == ["A.m", "B.m", "dir/"]
+    def test_multiple_paths(self, sample_m_file: Path, batch_dir: Path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["transpile", str(sample_m_file), str(batch_dir)])
+        assert result.exit_code == 0
 
-    def test_output_flag(self):
-        parser = _build_parser()
-        args = parser.parse_args(["FILE.m", "-o", "/tmp/out"])
-        assert args.output == "/tmp/out"
+    def test_output_flag(self, sample_m_file: Path, tmp_dir: Path):
+        runner = CliRunner()
+        out = tmp_dir / "out"
+        result = runner.invoke(cli, ["transpile", str(sample_m_file), "-o", str(out)])
+        assert result.exit_code == 0
+        assert (out / "HELLO.py").exists()
 
-    def test_output_long_flag(self):
-        parser = _build_parser()
-        args = parser.parse_args(["FILE.m", "--output", "/tmp/out"])
-        assert args.output == "/tmp/out"
+    def test_output_long_flag(self, sample_m_file: Path, tmp_dir: Path):
+        runner = CliRunner()
+        out = tmp_dir / "out"
+        result = runner.invoke(
+            cli, ["transpile", str(sample_m_file), "--output", str(out)]
+        )
+        assert result.exit_code == 0
+        assert (out / "HELLO.py").exists()
 
-    def test_verbose_flag(self):
-        parser = _build_parser()
-        args = parser.parse_args(["FILE.m", "-v"])
-        assert args.verbose is True
+    def test_verbose_flag(self, sample_m_file: Path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["transpile", str(sample_m_file), "-v"])
+        assert result.exit_code == 0
 
-    def test_no_format_flag(self):
-        parser = _build_parser()
-        args = parser.parse_args(["FILE.m", "--no-format"])
-        assert args.no_format is True
+    def test_no_format_flag(self, sample_m_file: Path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["transpile", str(sample_m_file), "--no-format"])
+        assert result.exit_code == 0
 
-    def test_all_flags(self):
-        parser = _build_parser()
-        args = parser.parse_args(["A.m", "dir/", "-o", "out", "-v", "--no-format"])
-        assert args.paths == ["A.m", "dir/"]
-        assert args.output == "out"
-        assert args.verbose is True
-        assert args.no_format is True
+    def test_no_command_shows_help(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, [])
+        assert result.exit_code == 0
+        assert "transpile" in result.output
+        assert "globals" in result.output
 
 
 # =============================================================================
@@ -388,50 +391,50 @@ class TestMain:
     """Test CLI main() entry point."""
 
     def test_success_exit_code(self, sample_m_file: Path):
-        rc = main([str(sample_m_file)])
+        rc = main(["transpile", str(sample_m_file)])
         assert rc == 0
 
     def test_failure_exit_code(self, broken_m_file: Path):
-        rc = main([str(broken_m_file)])
+        rc = main(["transpile", str(broken_m_file)])
         assert rc == 1
 
     def test_no_files_exit_code(self, tmp_dir: Path):
         empty = tmp_dir / "empty"
         empty.mkdir()
-        rc = main([str(empty)])
+        rc = main(["transpile", str(empty)])
         assert rc == 1
 
     def test_verbose_flag(self, sample_m_file: Path, capsys):
-        rc = main([str(sample_m_file), "-v"])
+        rc = main(["transpile", str(sample_m_file), "-v"])
         assert rc == 0
         captured = capsys.readouterr()
         assert "Transpiling" in captured.err
 
     def test_output_dir(self, sample_m_file: Path, tmp_dir: Path):
         out = tmp_dir / "cli_out"
-        rc = main([str(sample_m_file), "-o", str(out)])
+        rc = main(["transpile", str(sample_m_file), "-o", str(out)])
         assert rc == 0
         assert (out / "HELLO.py").exists()
 
     def test_no_format_flag(self, sample_m_file: Path):
-        rc = main([str(sample_m_file), "--no-format"])
+        rc = main(["transpile", str(sample_m_file), "--no-format"])
         assert rc == 0
 
     def test_directory_batch(self, batch_dir: Path, tmp_dir: Path, capsys):
         out = tmp_dir / "cli_batch_out"
-        rc = main([str(batch_dir), "-o", str(out)])
+        rc = main(["transpile", str(batch_dir), "-o", str(out)])
         assert rc == 0
         captured = capsys.readouterr()
         assert "3/3" in captured.err
 
     def test_summary_output(self, sample_m_file: Path, broken_m_file: Path, capsys):
-        rc = main([str(sample_m_file), str(broken_m_file)])
+        rc = main(["transpile", str(sample_m_file), str(broken_m_file)])
         assert rc == 1
         captured = capsys.readouterr()
         assert "1 failed" in captured.err
 
     def test_nonexistent_path_error(self, tmp_dir: Path, capsys):
-        rc = main([str(tmp_dir / "MISSING.m")])
+        rc = main(["transpile", str(tmp_dir / "MISSING.m")])
         assert rc == 1
         captured = capsys.readouterr()
         assert "Path not found" in captured.err
@@ -441,7 +444,7 @@ class TestMain:
         f = tmp_dir / "EMPTY.m"
         f.write_text("\n")
         out = tmp_dir / "out"
-        rc = main([str(f), "-o", str(out)])
+        rc = main(["transpile", str(f), "-o", str(out)])
         assert rc == 0
         import ast
 
@@ -513,7 +516,7 @@ class TestEdgeCases:
         out = tmp_dir / "verbose_out"
 
         # Use main with verbose flag
-        rc = main([str(f), "-o", str(out), "-v"])
+        rc = main(["transpile", str(f), "-o", str(out), "-v"])
         assert rc == 0
 
         captured = capsys.readouterr()

@@ -8,7 +8,7 @@ m2py is a MUMPS-to-Python transpiler that uses [textX](https://textx.github.io/t
 * 99.99% transpilation success rate on the VistA-VEHU-M routine set (39,299 / 39,304 routines). The only remaining failures are MWAPI SSVNs (X11.6 standard).
 * Functional test suites (MUGJ, MVTS, and others) validate transpiled code generates correct output against YottaDB reference output.
 * GT.M/YottaDB and Caché/IRIS-specific global storage, locks and many (but not all) Z functions and other extensions are supported.
-* A CLI (`m2py`) transpiles individual files or entire directory trees to Python, with automatic ruff lint-fixing and formatting.
+* A CLI (`m2py`) with `transpile` and `globals` subcommands transpiles files or directory trees to Python (with automatic ruff lint-fixing and formatting) and imports/exports ZWR global data.
 * Upcoming goals: VistA-VEHU functional tests (M-unit, RPC, roll-and-scroll) - check correctness with a large application.
 
 ## Installation
@@ -33,17 +33,26 @@ uv add intersystems-irispython --optional backend
 
 ### Transpile MUMPS to Python (CLI)
 
-The `m2py` command transpiles `.m` files or directories to Python:
+The `m2py` command provides subcommands for transpilation and global data management:
 
 ```bash
 # Transpile a single file (writes HELLO.py alongside HELLO.m)
-m2py HELLO.m
+m2py transpile HELLO.m
 
 # Transpile a directory tree (mirrors structure in output dir)
-m2py VistA-VEHU-M/ -o output/
+m2py transpile VistA-VEHU-M/ -o output/
 
 # Verbose progress, skip ruff formatting
-m2py src/ -v --no-format
+m2py transpile src/ -v --no-format
+
+# Import ZWR global data
+m2py globals import globals.zwr
+
+# Export globals to ZWR
+m2py globals export out.zwr --globals '^DD,^DIC'
+
+# Show all available commands
+m2py --help
 ```
 
 Generated Python files are automatically lint-fixed, formatted by ruff and meet basic PyRight type checking. Use `--no-format` to skip formatting fixes.

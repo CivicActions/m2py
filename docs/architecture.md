@@ -140,12 +140,13 @@ Canonical implementations of MUMPS semantics shared identically by both compile-
 
 ### `cli/` — Command-Line Interface
 
-The `m2py` CLI transpiles `.m` files and directories to Python. Entry point: `m2py.cli:main` (registered as `m2py` in `[project.scripts]`).
+The `m2py` CLI provides subcommands for transpilation and global data management. Built with [click](https://click.palletsprojects.com/). Entry point: `m2py.cli:main` (registered as `m2py` in `[project.scripts]`).
 
 | Module | Responsibility |
 |--------|----------------|
-| `__init__.py` | Argument parsing (`argparse`), summary output, exit codes |
+| `__init__.py` | Click group (`cli`), `transpile` subcommand, `main()` entry point |
 | `transpile.py` | Transpilation pipeline: `generate_python` → `ruff check --fix` → `ruff format` → write. Parallel batch transpilation via `ProcessPoolExecutor`. Result/summary dataclasses. |
+| `globals.py` | `globals import` / `globals export` subcommands for ZWR global data |
 
 ## Design Decisions
 
