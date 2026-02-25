@@ -18,7 +18,7 @@ class MUnitTestItem(pytest.Item):
         name: str,                      # e.g. "test_munit_utt1" 
         parent: pytest.Collector,
         config: TestRoutineConfig,       # Routine configuration
-        baseline: MUnitResult | None,    # VEHU baseline result (if available)
+        baseline: MUnitResult | None,    # osehravista baseline result (if available)
     ): ...
 
     def runtest(self) -> None:
@@ -80,8 +80,8 @@ def pytest_collect_file(parent, file_path):
 
 @pytest.fixture(scope="session")
 def munit_baseline():
-    """Load committed VEHU baseline from baselines/vehu-baseline.json."""
-    baseline_path = Path(__file__).parents[3] / "baselines" / "vehu-baseline.json"
+    """Load committed osehravista baseline from baselines/osehravista-baseline.json."""
+    baseline_path = Path(__file__).parents[3] / "baselines" / "osehravista-baseline.json"
     if baseline_path.exists():
         return BaselineData.from_json(baseline_path)
     return None
@@ -112,8 +112,8 @@ def runtest(self):
     if self.baseline:
         baseline_result = self.baseline.packages[self.config.package_name].routines[self.config.routine_name]
         if baseline_result.status in ("fail", "error"):
-            # VEHU itself fails this test — mark as xfail
-            pytest.xfail(f"Baseline failure on VEHU: {baseline_result.failures} failures, {baseline_result.errors} errors")
+            # osehravista itself fails this test — mark as xfail
+            pytest.xfail(f"Baseline failure on osehravista: {baseline_result.failures} failures, {baseline_result.errors} errors")
 
     if parsed.status == "error":
         raise MUnitExecutionError(parsed.error_message, parsed.raw_output)

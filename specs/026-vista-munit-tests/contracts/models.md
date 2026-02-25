@@ -58,7 +58,7 @@ class PackageBaseline:
 class BaselineData:
     version: str = "1.0"
     captured_at: str = ""
-    vehu_image: str = ""
+    docker_image: str = ""  # e.g., "worldvista/osehravista"
     packages: dict[str, PackageBaseline] = field(default_factory=dict)
 
     def to_json(self, path: Path) -> None:

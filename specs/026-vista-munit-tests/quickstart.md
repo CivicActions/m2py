@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- Docker (for VEHU container)
+- Docker (for osehravista container)
 - uv (Python package manager)
 - m2py workspace at `/workspaces/m2py/`
 
@@ -23,27 +23,27 @@ cd vista-test
 uv sync
 ```
 
-## Phase 0a: Capture VEHU Baseline
+## Phase 0a: Capture osehravista Baseline
 
 ```bash
-# 1. Start VEHU Docker container
-docker pull worldvista/vehu
-docker run -d --name vehu -p 2222:22 -p 9430:9430 worldvista/vehu
+# 1. Start osehravista Docker container
+docker pull worldvista/osehravista
+docker run -d --name osehravista -p 2222:22 -p 9430:9430 worldvista/osehravista
 
-# 2. Wait for VEHU to initialize (~30 seconds)
+# 2. Wait for osehravista to initialize (~30 seconds)
 sleep 30
 
 # 3. Run baseline capture (all packages)
 cd /workspaces/m2py/vista-test
-uv run python -m vista_test.munit.baseline --output baselines/vehu-baseline.json
+uv run python -m vista_test.munit.baseline --output baselines/osehravista-baseline.json
 
 # 4. Run baseline for specific tier
-uv run python -m vista_test.munit.baseline --tier 1 --output baselines/vehu-baseline.json
+uv run python -m vista_test.munit.baseline --tier 1 --output baselines/osehravista-baseline.json
 
 # 5. Inspect results
 uv run python -c "
 import json
-with open('baselines/vehu-baseline.json') as f:
+with open('baselines/osehravista-baseline.json') as f:
     data = json.load(f)
 for pkg, info in data['packages'].items():
     total = len(info['routines'])
@@ -100,12 +100,12 @@ vista-test/
 ├── src/vista_test/munit/       # M-Unit support modules
 │   ├── models.py               # Data classes
 │   ├── parser.py               # Output parser
-│   ├── baseline.py             # VEHU baseline runner
+│   ├── baseline.py             # osehravista baseline runner
 │   └── adapter.py              # pytest adapter
 ├── tests/
 │   ├── unit/                   # Unit tests for parser, models
 │   └── vista/munit/            # M-Unit pytest tests + conftest
-├── baselines/                  # Committed VEHU baseline JSON
+├── baselines/                  # Committed osehravista baseline JSON
 └── VistA/                      # Submodule (read-only)
 
 src/m2py/                       # Transpiler (fixes go here)

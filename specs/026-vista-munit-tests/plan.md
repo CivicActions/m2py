@@ -5,7 +5,7 @@
 
 ## Summary
 
-Build a pytest-integrated M-Unit test pipeline that: (1) captures VEHU Docker baseline results for 38 M-Unit test routines (~1,204 assertions) across 5 VistA packages via SSH, (2) parses M-Unit framework output into structured data, and (3) transpiles+executes the same tests in Python via m2py, comparing results to baseline. Minimum viable scope: Tier 1 (M-Unit self-tests, 8 routines) and Tier 2 (M XML Parser, 4 routines). Stretch goal: 100% of M-Unit tests passing across all 5 packages — VA FileMan (Tier 3), Problem List, Scheduling, and Registration (Tier 4). Tests that fail on VEHU are `xfail` in pytest. m2py transpilation/runtime bugs discovered during this work are fixed in the m2py root with standalone unit tests.
+Build a pytest-integrated M-Unit test pipeline that: (1) captures osehravista Docker baseline results for 38 M-Unit test routines (~1,204 assertions) across 6 VistA packages via SSH, (2) parses M-Unit framework output into structured data, and (3) transpiles+executes the same tests in Python via m2py, comparing results to baseline. Minimum viable scope: Tier 1 (M-Unit self-tests, 8 routines) and Tier 2 (M XML Parser, 4 routines). Stretch goal: 100% of M-Unit tests passing across all 6 packages — VA FileMan (Tier 3), Problem List, Scheduling, and Registration (Tier 4). Tests that fail on osehravista are `xfail` in pytest. m2py transpilation/runtime bugs discovered during this work are fixed in the m2py root with standalone unit tests.
 
 ## Technical Context
 
@@ -16,8 +16,8 @@ Build a pytest-integrated M-Unit test pipeline that: (1) captures VEHU Docker ba
 **Target Platform**: Linux (dev container)  
 **Project Type**: Dual-repo (m2py root + vista-test subdirectory)  
 **Performance Goals**: Each routine transpile+execute < 30s; full suite < 15 minutes  
-**Constraints**: VEHU Docker must be running for baseline capture only; transpiled tests run offline  
-**Scale/Scope**: 12 routines (MVP), 38 routines (full), ~1,204 assertions across 5 VistA packages
+**Constraints**: osehravista Docker must be running for baseline capture only; transpiled tests run offline  
+**Scale/Scope**: 12 routines (MVP), 38 routines (full), ~1,204 assertions across 6 VistA packages
 
 ## Constitution Check
 
@@ -25,8 +25,8 @@ Build a pytest-integrated M-Unit test pipeline that: (1) captures VEHU Docker ba
 
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| I. Semantic Correctness First | ✅ PASS | Core goal: transpiled tests must match VEHU behavior exactly |
-| II. YDB as Reference | ✅ PASS | VEHU (which runs on Cache) is baseline; m2py returns 47 for GETSYS so GT.M paths taken — acceptable since we compare output not implementation |
+| I. Semantic Correctness First | ✅ PASS | Core goal: transpiled tests must match osehravista behavior exactly |
+| II. YDB as Reference | ✅ PASS | osehravista (which runs on GT.M/YDB) is baseline; m2py returns 47 for GETSYS so GT.M paths taken — consistent since osehravista also uses GT.M |
 | III. Strict Layer Separation | ✅ PASS | No codegen changes — only runtime fixes and test infrastructure |
 | IV. Explicit Over Implicit | ✅ PASS | All M-Unit behavior made explicit through structured parser |
 | V. Foundational Correctness | ✅ PASS | Tests validate existing foundational infrastructure |
@@ -49,8 +49,9 @@ specs/026-vista-munit-tests/
 ├── contracts/           # Phase 1 output — module interface specifications
 │   ├── models.md        # Data classes contract
 │   ├── munit-parser.md  # Parser contract
-│   ├── baseline-runner.md  # VEHU baseline runner contract
-│   └── pytest-adapter.md   # pytest M-Unit adapter contract
+│   ├── baseline-runner.md  # osehravista baseline runner contract
+│   ├── pytest-adapter.md   # pytest M-Unit adapter contract
+│   └── zwr.md              # ZWR import/export contract (replaces global-bootstrap.md)
 └── tasks.md             # Phase 2 output (created by /speckit.tasks)
 ```
 
@@ -64,7 +65,7 @@ vista-test/
 │       ├── __init__.py
 │       ├── models.py           # Data classes (MUnitResult, BaselineData, etc.)
 │       ├── parser.py           # M-Unit output parser
-│       ├── baseline.py         # VEHU baseline runner (SSH + M-Unit execution)
+│       ├── baseline.py         # osehravista baseline runner (SSH + M-Unit execution)
 │       └── adapter.py          # Transpile + execute + compare logic
 ├── tests/
 │   ├── unit/
@@ -73,8 +74,8 @@ vista-test/
 │   └── vista/
 │       └── munit/                  # NEW: M-Unit pytest plugin + tests
 │           └── conftest.py         # pytest discovery, fixtures, xfail logic
-├── baselines/                      # NEW: Committed VEHU baseline JSON
-│   └── vehu-baseline.json
+├── baselines/                      # NEW: Committed osehravista baseline JSON
+│   └── osehravista-baseline.json
 ├── VistA/                          # Submodule (read-only)
 │   └── Packages/*/Testing/MUnit/   # TestList files + .m test sources
 └── pyproject.toml                  # Add m2py path dependency
@@ -106,7 +107,7 @@ Build the core infrastructure shared by all tiers: data models, parser, baseline
 | A2 | `vista-test/src/vista_test/munit/parser.py` | M-Unit output parser: summary, failure, error extraction | A1 |
 | A3 | `vista-test/tests/unit/test_munit_parser.py` | Parser unit tests: pass, fail (CHKTF+CHKEQ), error, empty, partial | A2 |
 | A4 | `vista-test/tests/unit/test_munit_models.py` | Model serialization round-trip tests (to_dict/from_dict/JSON) | A1 |
-| A5 | `vista-test/src/vista_test/munit/baseline.py` | Baseline runner: SSH to VEHU, import routines, execute, parse, serialize | A1, A2 |
+| A5 | `vista-test/src/vista_test/munit/baseline.py` | Baseline runner: SSH to osehravista, import routines, execute, parse, serialize | A1, A2 |
 | A6 | `vista-test/pyproject.toml` | Add m2py path dependency (`m2py = {path = ".."}`) | — |
 | A7 | `vista-test/src/vista_test/munit/adapter.py` | Transpile+execute engine: `transpile_and_execute()`, `MUnitTestItem`, `MUnitCollector` | A1, A2, A6 |
 | A8 | `vista-test/tests/vista/munit/conftest.py` | pytest plugin: TestList discovery, baseline loading, xfail logic, session fixtures | A5, A7 |
@@ -117,12 +118,12 @@ Validate the M-Unit framework itself transpiles and runs correctly.
 
 | Step | Description | Depends On |
 |------|-------------|------------|
-| B1 | Capture VEHU baseline for `%utt1`–`%utt7`, `%uttcovr` | A5 |
+| B1 | Capture osehravista baseline for `%utt1`–`%utt7`, `%uttcovr` | A5 |
 | B2 | Transpile `%ut` + `%ut1` (M-Unit framework) — fix m2py issues as encountered | A6 |
 | B3 | Transpile `%utt1`–`%utt7`, `%uttcovr` — fix m2py issues as encountered | B2 |
 | B4 | Run transpiled self-tests, compare to baseline, iterate on m2py fixes | B1, B3 |
 | B5 | Add standalone m2py unit tests for each transpilation/runtime fix (no VistA deps) | B4 |
-| B6 | Commit baseline JSON to `vista-test/baselines/vehu-baseline.json` | B1 |
+| B6 | Commit baseline JSON to `vista-test/baselines/osehravista-baseline.json` | B1 |
 
 **Key risks**: `$ETRAP` (error trapping), `DO @var` (indirection), `$TEXT` (source introspection) must work. These are foundational M-Unit mechanisms.
 
@@ -132,7 +133,7 @@ Validate XML parse/build/template/XPath functionality.
 
 | Step | Description | Depends On |
 |------|-------------|------------|
-| C1 | Capture VEHU baseline for MXMLBLD, MXMLDOMT, MXMLPATT, MXMLTMPT | A5 |
+| C1 | Capture osehravista baseline for MXMLBLD, MXMLDOMT, MXMLPATT, MXMLTMPT | A5 |
 | C2 | Transpile XML parser routines: MXMLDOM, MXMLPRSE, MXMLUTL, MXMLPATH, MXMLTMP1, MXMLTMPL, MXMLBLD | A6 |
 | C3 | Start with MXMLBLD (lowest risk: 13 assertions, deps = MXMLUTL + MXMLTMP1) | C2 |
 | C4 | MXMLTMPT (49 assertions, template engine; needs `DT^DICRW` — may need stub) | C2 |
@@ -149,8 +150,8 @@ Validate date/time, dictionary lookup, computed field operations.
 
 | Step | Description | Depends On |
 |------|-------------|------------|
-| D1 | Build global bootstrap tool: `GlobalBootstrap` class for VEHU export | A5 |
-| D2 | Export FileMan globals from VEHU: `^DD`, `^DIC`, `^%ZOSF` | D1 |
+| D1 | Build ZWR import/export functions in `src/m2py/runtime/zwr.py`: `parse_zwr_line`, `import_zwr`, `export_zwr` | A5 |
+| D2 | Export FileMan globals from osehravista: `^DD`, `^DIC`, `^%ZOSF` | D1 |
 | D3 | Import globals into m2py `MDict` store; pytest fixture for FileMan bootstrap | D2 |
 | D4 | Transpile Kernel utilities: `%DT`, `%DTC`, `%ZISH`, `%ZOSF`, `DICRW` | A6 |
 | D5 | Start with ZZUTDIDT (simplest: 3 assertions, only needs `%DT`) | D3, D4 |
@@ -159,7 +160,7 @@ Validate date/time, dictionary lookup, computed field operations.
 | D8 | DMUDT000 (58 assertions, needs `%DT`, `%ZISH`, `%ZOSF`) | D4 |
 | D9 | DMUDTC00 (92 assertions, date/time calculations, `%ZISH`) | D4 |
 | D10 | DMUDIQ00 (7 assertions, `DIQ`, `^DD`, `^DIC`) | D3, D4 |
-| D11 | Capture VEHU baseline for all 5 FileMan routines; update baseline JSON | A5 |
+| D11 | Capture osehravista baseline for all 5 FileMan routines; update baseline JSON | A5 |
 | D12 | Fix m2py issues; add standalone unit tests per fix | D5–D10 |
 
 **Prerequisites**: Global bootstrap infrastructure (~50-100 MB for `^DD`). `%ZISH` transpilation (file system operations). `%ZOSF` transpilation (MUMPS entry point loader).
@@ -184,7 +185,7 @@ Validate Problem List API: create, modify, delete, query problems.
 | E10 | ZZRGUT1 (87 assertions, GMPLAPI1+6) | E1, E2 |
 | E11 | ZZRGUT3 (60 assertions, GMPLAPI1+5+6) | E1, E2 |
 | E12 | ZZRGUTEX (29 assertions, **widest deps** — 6+ cross-package references) | E1, E2, D4 |
-| E13 | Capture VEHU baseline for all 8 Problem List routines | A5 |
+| E13 | Capture osehravista baseline for all 8 Problem List routines | A5 |
 | E14 | Fix m2py issues; add standalone unit tests per fix | E5–E12 |
 
 **Prerequisites**: All Tier 3 prerequisites plus Problem List API routines and clinical globals. `ZZRGUTEX` has the broadest dependency surface in the entire test suite.
@@ -215,7 +216,7 @@ Validate Scheduling APIs: appointments, patient lists, scheduling actions.
 | F6d | ZZRGUSD3 (81 assertions, SDCAPI1, SDMAPI1–4) | F1, F3, F4 |
 | F6e | ZZRGUSD5 (82 assertions, DGSAAPI, SDMAPI1–4, many globals) | F1, F3, F4 |
 | F6f | ZZRGUSD1 (103 assertions, largest scheduling test) | F1, F3, F4 |
-| F7 | Capture VEHU baseline for all 12 Scheduling routines | A5 |
+| F7 | Capture osehravista baseline for all 12 Scheduling routines | A5 |
 | F8 | Fix m2py issues; add standalone unit tests per fix | F5–F6 |
 
 **Prerequisites**: Patient and clinic data bootstrap. Scheduling API routines (~10). Test commons transpilation.
@@ -231,7 +232,7 @@ Validate patient combine/registration operations.
 | G1 | Export Registration globals: `^DG*` | D1 |
 | G2 | Transpile `DGPTCO1` (patient combine API) | A6 |
 | G3 | ZZDGPTCO1 (10 assertions, DGPTCO1, DICRW) | G1, G2, D4 |
-| G4 | Capture VEHU baseline | A5 |
+| G4 | Capture osehravista baseline | A5 |
 | G5 | Fix m2py issues; add standalone unit tests per fix | G3 |
 
 **Prerequisites**: Patient data in `^DPT`, FileMan (`DICRW`), `^DG*` globals. Can share bootstrap with Tier 4b since both need `^DPT`.
@@ -269,6 +270,8 @@ Phase A (Foundation) ───────────────────�
 | Phase E complete | 25 | ~647 | 25 / 38 (66%) | Problem List API validated |
 | Phase F complete | 37 | ~1,194 | 37 / 38 (97%) | Scheduling validated |
 | Phase G complete | 38 | ~1,204 | 38 / 38 (100%) | **All M-Unit tests passing** |
+
+*Note: Assertion counts are estimates from plan research. Actual captured baseline (osehravista-baseline.json) shows ~640 assertions across all 38 routines, because many routines exit with errors or produce 0 counted assertions. The ~1,204 figure represents the theoretical maximum if all routines ran to completion.*
 
 ## Stretch Goal: m2py Issues Tracking
 
