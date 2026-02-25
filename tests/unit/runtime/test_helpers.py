@@ -758,6 +758,47 @@ class TestMData:
         assert m_data("") == 1
         assert m_data("", ()) == 1
 
+    def test_non_marray_zero_no_subscripts(self):
+        """Numeric zero (falsy in Python) without subscripts returns 1.
+
+        Zero is a valid MUMPS value and must not be confused with undefined.
+        """
+        assert m_data(0) == 1
+        assert m_data(0, ()) == 1
+
+    def test_non_marray_zero_with_subscripts(self):
+        """Numeric zero with subscripts returns 0 (scalars have no children)."""
+        assert m_data(0, ("1",)) == 0
+
+    def test_non_marray_float_no_subscripts(self):
+        """Float value without subscripts returns 1."""
+        assert m_data(3.14) == 1
+        assert m_data(3.14, ()) == 1
+
+    def test_non_marray_float_with_subscripts(self):
+        """Float value with subscripts returns 0."""
+        assert m_data(3.14, ("1",)) == 0
+
+    def test_non_marray_boolean_true(self):
+        """Boolean True without subscripts returns 1 (truthy scalar)."""
+        assert m_data(True) == 1
+
+    def test_non_marray_boolean_false(self):
+        """Boolean False without subscripts returns 1 (still a defined value).
+
+        False is falsy but still a defined value, like 0 in MUMPS.
+        """
+        assert m_data(False) == 1
+
+    def test_non_marray_negative_number(self):
+        """Negative number without subscripts returns 1."""
+        assert m_data(-99) == 1
+        assert m_data(-99, ()) == 1
+
+    def test_non_marray_negative_with_subscripts(self):
+        """Negative number with subscripts returns 0."""
+        assert m_data(-99, ("1",)) == 0
+
     """Tests for subscript type coercion in m_order."""
 
     def test_string_key_matches_int_subscript(self):

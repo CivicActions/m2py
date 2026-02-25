@@ -433,6 +433,51 @@ class TestImportExport:
         assert "hello" in val
         assert "world" in val
 
+    def test_import_non_utf8_multiple_lines(self, tmp_path: Path):
+        """import_zwr handles multiple lines with non-UTF-8 bytes.
+
+        Ensures errors='replace' doesn't stop after first bad byte — all
+        lines are imported, with replacement characters where needed.
+        """
+        zwr_file = tmp_path / "multi_bad.zwr"
+        zwr_file.write_bytes(
+            b'^G(1)="line\x80one"\n^G(2)="normal"\n^G(3)="line\xff\xfethree"\n'
+        )
+        backend = self._make_backend()
+        count = import_zwr(backend, zwr_file)
+        assert count == 3
+        assert "normal" == backend.get("G", ("2",))
+        # Bad bytes replaced, but surrounding text preserved
+        val1 = backend.get("G", ("1",))
+        assert "line" in val1 and "one" in val1
+        val3 = backend.get("G", ("3",))
+        assert "line" in val3 and "three" in val3
+
+    def test_import_non_utf8_in_subscript_area(self, tmp_path: Path):
+        """import_zwr handles non-UTF-8 bytes in the subscript portion.
+
+        The bad bytes might appear anywhere in the line, not just values.
+        """
+        zwr_file = tmp_path / "bad_sub.zwr"
+        # 0xfe byte in a subscript value area
+        zwr_file.write_bytes(b'^G("a\xfeb")="ok"\n')
+        backend = self._make_backend()
+        count = import_zwr(backend, zwr_file)
+        assert count == 1
+
+    def test_import_stream_not_affected_by_errors_replace(self):
+        """import_zwr from stream (StringIO) still works normally.
+
+        The errors='replace' is only applied to Path-based file opens.
+        StringIO sources should work unchanged.
+        """
+        stream = io.StringIO('^G(1)="hello"\n^G(2)="world"\n')
+        backend = self._make_backend()
+        count = import_zwr(backend, stream)
+        assert count == 2
+        assert backend.get("G", ("1",)) == "hello"
+        assert backend.get("G", ("2",)) == "world"
+
 
 # =============================================================================
 # Real VistA ZWR snippets (T055)
