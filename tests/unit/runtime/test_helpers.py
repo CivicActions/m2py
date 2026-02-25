@@ -728,8 +728,36 @@ class TestMData:
         arr[1][2].value = "deep"
         assert m_data(arr, ("3", "4")) == 0
 
+    def test_non_marray_scalar_no_subscripts(self):
+        """A plain string (non-MArray) without subscripts returns 1.
 
-class TestMOrderSubscriptCoercion:
+        Defense-in-depth: if scope sync passes a scalar string instead
+        of an MArray, $DATA should still return 1 (value exists).
+        """
+        assert m_data("hello") == 1
+        assert m_data("hello", ()) == 1
+
+    def test_non_marray_scalar_with_subscripts(self):
+        """A plain string with subscripts returns 0.
+
+        A scalar can't have children, so $DATA with subscripts returns 0.
+        """
+        assert m_data("hello", ("1",)) == 0
+        assert m_data("hello", ("1", "2")) == 0
+
+    def test_non_marray_numeric_no_subscripts(self):
+        """A numeric value without subscripts returns 1."""
+        assert m_data(42) == 1
+        assert m_data(42, ()) == 1
+
+    def test_non_marray_empty_string(self):
+        """An empty string without subscripts returns 1 (value exists).
+
+        In MUMPS, "" is a valid value — $DATA returns 1.
+        """
+        assert m_data("") == 1
+        assert m_data("", ()) == 1
+
     """Tests for subscript type coercion in m_order."""
 
     def test_string_key_matches_int_subscript(self):

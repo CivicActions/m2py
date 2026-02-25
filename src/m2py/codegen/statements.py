@@ -199,6 +199,47 @@ def emit_scope_to_state_sync(ctx: "GeneratorContext") -> None:
             ctx.emitter.line("state._locals[_k] = _m")
 
 
+def emit_scope_var_to_state(
+    ctx: "GeneratorContext",
+    var_name: str,
+    py_name: str,
+    *,
+    scope_key: str | None = None,
+) -> None:
+    """Emit scope→state sync for a single static-field variable.
+
+    For **array** variables (those in ``ctx.array_vars``), the scope value
+    is assigned directly — preserving the full MArray with its subscripts.
+    For **simple** variables, ``.value`` is extracted from MArray containers
+    so that ``state.X`` remains a plain Python scalar.
+
+    This fixes a bug where array variables like ``IO`` (which carry
+    subscripts such as ``IO(0)``) were flattened to plain strings when
+    synced back from ``_scope`` after a DO call, causing subsequent
+    ``$DATA(IO(0))`` calls to crash with ``'str' has no '_children'``.
+
+    Args:
+        ctx: Current generator context with emitter.
+        var_name: Original MUMPS variable name (used for array_vars lookup).
+        py_name: Python-translated variable name (used for state attribute).
+        scope_key: Key used to look up the variable in ``_scope``.
+            Defaults to *py_name*.
+    """
+    key = scope_key or py_name
+    ctx.emitter.line(f"if {key!r} in _scope:")
+    with ctx.emitter.indented():
+        if var_name in ctx.array_vars:
+            # Array vars: preserve MArray from scope directly (keeps subscripts)
+            ctx.emitter.line(f"state.{py_name} = _scope[{key!r}]")
+        else:
+            # Simple vars: extract .value from MArray, use plain value otherwise
+            ctx.emitter.line(
+                f"state.{py_name} = _scope[{key!r}].value "
+                f"if isinstance(_scope.get({key!r}), MArray) "
+                f"else _scope[{key!r}]"
+            )
+
+
 def _emit_goto_external_handler(ctx: "GeneratorContext") -> None:
     """Emit the body of a standard ``except GotoExternal`` handler.
 
@@ -4777,11 +4818,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         ):
             for var_name in sorted(ctx.state_vars):
                 py_name = translate_name(var_name)
-                ctx.emitter.line(f"if {py_name!r} in _scope:")
-                with ctx.emitter.indented():
-                    ctx.emitter.line(
-                        f"state.{py_name} = _scope[{py_name!r}].value if isinstance(_scope.get({py_name!r}), MArray) else _scope[{py_name!r}]"
-                    )
+                emit_scope_var_to_state(ctx, var_name, py_name)
         # For TRAMPOLINE with dynamic_locals, sync _scope back to state._locals
         # Wrap plain values in MArray when syncing back (callee may use static state)
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:

@@ -407,6 +407,13 @@ def m_data(array: MArray | None, subscripts: tuple[Any, ...] = ()) -> int:
     """
     if array is None:
         return 0
+    # Handle non-MArray values (e.g., plain strings/ints from scope sync).
+    # In MUMPS, $D(var) on a defined scalar = 1; $D(var(sub)) = 0 since
+    # a scalar has no descendants.
+    from m2py.runtime import MArray as _MArray
+
+    if not isinstance(array, _MArray):
+        return 1 if not subscripts else 0
     # Navigate to target node via subscripts
     node = array
     for sub in subscripts:

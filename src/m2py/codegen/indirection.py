@@ -785,7 +785,10 @@ def _emit_scope_to_state_sync(ctx: "GeneratorContext") -> None:
     Uses state._locals for dynamic-locals routines, or syncs individual
     state vars for static-field routines.
     """
-    from m2py.codegen.statements import emit_scope_to_state_sync
+    from m2py.codegen.statements import (
+        emit_scope_to_state_sync,
+        emit_scope_var_to_state,
+    )
 
     if ctx.uses_dynamic_locals:
         emit_scope_to_state_sync(ctx)
@@ -794,11 +797,7 @@ def _emit_scope_to_state_sync(ctx: "GeneratorContext") -> None:
 
         for var_name in sorted(ctx.state_vars):
             py_name = translate_name(var_name)
-            ctx.emitter.line(f"if {var_name!r} in _scope:")
-            with ctx.emitter.indented():
-                ctx.emitter.line(
-                    f"state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
-                )
+            emit_scope_var_to_state(ctx, var_name, py_name, scope_key=var_name)
 
 
 def _emit_goto_external_catch(ctx: "GeneratorContext") -> None:

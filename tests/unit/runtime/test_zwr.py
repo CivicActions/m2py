@@ -415,6 +415,24 @@ class TestImportExport:
         import_zwr(backend, zwr_file)
         assert backend.get("G", ("1",)) == "hello\nworld"
 
+    def test_import_non_utf8_bytes(self, tmp_path: Path):
+        """import_zwr handles files with non-UTF-8 bytes (e.g., 0xa7).
+
+        VistA DD.zwr contains legacy data with bytes that aren't valid
+        UTF-8.  import_zwr should use ``errors='replace'`` so these
+        don't crash the import — the replacement character (U+FFFD) is
+        acceptable for non-standard byte values.
+        """
+        zwr_file = tmp_path / "non_utf8.zwr"
+        # Write raw bytes: a valid ZWR line with a 0xa7 byte in the value
+        zwr_file.write_bytes(b'^G(1)="hello\xa7world"\n')
+        backend = self._make_backend()
+        count = import_zwr(backend, zwr_file)
+        assert count == 1
+        val = backend.get("G", ("1",))
+        assert "hello" in val
+        assert "world" in val
+
 
 # =============================================================================
 # Real VistA ZWR snippets (T055)

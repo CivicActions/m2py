@@ -24,6 +24,7 @@ from m2py.codegen.names import NameTranslator, translate_name
 from m2py.codegen.statements import (
     _emit_goto_external_handler,
     emit_scope_to_state_sync,
+    emit_scope_var_to_state,
     emit_state_to_scope_sync,
     generate_offset_guarded_statements,
     generate_scope_statements,
@@ -1019,12 +1020,7 @@ class RoutineGenerator:
                 if not ctx.uses_dynamic_locals:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
-                        # Check if variable exists in _scope and initialize from it
-                        ctx.emitter.line(f"if {py_name!r} in _scope:")
-                        with ctx.emitter.indented():
-                            ctx.emitter.line(
-                                f"state.{py_name} = _scope[{py_name!r}].value if isinstance(_scope.get({py_name!r}), MArray) else _scope[{py_name!r}]"
-                            )
+                        emit_scope_var_to_state(ctx, var_name, py_name)
                 # Target can be str (label) or int (line number)
                 ctx.emitter.line(f'target: str | int | None = "{entry_label}"')
                 ctx.emitter.blank()
@@ -1090,11 +1086,7 @@ class RoutineGenerator:
                         if not ctx.uses_dynamic_locals:
                             for var_name in sorted(ctx.state_vars):
                                 py_name = translate_name(var_name)
-                                ctx.emitter.line(f"if {py_name!r} in _scope:")
-                                with ctx.emitter.indented():
-                                    ctx.emitter.line(
-                                        f"state.{py_name} = _scope[{py_name!r}].value if isinstance(_scope.get({py_name!r}), MArray) else _scope[{py_name!r}]"
-                                    )
+                                emit_scope_var_to_state(ctx, var_name, py_name)
                         # Continue the trampoline - set target to None to exit
                         # (the GOTO chain has completed, so we're done with this call)
                         ctx.emitter.line("target = None")
@@ -1166,11 +1158,7 @@ class RoutineGenerator:
                 if not ctx.uses_dynamic_locals:
                     for var_name in sorted(ctx.state_vars):
                         py_name = translate_name(var_name)
-                        ctx.emitter.line(f"if {py_name!r} in _scope:")
-                        with ctx.emitter.indented():
-                            ctx.emitter.line(
-                                f"state.{py_name} = _scope[{py_name!r}].value if isinstance(_scope.get({py_name!r}), MArray) else _scope[{py_name!r}]"
-                            )
+                        emit_scope_var_to_state(ctx, var_name, py_name)
 
                 # Wrap entire execution in try/except GotoExternal
                 # This handles GotoExternal from both:
@@ -1239,11 +1227,7 @@ class RoutineGenerator:
                     if not ctx.uses_dynamic_locals:
                         for var_name in sorted(ctx.state_vars):
                             py_name = translate_name(var_name)
-                            ctx.emitter.line(f"if {py_name!r} in _scope:")
-                            with ctx.emitter.indented():
-                                ctx.emitter.line(
-                                    f"state.{py_name} = _scope[{py_name!r}].value if isinstance(_scope.get({py_name!r}), MArray) else _scope[{py_name!r}]"
-                                )
+                            emit_scope_var_to_state(ctx, var_name, py_name)
 
                 # Unwind NEW stack before syncing state back to _scope
                 if ctx.uses_dynamic_locals:

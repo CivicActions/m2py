@@ -380,7 +380,7 @@ def import_zwr(
     count = 0
 
     if isinstance(source, Path):
-        with open(source) as f:
+        with open(source, errors="replace") as f:
             for name, subs, value in parse_zwr_stream(f):
                 # Backend expects name without caret
                 bare_name = name[1:] if name.startswith("^") else name
