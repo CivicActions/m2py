@@ -262,6 +262,12 @@ class MRoutine(ASGElement):
     # The calling routine needs dynamic_locals so its state._locals holds MArrays
     has_byref_calls: bool = False
 
+    # Labels that appear within dot blocks (non-zero dot level).
+    # These are NOT top-level entry points — their statements are merged into
+    # the containing label's body.  Stored here only for $TEXT(LABEL+offset)
+    # support so _label_lines can map their names to line numbers.
+    _dotted_labels: List["MLabel"] = field(default_factory=list, repr=False)
+
     def get_label(self, name: str) -> Optional[MLabel]:
         """Look up label by name.
 

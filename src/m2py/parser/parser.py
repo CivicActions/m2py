@@ -608,8 +608,21 @@ class MUMPSParser:
                 if cls_name == "LabelLine" and hasattr(line, "label") and line.label:
                     label = self._build_label(line, line_number, routine)
                     label.line_number = line_number  # Track source line for $TEXT
-                    routine.add_label(label)
-                    current_label = label
+
+                    # Labels at non-zero dot level (e.g. "ID4 . . S X=1") are
+                    # continuation lines within the containing label's dot block,
+                    # NOT separate entry points. Merge their statements into the
+                    # current label's body so _structure_do_blocks nests them
+                    # correctly within the enclosing FOR/DO.  We still record
+                    # the label in _dotted_labels for $TEXT(LABEL+offset) lookup.
+                    if label._dot_level is not None and current_label is not None:
+                        routine._dotted_labels.append(label)
+                        for stmt in label.body.statements:
+                            stmt.scope = current_label.body
+                            current_label.body.statements.append(stmt)
+                    else:
+                        routine.add_label(label)
+                        current_label = label
 
                 # ContLine - continuation line for current label
                 elif cls_name == "ContLine":

@@ -496,11 +496,16 @@ class RoutineGenerator:
         ctx.emitter.blank()
 
         # _label_lines: Maps label names to 0-indexed line numbers for $TEXT(LABEL+offset)
+        # Include both top-level labels and dotted (inline) labels so $TEXT can
+        # resolve labels that appear within dot blocks.
         label_lines = {
             label.name: label.line_number - 1
             for label in self._routine.labels
             if label.line_number is not None
         }
+        for dlabel in getattr(self._routine, "_dotted_labels", []):
+            if dlabel.line_number is not None:
+                label_lines[dlabel.name] = dlabel.line_number - 1
         ctx.emitter.line(f"_label_lines = {label_lines!r}")
         ctx.emitter.blank()
 
