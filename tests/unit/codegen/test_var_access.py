@@ -17,13 +17,13 @@ from m2py.codegen.var_access import (
 )
 
 
-def _make_ctx(strategy, uses_dynamic_locals=False, state_vars=None):
+def _make_ctx(strategy, uses_dynamic_locals=False, state_vars=None, array_vars=None):
     """Build a minimal mock GeneratorContext."""
     ctx = MagicMock()
     ctx.strategy = strategy
     ctx.uses_dynamic_locals = uses_dynamic_locals
     ctx.state_vars = state_vars or set()
-    ctx.array_vars = state_vars or set()
+    ctx.array_vars = array_vars if array_vars is not None else (state_vars or set())
     return ctx
 
 
@@ -102,10 +102,12 @@ class TestTrampolineStatic:
 
     @pytest.fixture()
     def ctx(self):
+        # X,Y are state vars but NOT array vars (scalar-only)
         return _make_ctx(
             GotoStrategy.TRAMPOLINE,
             uses_dynamic_locals=False,
             state_vars={"X", "Y"},
+            array_vars=set(),
         )
 
     def test_read_simple(self, ctx):
@@ -113,6 +115,21 @@ class TestTrampolineStatic:
 
     def test_write_simple(self, ctx):
         assert var_write_stmt("X", "42", ctx) == "state.X = 42"
+
+    def test_write_array_var_preserves_marray(self):
+        """Array state vars use .value to preserve MArray container.
+
+        Without .value, tuple SET like S (DIC,X)=19 would replace the
+        MArray at state.DIC with a plain string, breaking later
+        subscripted access like S DIC(0)="LX".
+        """
+        ctx = _make_ctx(
+            GotoStrategy.TRAMPOLINE,
+            uses_dynamic_locals=False,
+            state_vars={"DIC"},
+            array_vars={"DIC"},
+        )
+        assert var_write_stmt("DIC", '"19"', ctx) == 'state.DIC.value = "19"'
 
     def test_base(self, ctx):
         # Static vars: state.X is already the MArray

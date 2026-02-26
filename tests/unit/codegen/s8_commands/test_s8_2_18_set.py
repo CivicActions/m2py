@@ -783,6 +783,27 @@ class TestTupleSetEvaluationOrder:
         assert result.output == "5555"
         assert result.success is True
 
+    def test_tuple_set_preserves_array_subscripts_trampoline(self, execute_mumps):
+        """Tuple SET on MArray state var preserves subscripts (TRAMPOLINE regression).
+
+        S DIC(0)="LX" S (DIC,X)=19 W DIC,"|",DIC(0) → "19|LX"
+
+        When a variable (DIC) is both a state var (flows between labels)
+        and an array var (has subscripted access), tuple SET must assign
+        to state.DIC.value, NOT replace state.DIC with a plain string.
+        Otherwise, later subscripted access like DIC(0) would fail with
+        TypeError: 'str' object does not support item assignment.
+
+        The cross-label GOTO forces TRAMPOLINE strategy; DIC flows from
+        NP → DONE so it lands in state_vars AND array_vars.
+
+        YDB verified: output is "19|LX"
+        """
+        source = 'TEST\n G NP\nDONE\n W DIC,"|",DIC(0)\n Q\nNP\n K DIC S DIC(0)="LX"\n S (DIC,DLAYGO)=19\n G DONE\n'
+        result = execute_mumps(source)
+        assert result.output == "19|LX"
+        assert result.success is True
+
 
 @pytest.mark.codegen
 class TestTupleSetWithNakedGlobals:
