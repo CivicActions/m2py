@@ -899,6 +899,138 @@ NEXT
 
 
 @pytest.mark.codegen
+class TestCrossLabelGotoPostcondition:
+    """Tests for cross-label GOTO with postconditions.
+
+    Single-target cross-label GOTOs must honor postconditions.
+    When the postcondition is false, the GOTO should not execute
+    and control should fall through to the next label.
+    """
+
+    def test_cross_label_goto_with_true_postcondition(self, runtime):
+        """Cross-label GOTO fires when postcondition is true.
+
+        MUMPS: TEST S X=1 G DONE:X=1 / SKIP W "skip" Q / DONE W "done" Q
+        Expected: "done" (postcondition X=1 is true, so GOTO fires)
+        """
+        source = """TEST S X=1 G DONE:X=1
+SKIP W "skip" Q
+DONE W "done" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "done"
+
+    def test_cross_label_goto_with_false_postcondition(self, runtime):
+        """Cross-label GOTO does NOT fire when postcondition is false.
+
+        MUMPS: TEST S X=0 G DONE:X=1 / SKIP W "skip" Q / DONE W "done" Q
+        Expected: "skip" (postcondition X=1 is false, fall through to SKIP)
+        """
+        source = """TEST S X=0 G DONE:X=1
+SKIP W "skip" Q
+DONE W "done" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "skip"
+
+    def test_cross_label_goto_pattern_match_postcondition(self, runtime):
+        """Cross-label GOTO with pattern match postcondition.
+
+        MUMPS: TEST S X=123 G DONE:X?3N / SKIP W "skip" Q / DONE W "done" Q
+        Expected: "done" (X=123 matches 3 numeric chars)
+        """
+        source = """TEST S X=123 G DONE:X?3N
+SKIP W "skip" Q
+DONE W "done" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "done"
+
+    def test_cross_label_goto_negated_pattern_match_false(self, runtime):
+        """Cross-label GOTO with NOT pattern match — condition false.
+
+        MUMPS: TEST S X=123 G ERR:X'?3N / OK W "ok" Q / ERR W "err" Q
+        The condition X'?3N is false because X=123 IS 3 numeric chars.
+        Expected: "ok" (fall through since NOT match is false)
+        """
+        source = """TEST S X=123 G ERR:X'?3N
+OK W "ok" Q
+ERR W "err" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "ok"
+
+    def test_cross_label_goto_negated_pattern_match_true(self, runtime):
+        """Cross-label GOTO with NOT pattern match — condition true.
+
+        MUMPS: TEST S X="AB" G ERR:X'?3N / OK W "ok" Q / ERR W "err" Q
+        The condition X'?3N is true because "AB" is NOT 3 numeric chars.
+        Expected: "err" (GOTO fires since NOT match is true)
+        """
+        source = """TEST S X="AB" G ERR:X'?3N
+OK W "ok" Q
+ERR W "err" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "err"
+
+    def test_cross_label_goto_postcondition_with_set_on_same_line(self, runtime):
+        """SET followed by postconditioned cross-label GOTO on same line.
+
+        This mirrors %DT line 82: S %I(3)=%I(3)-1700 G 1:%I(3)'?3N
+        Tests that the SET executes AND the postcondition is evaluated.
+
+        MUMPS: TEST / SET S X=2010 S X=X-1700 G ERR:X'?3N / OK W X Q / ERR W -1 Q
+        X=2010-1700=310. 310?3N is true (3 numeric chars), so X'?3N is false.
+        Expected: "310" (fall through to OK)
+        """
+        source = """TEST
+SET S X=2010 S X=X-1700 G ERR:X'?3N
+OK W X Q
+ERR W -1 Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "310"
+
+    def test_cross_label_goto_postcondition_with_subscript(self, runtime):
+        """Cross-label GOTO with subscripted variable in postcondition.
+
+        MUMPS: TEST S A(3)=310 G ERR:A(3)'?3N / OK W A(3) Q / ERR W -1 Q
+        A(3)=310 matches 3N, so A(3)'?3N is false, fall through.
+        Expected: "310"
+        """
+        source = """TEST S A(3)=310 G ERR:A(3)'?3N
+OK W A(3) Q
+ERR W -1 Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "310"
+
+    def test_codegen_includes_postcondition_in_trampoline_return(self):
+        """Verify generated code contains 'if m_truth' before cross-label return.
+
+        The postconditioned GOTO should generate:
+            if m_truth(<condition>):
+                return ("label", state)
+        NOT just:
+            return ("label", state)
+        """
+        source = """TEST S X=1 G DONE:X=1
+SKIP W "skip" Q
+DONE W "done" Q"""
+        code = generate_python(source)
+        # The GOTO DONE:X=1 should produce a conditional return
+        # Find the return for DONE — it should be inside an if m_truth block
+        lines = code.splitlines()
+        for i, line in enumerate(lines):
+            if 'return ("DONE", state)' in line:
+                # Check that the preceding non-blank line is an if statement
+                for j in range(i - 1, max(0, i - 5), -1):
+                    if lines[j].strip():
+                        assert "if m_truth" in lines[j], (
+                            f"Expected 'if m_truth' before DONE return, got: {lines[j]!r}"
+                        )
+                        break
+                break
+        else:
+            # Also check for DONE in case it's a different format
+            assert 'return ("DONE"' in code, "DONE return not found in generated code"
+
+
+@pytest.mark.codegen
 class TestInputOnlyVarsCodegen:
     """Tests for input_only_vars handling in TRAMPOLINE code generation.
 

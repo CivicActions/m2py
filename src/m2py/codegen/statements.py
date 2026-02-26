@@ -3777,11 +3777,23 @@ def _generate_single_target_goto(
                         '+ str(_offset_val) + " not valid")'
                     )
                 ctx.emitter.line("_target = _next")
-            ctx.emitter.line("return (_target, state)")
+            if target.postcondition is not None:
+                cond_expr = generate_expr(target.postcondition, ctx)
+                ctx.emitter.line(f"if m_truth({cond_expr}):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("return (_target, state)")
+            else:
+                ctx.emitter.line("return (_target, state)")
         else:
             # Trampoline pattern: return (label_name, state) tuple
             # The trampoline dispatcher will call the target label
-            ctx.emitter.line(f'return ("{target.name}", state)')
+            if target.postcondition is not None:
+                cond_expr = generate_expr(target.postcondition, ctx)
+                ctx.emitter.line(f"if m_truth({cond_expr}):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(f'return ("{target.name}", state)')
+            else:
+                ctx.emitter.line(f'return ("{target.name}", state)')
     else:
         # SIMPLE_FUNCTIONS pattern: function call + exit
         # Get the label name and translate it
@@ -3798,13 +3810,23 @@ def _generate_single_target_goto(
         # Generate: label(_rt, _scope=_scope); exit_statement
         # Pass _rt and _scope so XECUTE inline GOTO works correctly
         # Use _globals[] lookup to avoid parameter shadowing label names
-        ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
-        # Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
-        # Outside inline XECUTE, return exits the entire function
-        if ctx.in_inline_xecute:
-            ctx.emitter.line("raise _XecuteExit()")
+        if target.postcondition is not None:
+            cond_expr = generate_expr(target.postcondition, ctx)
+            ctx.emitter.line(f"if m_truth({cond_expr}):")
+            with ctx.emitter.indented():
+                ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
+                if ctx.in_inline_xecute:
+                    ctx.emitter.line("raise _XecuteExit()")
+                else:
+                    ctx.emitter.line("return")
         else:
-            ctx.emitter.line("return")
+            ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
+            # Inside inline XECUTE, raise _XecuteExit to exit just the XECUTE block
+            # Outside inline XECUTE, return exits the entire function
+            if ctx.in_inline_xecute:
+                ctx.emitter.line("raise _XecuteExit()")
+            else:
+                ctx.emitter.line("return")
 
 
 def _generate_multi_target_goto(stmt: MGotoStatement, ctx: "GeneratorContext") -> None:
