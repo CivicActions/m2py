@@ -7544,6 +7544,14 @@ class MUMPSRuntime:
 
             # The generated code defines a function, we need to call it
             if "XECUTE" in namespace and callable(namespace["XECUTE"]):
+                # Save caller's routine context — the XECUTE'd code will
+                # overwrite _current_source_lines / _current_label_lines /
+                # _current_routine, and we must restore them so that $TEXT
+                # references in the calling routine still work.
+                _saved_routine = self._current_routine
+                _saved_source_lines = self._current_source_lines
+                _saved_label_lines = self._current_label_lines
+
                 # Push XECUTE stack frame with MUMPS source as mcode
                 self.push_stack_frame("XECUTE", mcode=mumps_code)
                 try:
@@ -7551,6 +7559,11 @@ class MUMPSRuntime:
                 finally:
                     # Pop XECUTE stack frame
                     self.pop_stack_frame()
+
+                    # Restore caller's routine context
+                    self._current_routine = _saved_routine
+                    self._current_source_lines = _saved_source_lines
+                    self._current_label_lines = _saved_label_lines
             else:
                 result = None
 
