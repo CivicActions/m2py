@@ -1730,10 +1730,26 @@ class NewScopeManager:
         This runs on both normal return and exceptions, ensuring
         MUMPS NEW semantics are preserved.
 
+        **Exception**: When a ``GotoExternal`` propagates through, the scope
+        is NOT restored.  In MUMPS, an external GOTO (``G LABEL^ROUTINE``)
+        from within a DO frame with NEW'd params transfers control but
+        stays in the same execution level — the NEW'd variables must
+        remain visible to the GOTO target.  The ``run_with_goto_support``
+        trampoline then dispatches to the target with the preserved scope.
+
         Process restore actions in reverse order to properly
         unwind nested NEW scopes (argumentless/exclusive NEW within
         functions that have formal param NEWs).
         """
+        # GotoExternal is a control-flow signal — the GOTO target needs the
+        # scope variables that were NEW'd in this frame (e.g., function
+        # parameters).  Restoring them would cause KeyError in the target.
+        if exc_type is not None:
+            from m2py.runtime import GotoExternal
+
+            if issubclass(exc_type, GotoExternal):
+                return  # Preserve scope for the GOTO target
+
         # Process restore actions in reverse (LIFO) for correct unwinding
         for action in reversed(self._restore_actions):
             if action[0] == "scope":

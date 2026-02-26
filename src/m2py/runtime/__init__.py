@@ -3257,6 +3257,12 @@ class MUMPSRuntime:
             - Freezes stack snapshot on first error
             - Executes $ETRAP or $ZTRAP code
         """
+        # GotoExternal is a control-flow signal (external GOTO), not a real
+        # MUMPS error.  It must propagate to the run_with_goto_support
+        # trampoline without $ETRAP/$ZTRAP interference.
+        if isinstance(exc, GotoExternal):
+            return False
+
         # Nested error detection with depth counting
         self._error_nesting_depth += 1
         if self._error_nesting_depth > self._max_error_nesting:
