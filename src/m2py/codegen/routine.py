@@ -545,6 +545,12 @@ class RoutineGenerator:
             ctx.emitter.line('"""')
             ctx.emitter.line("global _test")
             ctx.emitter.line("_saved = _test")
+            # Save runtime context before extrinsic call for $TEXT support
+            # (same as external DO — extrinsic callee sets _current_routine
+            # to its own name, so we must restore after it returns)
+            ctx.emitter.line("_saved_routine = _rt._current_routine")
+            ctx.emitter.line("_saved_source_lines = _rt._current_source_lines")
+            ctx.emitter.line("_saved_label_lines = _rt._current_label_lines")
             # Save/restore _in_extrinsic for $QUIT tracking
             ctx.emitter.line("_rt._extrinsic_stack.append(_rt._in_extrinsic)")
             # Push $$ stack frame for extrinsic function call
@@ -595,6 +601,10 @@ class RoutineGenerator:
                 ctx.emitter.line("_test = _saved")
                 # Sync $TEST to runtime after restore (extrinsic preserves caller's $TEST)
                 ctx.emitter.line("_rt._test = _test")
+                # Restore runtime context after extrinsic call returns
+                ctx.emitter.line("_rt._current_routine = _saved_routine")
+                ctx.emitter.line("_rt._current_source_lines = _saved_source_lines")
+                ctx.emitter.line("_rt._current_label_lines = _saved_label_lines")
                 # Restore extrinsic flag for nested calls
                 ctx.emitter.line("_rt._in_extrinsic = _rt._extrinsic_stack.pop()")
         ctx.emitter.blank()
