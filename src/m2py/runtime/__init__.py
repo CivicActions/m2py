@@ -427,6 +427,26 @@ def _is_mumps_expression(name: str) -> bool:
     return False
 
 
+def _strip_mumps_sub_quotes(s: str) -> str:
+    """Strip MUMPS-style formatting quotes from a subscript string.
+
+    When resolve_to_name() evaluates variable references in a global name
+    string (e.g., ``^UTILITY(U,$J,1009.802)`` → ``^UTILITY("^",77795,1009.802)``),
+    it uses _append_subscripts() which adds double quotes around non-numeric
+    subscripts for MUMPS name syntax.  When we later re-parse the formatted
+    string with _parse_subscripted_name(), those formatting quotes are preserved
+    as part of the subscript string.
+
+    This helper strips the surrounding quotes and unescapes doubled quotes,
+    so that ``'"^"'`` → ``'^'`` and ``'"FOO""BAR"'`` → ``'FOO"BAR'``.
+
+    Plain strings and numeric strings pass through unchanged.
+    """
+    if len(s) >= 2 and s.startswith('"') and s.endswith('"'):
+        return s[1:-1].replace('""', '"')
+    return s
+
+
 def _evaluate_subscript(
     sub: Any, _scope: Dict[str, Any], runtime: Optional["MUMPSRuntime"] = None
 ) -> Any:
@@ -4330,7 +4350,12 @@ class MUMPSRuntime:
         base_name, subscripts = _parse_subscripted_name(name)
         # Evaluate subscripts - resolve variable references like A(3) to their values
         evaluated_subs = _evaluate_subscripts(subscripts, _scope, runtime=self)
-        subs = tuple(str(s) for s in evaluated_subs) if evaluated_subs else ()
+        # Strip MUMPS-style formatting quotes (same rationale as _get_global_var)
+        subs = (
+            tuple(_strip_mumps_sub_quotes(str(s)) for s in evaluated_subs)
+            if evaluated_subs
+            else ()
+        )
 
         # Handle global variables
         if base_name.startswith("^"):
@@ -4897,8 +4922,16 @@ class MUMPSRuntime:
         # Pass self as runtime to handle complex indirection like @@@@@@@@X
         eval_subs = _evaluate_subscripts(subscripts, _scope, runtime=self)
 
-        # Use the GlobalStorageBackend interface
-        subs = () if eval_subs is None else tuple(str(s) for s in eval_subs)
+        # Strip MUMPS-style formatting quotes from subscripts.
+        # When the name string came from resolve_to_name(), string subscripts
+        # are quoted (e.g., "^" → '"^"') by _append_subscripts().  After
+        # _parse_subscripted_name() re-parses, those quotes are preserved.
+        # Strip them so the backend key matches direct (non-indirection) code.
+        subs = (
+            ()
+            if eval_subs is None
+            else tuple(_strip_mumps_sub_quotes(str(s)) for s in eval_subs)
+        )
         result = self._globals.get(key, subs)
         return result if result is not None else ""
 
@@ -5075,7 +5108,18 @@ class MUMPSRuntime:
         if target.startswith("^"):
             # Parse subscripts from target if present
             base_name, subscripts = _parse_subscripted_name(target)
-            subs = tuple(str(s) for s in subscripts) if subscripts else ()
+            # Strip MUMPS-style quotes from subscripts.
+            # resolve_to_name() formats the target string with _append_subscripts()
+            # which adds quotes around string subscripts for MUMPS name syntax.
+            # When we re-parse, those formatting quotes must be stripped so the
+            # subscripts stored in the backend match what direct (non-indirection)
+            # code paths use.  E.g., ^UTILITY("^",77795,1009.802) must store
+            # subscript "^" (1 char) not '"^"' (3 chars with quotes).
+            subs = (
+                tuple(_strip_mumps_sub_quotes(str(s)) for s in subscripts)
+                if subscripts
+                else ()
+            )
             key = base_name[1:]  # Remove ^ prefix
             self._globals.set(key, subs, str_value)
             return
@@ -5247,13 +5291,22 @@ class MUMPSRuntime:
         # Handle global variables
         if target.startswith("^"):
             base_name, subscripts = _parse_subscripted_name(target)
-            subs = tuple(str(s) for s in subscripts) if subscripts else ()
+            # Strip MUMPS-style formatting quotes (same rationale as _get_global_var)
+            subs = (
+                tuple(_strip_mumps_sub_quotes(str(s)) for s in subscripts)
+                if subscripts
+                else ()
+            )
             key = base_name[1:]  # Remove ^ prefix
             return m_increment_global(self.globals, key, subs, increment)
 
         # Local variable — parse name and any subscripts
         base_name, subscripts = _parse_subscripted_name(target)
-        subs = tuple(str(s) for s in subscripts) if subscripts else ()
+        subs = (
+            tuple(_strip_mumps_sub_quotes(str(s)) for s in subscripts)
+            if subscripts
+            else ()
+        )
         from m2py.core.names import NameTranslator
 
         python_name = NameTranslator.to_python(base_name)
@@ -6298,8 +6351,12 @@ class MUMPSRuntime:
         # Evaluate subscripts - resolve variable references like "I" to their values
         eval_subs = _evaluate_subscripts(subscripts, _scope)
 
-        # Use the GlobalStorageBackend interface
-        subs = () if eval_subs is None else tuple(str(s) for s in eval_subs)
+        # Strip MUMPS-style formatting quotes (same rationale as _get_global_var)
+        subs = (
+            ()
+            if eval_subs is None
+            else tuple(_strip_mumps_sub_quotes(str(s)) for s in eval_subs)
+        )
         self._globals.set(key, subs, str(value))
 
     def kill_var(self, name: str, _scope: Dict[str, Any]) -> None:
@@ -6362,7 +6419,12 @@ class MUMPSRuntime:
         # Handle global variables
         if base_name.startswith("^"):
             key = base_name[1:]
-            subs = () if eval_subs is None else tuple(str(s) for s in eval_subs)
+            # Strip MUMPS-style formatting quotes (same rationale as _get_global_var)
+            subs = (
+                ()
+                if eval_subs is None
+                else tuple(_strip_mumps_sub_quotes(str(s)) for s in eval_subs)
+            )
             self._globals.kill(key, subs)
             return
 
