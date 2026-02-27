@@ -447,6 +447,30 @@ def _strip_mumps_sub_quotes(s: str) -> str:
     return s
 
 
+def _normalize_parsed_subscript(s: Any) -> str:
+    """Normalize a subscript from _parse_subscripted_name for storage.
+
+    Handles the two kinds of subscripts that come from parsing a MUMPS
+    global reference string:
+
+    1. **Numeric types** (int, float) from bare subscripts like ``.01`` or ``3``:
+       Uses ``canonicalize_numeric()`` so that Python's ``float(0.01)``
+       becomes ``".01"`` (MUMPS canonical form with no leading zero)
+       instead of ``"0.01"`` which ``str()`` produces.
+
+    2. **String types** from quoted subscripts like ``"B"`` or ``"^"``:
+       Strips MUMPS formatting quotes, so ``'"^"'`` → ``'^'``.
+
+    This replaces the previous pattern ``_strip_mumps_sub_quotes(str(s))``
+    which lost MUMPS numeric canonicalization for float subscripts.
+    """
+    from m2py.core.subscripts import SubscriptCanonicalizer
+
+    if isinstance(s, (int, float)):
+        return SubscriptCanonicalizer.canonicalize_numeric(s)
+    return _strip_mumps_sub_quotes(str(s))
+
+
 def _evaluate_subscript(
     sub: Any, _scope: Dict[str, Any], runtime: Optional["MUMPSRuntime"] = None
 ) -> Any:
@@ -4350,9 +4374,9 @@ class MUMPSRuntime:
         base_name, subscripts = _parse_subscripted_name(name)
         # Evaluate subscripts - resolve variable references like A(3) to their values
         evaluated_subs = _evaluate_subscripts(subscripts, _scope, runtime=self)
-        # Strip MUMPS-style formatting quotes (same rationale as _get_global_var)
+        # Normalize subscripts: canonicalize numeric types and strip MUMPS quotes.
         subs = (
-            tuple(_strip_mumps_sub_quotes(str(s)) for s in evaluated_subs)
+            tuple(_normalize_parsed_subscript(s) for s in evaluated_subs)
             if evaluated_subs
             else ()
         )
@@ -4930,7 +4954,7 @@ class MUMPSRuntime:
         subs = (
             ()
             if eval_subs is None
-            else tuple(_strip_mumps_sub_quotes(str(s)) for s in eval_subs)
+            else tuple(_normalize_parsed_subscript(s) for s in eval_subs)
         )
         result = self._globals.get(key, subs)
         return result if result is not None else ""
@@ -5116,7 +5140,7 @@ class MUMPSRuntime:
             # code paths use.  E.g., ^UTILITY("^",77795,1009.802) must store
             # subscript "^" (1 char) not '"^"' (3 chars with quotes).
             subs = (
-                tuple(_strip_mumps_sub_quotes(str(s)) for s in subscripts)
+                tuple(_normalize_parsed_subscript(s) for s in subscripts)
                 if subscripts
                 else ()
             )
@@ -5291,9 +5315,9 @@ class MUMPSRuntime:
         # Handle global variables
         if target.startswith("^"):
             base_name, subscripts = _parse_subscripted_name(target)
-            # Strip MUMPS-style formatting quotes (same rationale as _get_global_var)
+            # Normalize subscripts: canonicalize numeric types and strip MUMPS quotes.
             subs = (
-                tuple(_strip_mumps_sub_quotes(str(s)) for s in subscripts)
+                tuple(_normalize_parsed_subscript(s) for s in subscripts)
                 if subscripts
                 else ()
             )
@@ -5303,7 +5327,7 @@ class MUMPSRuntime:
         # Local variable — parse name and any subscripts
         base_name, subscripts = _parse_subscripted_name(target)
         subs = (
-            tuple(_strip_mumps_sub_quotes(str(s)) for s in subscripts)
+            tuple(_normalize_parsed_subscript(s) for s in subscripts)
             if subscripts
             else ()
         )
@@ -6351,11 +6375,11 @@ class MUMPSRuntime:
         # Evaluate subscripts - resolve variable references like "I" to their values
         eval_subs = _evaluate_subscripts(subscripts, _scope)
 
-        # Strip MUMPS-style formatting quotes (same rationale as _get_global_var)
+        # Normalize subscripts: canonicalize numeric types and strip MUMPS quotes.
         subs = (
             ()
             if eval_subs is None
-            else tuple(_strip_mumps_sub_quotes(str(s)) for s in eval_subs)
+            else tuple(_normalize_parsed_subscript(s) for s in eval_subs)
         )
         self._globals.set(key, subs, str(value))
 
@@ -6419,11 +6443,11 @@ class MUMPSRuntime:
         # Handle global variables
         if base_name.startswith("^"):
             key = base_name[1:]
-            # Strip MUMPS-style formatting quotes (same rationale as _get_global_var)
+            # Normalize subscripts: canonicalize numeric types and strip MUMPS quotes.
             subs = (
                 ()
                 if eval_subs is None
-                else tuple(_strip_mumps_sub_quotes(str(s)) for s in eval_subs)
+                else tuple(_normalize_parsed_subscript(s) for s in eval_subs)
             )
             self._globals.kill(key, subs)
             return

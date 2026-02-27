@@ -85,11 +85,12 @@ def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
     """Generate a sort key for MUMPS collation order.
 
     MUMPS collation order:
-    1. Numeric values (sorted numerically, negatives first)
-    2. String values (sorted by ASCII/UTF-8)
+    1. Empty string (sorts before everything)
+    2. Numeric values (sorted numerically, negatives first)
+    3. String values (sorted by ASCII/UTF-8)
 
     The key returns a tuple (type_order, sort_value) where:
-    - type_order: 0 for numeric, 1 for string
+    - type_order: -1 for empty string, 0 for numeric, 1 for string
     - sort_value: the value to compare within the type
 
     CRITICAL: Only CANONICAL numeric strings collate as numbers.
@@ -102,6 +103,10 @@ def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
         Tuple for comparison in sorted()
     """
     from m2py.core.subscripts import SubscriptCanonicalizer
+
+    # Empty string always sorts first in MUMPS
+    if value == "" or value is None:
+        return (-1, "")
 
     # Check if value is numeric (can be int, float, Decimal, or numeric string)
     if isinstance(value, (int, float, Decimal)):
