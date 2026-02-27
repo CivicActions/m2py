@@ -2108,9 +2108,15 @@ def _generate_quit(stmt: MQuitStatement, ctx: "GeneratorContext") -> None:
         ctx.emitter.line("break")
         return
 
-    # Self-loop pattern - QUIT exits the while True: loop
+    # Self-loop pattern - QUIT exits the label function entirely.
+    # The while True: loop wraps the label body; QUIT should not merely
+    # break out of the loop (which would fall through to the next label)
+    # but must signal a proper routine exit.
     if ctx.current_label and ctx.current_label.has_self_loop:
-        ctx.emitter.line("break")
+        if ctx.strategy == GotoStrategy.TRAMPOLINE:
+            ctx.emitter.line("return (None, state)")
+        else:
+            ctx.emitter.line("return")
         return
 
     # Plain QUIT with by-ref outputs - return modified params as tuple
@@ -6139,6 +6145,13 @@ def _generate_lock_indirection_call(
         timeout_expr = stmt.timeout
 
     timeout_val = generate_expr(timeout_expr, ctx) if timeout_expr else None
+
+    # In TRAMPOLINE mode, state._locals is the canonical variable store.
+    # _scope may be stale (only synced at DO boundaries).  Sync before
+    # the lock_indirected call so the indirection resolver finds current
+    # variable values.
+    if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
+        ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
 
     # Generate the lock_indirected call
     code = generate_lock_indirection(

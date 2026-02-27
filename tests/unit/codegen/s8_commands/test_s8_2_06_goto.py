@@ -233,8 +233,8 @@ class TestIntraLabelGotoCodegen:
         assert "while True:" in python_code
         # GOTO TEST from within TEST should become continue
         assert "continue" in python_code
-        # QUIT at end should become break
-        assert "break" in python_code
+        # QUIT exits the label function (return), not just the while loop (break)
+        assert "return" in python_code
 
     def test_goto_cannot_create_continue_pattern(self, generate_python):
         """GOTO cannot create Python continue pattern FOR loop skip (T039 - updated).

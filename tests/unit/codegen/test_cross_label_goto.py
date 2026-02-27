@@ -321,8 +321,8 @@ class TestSelfLoopPattern:
         assert "while True:" in code
         # Self-loop GOTO becomes continue
         assert "continue" in code
-        # QUIT becomes break
-        assert "break" in code
+        # QUIT exits the label function (return), not just the while loop (break)
+        assert "return" in code
 
     def test_self_loop_with_cross_label_entry(self, execute_mumps):
         """T069a: Self-loop with cross-label entry works correctly.
@@ -383,6 +383,64 @@ loop S Q=Q+1 W Q G loop:Q<3
         assert "if m_truth(" in code
         # Should still have while True for the self-loop structure
         assert "while True:" in code
+
+    def test_self_loop_quit_does_not_fall_through(self, execute_mumps):
+        """Regression: QUIT in a self-loop label must NOT fall through to next label.
+
+        This is the exact bug pattern from DIK^IXALL: label D has a self-loop
+        (G D), but QUIT should exit the routine entirely, not just break out
+        of the while-True wrapper and fall through to label I.
+
+        Before the fix, QUIT generated 'break' which exited the while loop
+        and then hit the fallthrough 'return ("NEXT", state)' going to the
+        next label — creating an infinite D→NEXT→D cycle.
+        """
+        source = """TEST S X=0 G LOOP
+LOOP S X=X+1 W X Q:X>2  G LOOP
+NEXT W "BAD"
+ Q"""
+        result = execute_mumps(source)
+        # Should print "123" and exit. Must NOT print "BAD".
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_self_loop_quit_no_fallthrough_codegen(self, generate_python):
+        """Codegen: self-loop QUIT generates return, not break.
+
+        In trampoline mode, QUIT should generate 'return (None, state)'
+        rather than 'break' so it doesn't fall through to the next label.
+        """
+        source = """TEST G LOOP
+LOOP S X=$G(X)+1 Q:X>2  G LOOP
+NEXT W "BAD" Q"""
+        code = generate_python(source)
+        # The QUIT in the self-loop label must NOT generate a bare 'break'
+        # It should generate 'return (None, state)' (trampoline) or 'return'
+        assert "while True:" in code
+        assert "continue" in code
+        # Verify 'return' appears (not just 'break')
+        assert "return (None, state)" in code
+
+    def test_self_loop_for_quit_still_breaks_for(self, execute_mumps):
+        """FOR-QUIT inside a self-loop label should break the FOR, not exit the label.
+
+        Priority: exits_for (break) is checked before has_self_loop (return).
+        The FOR loop should terminate normally, then the self-loop continues
+        until the label-level QUIT fires.
+        """
+        # LOOP has self-loop (G LOOP). FOR runs 1..9 but QUIT:I>3 breaks FOR.
+        # After FOR, writes accumulated R. If N<2, GOTOs LOOP again.
+        # Otherwise falls through to Q.
+        source = """TEST S N=0 G LOOP
+LOOP S N=N+1,R="" F I=1:1:9 Q:I>3  S R=R_I
+ W R I N<2 G LOOP
+ Q"""
+        result = execute_mumps(source)
+        # Each FOR iteration: I=1,2,3 (QUIT at I=4), so R="123"
+        # N=1: writes "123", N<2 → GOTO LOOP
+        # N=2: writes "123", N<2 false → falls to Q
+        assert result.output == "123123"
+        assert result.success is True
 
 
 @pytest.mark.codegen
