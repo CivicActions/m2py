@@ -4856,11 +4856,38 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 new_arg_parts.append(generate_expr(arg_node.expression, ctx))
         byref_args = ", ".join(new_arg_parts)
 
+        # Sync state._locals → _scope before call so callee sees current
+        # variable values (the callee copies _scope into its own state).
+        # Without this, variables SET only in state._locals (e.g. after NEW)
+        # are invisible to the callee, and variables SET by the callee
+        # (propagated back to _scope on return) are lost when the next call
+        # overwrites _scope from stale state._locals.
+        if ctx.uses_dynamic_locals:
+            ctx.emitter.line("for _k in list(_scope.keys()):")
+            with ctx.emitter.indented():
+                ctx.emitter.line("if _k not in state._locals:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("del _scope[_k]")
+            ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
+        elif ctx.state_vars:
+            for var_name in sorted(ctx.state_vars):
+                py_name = translate_name(var_name)
+                emit_state_var_to_scope(ctx, var_name, py_name)
+
         if byref_args:
             call_expr = f"{label_name}(_rt, {byref_args}, _scope=_scope)"
         else:
             call_expr = f"{label_name}(_rt, _scope=_scope)"
         ctx.emitter.line(call_expr)
+
+        # Sync _scope → state._locals after return so caller sees variables
+        # SET by the callee (e.g. DIKJ set inside DISKIPIN via DDGO→DIKJ label).
+        if ctx.uses_dynamic_locals:
+            emit_scope_to_state_sync(ctx)
+        elif ctx.state_vars:
+            for var_name in sorted(ctx.state_vars):
+                py_name = translate_name(var_name)
+                emit_scope_var_to_state(ctx, var_name, py_name)
     else:
         # No by-ref params at call site - just call with _rt
         # Pass _scope for cross-routine variable visibility

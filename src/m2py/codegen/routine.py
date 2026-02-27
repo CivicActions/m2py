@@ -562,13 +562,34 @@ class RoutineGenerator:
             with ctx.emitter.indented():
                 # Mark that we're in an extrinsic for $QUIT
                 ctx.emitter.line("_rt._in_extrinsic = True")
-                # Pass _rt and _scope to external extrinsic
-                ctx.emitter.line("if _scope is not None:")
+                # Handle GotoExternal: some extrinsic functions use GOTO to
+                # redirect to the actual implementation (e.g., $$CREF^DILF
+                # does G ENCREF^DIQGU).  The GOTO target runs in the same
+                # extrinsic context and its QUIT value becomes the return.
+                ctx.emitter.line("_current_ef = _ef")
+                ctx.emitter.line("_current_args = args")
+                ctx.emitter.line("while True:")
                 with ctx.emitter.indented():
-                    ctx.emitter.line("_result = _ef(_rt, *args, _scope=_scope)")
-                ctx.emitter.line("else:")
-                with ctx.emitter.indented():
-                    ctx.emitter.line("_result = _ef(_rt, *args)")
+                    ctx.emitter.line("try:")
+                    with ctx.emitter.indented():
+                        # Pass _rt and _scope to external extrinsic
+                        ctx.emitter.line("if _scope is not None:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                "_result = _current_ef(_rt, *_current_args, _scope=_scope)"
+                            )
+                        ctx.emitter.line("else:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                "_result = _current_ef(_rt, *_current_args)"
+                            )
+                        ctx.emitter.line("break")
+                    ctx.emitter.line("except GotoExternal as _goto:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line("_current_ef = resolve_goto_target(_goto)")
+                        ctx.emitter.line(
+                            "_current_args = ()  # GOTO target receives args via _scope"
+                        )
                 # Handle by-ref unpacking
                 ctx.emitter.line("# Unpack by-ref values if result is a tuple")
                 ctx.emitter.line("if isinstance(_result, tuple) and len(_result) > 1:")

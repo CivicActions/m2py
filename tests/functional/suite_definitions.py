@@ -540,7 +540,7 @@ MVTS_VV4_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition("31.1---V4NAME", "V4NAME", expected_passes=95, expected_fails=0),
     RoutineDefinition("45.1---V4QLEN", "V4QLEN", expected_passes=51),
     RoutineDefinition("53.1---V4QSUB", "V4QSUB", expected_passes=113, expected_fails=0),
-    RoutineDefinition("68.1---V4SVQ", "V4SVQ", expected_passes=28),
+    RoutineDefinition("68.1---V4SVQ", "V4SVQ", expected_passes=30),
     RoutineDefinition(
         "74.1---V4MERGE", "V4MERGE", expected_passes=68, expected_fails=0
     ),
