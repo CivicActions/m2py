@@ -149,6 +149,30 @@ class TestLockIndirectionCodegenIntegration:
 
 
 @pytest.mark.codegen
+class TestLockIndirectionExpressionLevels:
+    """Tests for expression-based LOCK indirection generating levels=0."""
+
+    def _run_codegen_for_lock(self, mumps_code: str) -> str:
+        """Helper to transpile MUMPS code and return Python."""
+        return generate_python(mumps_code)
+
+    def test_expression_indirection_sets_levels_zero(self):
+        r"""LOCK @("+"_X_":"_Y) produces levels=0 (pre-evaluated)."""
+        code = self._run_codegen_for_lock('TEST L @("+"_X_":"_Y) Q')
+
+        assert "lock_indirected" in code
+        assert "levels=0" in code
+
+    def test_simple_variable_indirection_default_levels(self):
+        """LOCK @X does not emit levels=0 (uses default levels=1)."""
+        code = self._run_codegen_for_lock("TEST L @X Q")
+
+        assert "lock_indirected" in code
+        # levels=1 is the default, so it should NOT appear in the call
+        assert "levels=0" not in code
+
+
+@pytest.mark.codegen
 class TestLockIndirectionStmtLevelPattern:
     """Tests for statement-level lock patterns with indirection."""
 

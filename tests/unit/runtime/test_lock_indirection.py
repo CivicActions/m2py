@@ -216,3 +216,185 @@ class TestLockIndirectedGlobalFromExpression:
         rt.lock_indirected('^CFG("LOCK")', scope, lockop="+")
 
         assert ("DATA", ()) in rt.globals._lock_table
+
+
+class TestLockIndirectedPreEvaluated:
+    r"""Tests for levels=0 (pre-evaluated LOCK argument strings).
+
+    When MUMPS has LOCK @(expr) where expr is a complex expression
+    (e.g., ``"+"_REF_":n"``), the codegen evaluates the expression in
+    Python and passes the result string to ``lock_indirected`` with
+    ``levels=0``.  The function must parse +/- prefix and :timeout
+    suffix directly from the string.
+    """
+
+    def test_pre_evaluated_global_simple(self):
+        """levels=0 with simple global name acquires lock."""
+        rt = MUMPSRuntime()
+        scope: dict = {}
+
+        rt.lock_indirected("^MYLOCK", scope, lockop="+", levels=0)
+
+        assert ("MYLOCK", ()) in rt.globals._lock_table
+
+    def test_pre_evaluated_with_subscripts(self):
+        r"""levels=0 with subscripted global: ``^DD("IX",123)``."""
+        rt = MUMPSRuntime()
+        scope: dict = {}
+
+        rt.lock_indirected('^DD("IX",123)', scope, lockop="+", levels=0)
+
+        assert ("DD", ("IX", "123")) in rt.globals._lock_table
+
+    def test_pre_evaluated_plus_prefix(self):
+        """levels=0 parses + prefix from the string."""
+        rt = MUMPSRuntime()
+        scope: dict = {}
+
+        rt.lock_indirected("+^GLOBAL(1)", scope, lockop="", levels=0)
+
+        # + prefix overrides lockop=""
+        assert ("GLOBAL", ("1",)) in rt.globals._lock_table
+
+    def test_pre_evaluated_minus_prefix(self):
+        """levels=0 parses - prefix and releases the lock."""
+        rt = MUMPSRuntime()
+        scope: dict = {}
+
+        # Pre-acquire
+        rt.globals.lock("GLO", (), lock_type="+")
+        assert ("GLO", ()) in rt.globals._lock_table
+
+        # Release via pre-evaluated string
+        rt.lock_indirected("-^GLO", scope, lockop="+", levels=0)
+
+        assert ("GLO", ()) not in rt.globals._lock_table
+
+    def test_pre_evaluated_numeric_timeout(self):
+        """levels=0 parses :5 numeric timeout and sets $TEST."""
+        rt = MUMPSRuntime()
+        rt._test = False
+        scope: dict = {}
+
+        rt.lock_indirected("+^DATA:5", scope, lockop="+", levels=0)
+
+        # Timed lock sets $TEST
+        assert rt._test is True
+        assert ("DATA", ()) in rt.globals._lock_table
+
+    def test_pre_evaluated_variable_timeout(self):
+        r"""levels=0 parses :VARNAME timeout, looks up variable in scope.
+
+        Simulates LOCK @("+"_REF_":DILOCKTM") where DILOCKTM=3.
+        """
+        rt = MUMPSRuntime()
+        rt._test = False
+        scope = {"DILOCKTM": MArray(3)}
+
+        rt.lock_indirected('+^DD("IX",456):DILOCKTM', scope, lockop="+", levels=0)
+
+        # Timeout resolved from DILOCKTM variable (value 3)
+        assert rt._test is True
+        assert ("DD", ("IX", "456")) in rt.globals._lock_table
+
+    def test_pre_evaluated_colon_inside_subscripts_ignored(self):
+        r"""Colons inside quoted subscripts are not treated as timeout.
+
+        ``^DD("a:b",1)`` — the ``:`` in ``"a:b"`` is inside quotes.
+        """
+        rt = MUMPSRuntime()
+        scope: dict = {}
+
+        rt.lock_indirected('^DD("a:b",1)', scope, lockop="+", levels=0)
+
+        assert ("DD", ("a:b", "1")) in rt.globals._lock_table
+
+    def test_pre_evaluated_no_timeout_preserves_test(self):
+        """levels=0 without :timeout does NOT modify $TEST."""
+        rt = MUMPSRuntime()
+        rt._test = False
+        scope: dict = {}
+
+        rt.lock_indirected("+^GLO", scope, lockop="+", levels=0)
+
+        # No timeout, $TEST unchanged
+        assert rt._test is False
+
+    def test_pre_evaluated_undefined_timeout_var_defaults_zero(self):
+        """levels=0 with undefined timeout variable defaults to 0."""
+        rt = MUMPSRuntime()
+        rt._test = False
+        scope: dict = {}  # NOVAR not in scope
+
+        rt.lock_indirected("+^GLO:NOVAR", scope, lockop="+", levels=0)
+
+        # Timeout=0 → immediate success
+        assert rt._test is True
+        assert ("GLO", ()) in rt.globals._lock_table
+
+
+class TestParseLockTargetString:
+    """Unit tests for _parse_lock_target_string helper."""
+
+    def test_no_prefix_no_timeout(self):
+        """Simple global name: no prefix, no timeout."""
+        from m2py.runtime import _parse_lock_target_string
+
+        lockop, name, timeout = _parse_lock_target_string("^GLOBAL(1,2)")
+        assert lockop is None
+        assert name == "^GLOBAL(1,2)"
+        assert timeout is None
+
+    def test_plus_prefix(self):
+        """+ prefix extracted."""
+        from m2py.runtime import _parse_lock_target_string
+
+        lockop, name, timeout = _parse_lock_target_string("+^DD(1)")
+        assert lockop == "+"
+        assert name == "^DD(1)"
+        assert timeout is None
+
+    def test_minus_prefix(self):
+        """- prefix extracted."""
+        from m2py.runtime import _parse_lock_target_string
+
+        lockop, name, timeout = _parse_lock_target_string("-^GLO")
+        assert lockop == "-"
+        assert name == "^GLO"
+        assert timeout is None
+
+    def test_numeric_timeout(self):
+        """Timeout is a number."""
+        from m2py.runtime import _parse_lock_target_string
+
+        lockop, name, timeout = _parse_lock_target_string("+^A:5")
+        assert lockop == "+"
+        assert name == "^A"
+        assert timeout == "5"
+
+    def test_variable_timeout(self):
+        """Timeout is a variable name."""
+        from m2py.runtime import _parse_lock_target_string
+
+        lockop, name, timeout = _parse_lock_target_string('+^DD("IX",123):DILOCKTM')
+        assert lockop == "+"
+        assert name == '^DD("IX",123)'
+        assert timeout == "DILOCKTM"
+
+    def test_colon_inside_quotes_not_timeout(self):
+        """Colon inside quoted subscripts is not a timeout separator."""
+        from m2py.runtime import _parse_lock_target_string
+
+        lockop, name, timeout = _parse_lock_target_string('^DD("a:b",1)')
+        assert lockop is None
+        assert name == '^DD("a:b",1)'
+        assert timeout is None
+
+    def test_colon_after_subscripts_is_timeout(self):
+        """Colon after closing paren is timeout."""
+        from m2py.runtime import _parse_lock_target_string
+
+        lockop, name, timeout = _parse_lock_target_string('^DD("IX",1):n')
+        assert lockop is None
+        assert name == '^DD("IX",1)'
+        assert timeout == "n"

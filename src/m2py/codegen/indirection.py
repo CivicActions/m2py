@@ -1174,8 +1174,8 @@ def generate_lock_indirection(
     if timeout_expr is not None:
         parts.append(f", timeout={timeout_expr}")
 
-    # Add levels if > 1
-    if levels > 1:
+    # Add levels if not the default (1)
+    if levels != 1:
         parts.append(f", levels={levels}")
 
     # Add subscripts if present

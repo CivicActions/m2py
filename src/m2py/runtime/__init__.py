@@ -132,6 +132,58 @@ class TransactionLocalSnapshot:
     saved_test: Optional[bool] = None  # $TEST value at TSTART
 
 
+def _parse_lock_target_string(
+    target: str,
+) -> Tuple[Optional[str], str, Optional[str]]:
+    """Parse a LOCK target string into lock-operation, name, and timeout.
+
+    MUMPS LOCK indirection can produce strings like "+^DD(1,2):TIMEOUT"
+    that include the lock operation prefix and timeout suffix inline.
+    This function extracts those components.
+
+    Args:
+        target: The resolved LOCK argument string.
+            Examples: "+^DD(1,2):n", "^GLOBAL(1)", "-^A:5", "^DD(\"IX\",123)"
+
+    Returns:
+        Tuple of (lockop, name_str, timeout_expr_str):
+        - lockop: "+" or "-" if present, None if no prefix
+        - name_str: The lock name reference (e.g., "^DD(1,2)")
+        - timeout_expr_str: Timeout expression string (variable name or number),
+          None if no timeout
+    """
+    s = target
+    lockop: Optional[str] = None
+
+    # 1. Extract lock operation prefix (+/-)
+    if s.startswith("+"):
+        lockop = "+"
+        s = s[1:]
+    elif s.startswith("-"):
+        lockop = "-"
+        s = s[1:]
+
+    # 2. Find timeout separator (: outside parentheses)
+    # Must handle subscripts like ^DD("IX",DIEN) where commas appear inside parens
+    timeout_expr: Optional[str] = None
+    depth = 0
+    in_quote = False
+    for i, c in enumerate(s):
+        if c == '"':
+            in_quote = not in_quote
+        elif not in_quote:
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+            elif c == ":" and depth == 0:
+                timeout_expr = s[i + 1 :]
+                s = s[:i]
+                break
+
+    return (lockop, s, timeout_expr)
+
+
 def _parse_subscripted_name(name: str) -> Tuple[str, Optional[Tuple[Any, ...]]]:
     """Parse a variable name that may include subscripts.
 
@@ -5224,11 +5276,15 @@ class MUMPSRuntime:
         the existing lock()/unlock() methods in globals.
 
         Args:
-            source: Source variable name for indirection (e.g., "X" for @X)
+            source: Source variable name for indirection (e.g., "X" for @X),
+                or a pre-evaluated LOCK argument string when levels=0
+                (e.g., "+^DD(1,2):TIMEOUT" from LOCK @(expr)).
             _scope: Current scope dictionary
             lockop: Lock operation - "" (exclusive), "+" (incremental), "-" (release)
             timeout: Optional timeout in seconds. Sets $TEST on timeout.
             levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+                Use levels=0 when source is already the evaluated LOCK argument
+                string (from expression-based indirection like @(expr)).
             per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
 
         Behavior:
@@ -5241,6 +5297,14 @@ class MUMPSRuntime:
             - If timeout is specified, $TEST is set to 1 on success, 0 on timeout
             - If no timeout, $TEST is not modified
             - LOCK - with timeout always sets $TEST=1 (unlock never fails)
+
+            LOCK argument parsing:
+            The resolved target string may contain LOCK-specific syntax:
+            - Leading +/- (lock operation override)
+            - Trailing :expr (timeout expression — variable name or number)
+            These are parsed out and override the lockop/timeout parameters.
+            This handles MUMPS patterns like LOCK @("+"_REF_":n") where
+            the indirected string contains the full LOCK argument.
         """
         from m2py.core.scope import CurrentScope
         from m2py.core.indirection import IndirectionResolver
@@ -5250,17 +5314,48 @@ class MUMPSRuntime:
         resolver = IndirectionResolver(self, cs)
 
         # Resolve to get target variable NAME (the lock target)
-        target = resolver.resolve_to_name(
-            source, levels=levels, per_level_subscripts=per_level_subscripts
-        )
+        if levels <= 0:
+            # Source is already the evaluated LOCK argument string
+            # (from expression-based indirection like @(expr))
+            target = source
+        else:
+            target = resolver.resolve_to_name(
+                source, levels=levels, per_level_subscripts=per_level_subscripts
+            )
+
+        # Parse LOCK-specific syntax from the target string.
+        # The resolved string may contain:
+        #   +/- prefix (lock operation)
+        #   :timeout_expr suffix (timeout as number or variable name)
+        # E.g., "+^DD(\"IX\",123):DILOCKTM" → lock="+", name="^DD(\"IX\",123)",
+        #        timeout_var="DILOCKTM"
+        effective_lockop, name_str, timeout_expr_str = _parse_lock_target_string(target)
+
+        # Lock operation: string-embedded value overrides parameter
+        if effective_lockop is not None:
+            lockop = effective_lockop
+
+        # Timeout: string-embedded value overrides parameter
+        if timeout_expr_str is not None:
+            try:
+                timeout = float(timeout_expr_str)
+            except (ValueError, TypeError):
+                # It's a variable name — look it up in scope
+                from m2py.core.exceptions import LVUNDEFError
+
+                try:
+                    val = cs.get(timeout_expr_str)
+                    timeout = float(str(val))
+                except (KeyError, ValueError, TypeError, LVUNDEFError):
+                    timeout = 0
 
         # Parse the target to get name and subscripts
         # Target can be: "GLO", "^GLO", "^GLO(1,2)", "A(1,2)"
-        if target.startswith("^"):
+        if name_str.startswith("^"):
             # Global name - strip the caret for lock table
-            name_part = target[1:]
+            name_part = name_str[1:]
         else:
-            name_part = target
+            name_part = name_str
 
         # Parse subscripts from name_part
         base_name, subscripts = _parse_subscripted_name(name_part)
@@ -5270,12 +5365,10 @@ class MUMPSRuntime:
         if lockop == "":
             self.globals.unlock_all()
             # After releasing all, we acquire with "+"
-            effective_lockop = "+"
-        else:
-            effective_lockop = lockop
+            lockop = "+"
 
         # Perform the lock operation
-        if effective_lockop == "-":
+        if lockop == "-":
             # Release lock
             self.globals.lock(base_name, subs, lock_type="-")
             # LOCK - with timeout always succeeds
@@ -5286,12 +5379,12 @@ class MUMPSRuntime:
             if timeout is not None:
                 # Timed lock - sets $TEST
                 result = self.globals.lock(
-                    base_name, subs, timeout=timeout, lock_type=effective_lockop
+                    base_name, subs, timeout=timeout, lock_type=lockop
                 )
                 self._test = result
             else:
                 # Untimed lock - does NOT modify $TEST
-                self.globals.lock(base_name, subs, lock_type=effective_lockop)
+                self.globals.lock(base_name, subs, lock_type=lockop)
 
     # =========================================================================
     # Transaction Restart Variable Snapshots

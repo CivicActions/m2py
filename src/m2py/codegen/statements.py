@@ -6150,8 +6150,13 @@ def _generate_lock_indirection_call(
         else:
             source_expr = f'"{source_name}"'
     else:
-        # Complex expression - evaluate to get source string
+        # Complex expression - evaluate to get source string.
+        # The expression is fully evaluated in Python, producing the LOCK
+        # argument string directly (e.g., "+^DD(1,2):n" from "+"_REF_":n").
+        # Set levels=0 so lock_indirected uses the string directly instead
+        # of trying to resolve it as a variable name.
         source_expr = f"str({generate_expr(inner_expr, ctx)})"
+        levels = 0
 
     # Build per-level subscripts if present
     if all_subscripts and any(all_subscripts):
