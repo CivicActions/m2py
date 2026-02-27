@@ -4449,6 +4449,16 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         # an enclosing FOR loop gets a fresh scope (Fix A: DOT block scoping).
         dot_has_new = _dot_block_has_new(stmt)
 
+        # In TRAMPOLINE/dynamic_locals mode, record the NEW stack depth
+        # before the dot block so we can unwind NEW'd variables on exit.
+        # This is critical because NewScopeManager only handles _scope,
+        # while NEW pushes to state._new_stack which must be separately unwound.
+        _needs_ns_unwind = dot_has_new and ctx.uses_dynamic_locals
+        _ns_mark_var = ""
+        if _needs_ns_unwind:
+            _ns_mark_var = _unique_dot_mgr_var(ctx).replace("_dot_mgr_", "_ns_mark_")
+            ctx.emitter.line(f"{_ns_mark_var} = len(state._new_stack)")
+
         # Wrap in try/finally to ensure stack cleanup even on exceptions
         ctx.emitter.line("try:")
         with ctx.emitter.indented():
@@ -4470,6 +4480,9 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
         with ctx.emitter.indented():
             # Decrement execution level (spec §6.3)
             ctx.emitter.line("_rt.pop_stack_frame()")
+            # Unwind NEW stack entries pushed inside this dot block
+            if _needs_ns_unwind:
+                ctx.emitter.line(f"unwind_new_stack_to_mark(state, {_ns_mark_var})")
 
         # Restore $TEST and _in_extrinsic after block
         ctx.emitter.line("_test = _saved_test")
@@ -5306,12 +5319,23 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                             "state._locals.pop(_ind_var, None)))"
                         )
                 else:
-                    # TRAMPOLINE without dynamic locals: pop from _scope
-                    ctx.emitter.line(
-                        f"for _ind_var in _rt._split_argument_list(str({value_expr})):"
-                    )
-                    with ctx.emitter.indented():
-                        ctx.emitter.line("_scope.pop(_ind_var, None)")
+                    # TRAMPOLINE without dynamic locals
+                    if ctx.new_scope_manager_var:
+                        # DOT block with scope manager: use new_var() for save/restore
+                        ctx.emitter.line(
+                            f"for _ind_var in _rt._split_argument_list(str({value_expr})):"
+                        )
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                f"{ctx.new_scope_manager_var}.new_var(_ind_var)"
+                            )
+                    else:
+                        # Pop from _scope (no save/restore)
+                        ctx.emitter.line(
+                            f"for _ind_var in _rt._split_argument_list(str({value_expr})):"
+                        )
+                        with ctx.emitter.indented():
+                            ctx.emitter.line("_scope.pop(_ind_var, None)")
             else:
                 raise NotImplementedError(
                     f"NEW indirection not supported for strategy {ctx.strategy}"
@@ -5408,13 +5432,20 @@ def _generate_new_selective_vars(stmt: MNewStatement, ctx: "GeneratorContext") -
                     # Fallback: simple pop (used when no NewScopeManager in context)
                     ctx.emitter.line(f"_scope.pop({translated!r}, None)")
             else:
-                # TRAMPOLINE strategy with static state vars
+                # TRAMPOLINE strategy
                 translated = translate_name(var_name)
                 if ctx.uses_dynamic_locals:
                     # Push tagged selective NEW entry to _new_stack
                     # Format: ('var', name, saved_value_or_None)
                     ctx.emitter.line(
                         f"state._new_stack.append(('var', {translated!r}, state._locals.pop({translated!r}, None)))"
+                    )
+                elif ctx.new_scope_manager_var:
+                    # DOT block with scope manager: use new_var() for proper
+                    # save/restore on block exit. This handles non-dynamic_locals
+                    # TRAMPOLINE where vars live in _scope, not state._locals.
+                    ctx.emitter.line(
+                        f"{ctx.new_scope_manager_var}.new_var({translated!r})"
                     )
                 elif var_name in ctx.state_vars:
                     # State var: reset via state attribute

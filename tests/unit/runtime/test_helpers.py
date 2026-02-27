@@ -27,6 +27,7 @@ from m2py.runtime.helpers import (
     m_zgetsyi,
     m_ztime,
     unwind_new_stack,
+    unwind_new_stack_to_mark,
     m_set_extract,
     _raise_select_false,
     m_qlength,
@@ -1240,6 +1241,139 @@ class TestUnwindNewStack:
         state._new_stack.append(("all", {}))
         unwind_new_stack(state)
         assert len(state._new_stack) == 0
+
+
+class TestUnwindNewStackToMark:
+    """Tests for unwind_new_stack_to_mark() helper.
+
+    This function unwinds NEW stack entries back to a saved mark,
+    used in TRAMPOLINE mode to restore variables when a dot block exits.
+    """
+
+    def test_unwind_to_mark_empty_above(self):
+        """Unwind to mark with nothing above mark is a no-op."""
+        state = _MockState()
+        state._locals = {"X": MArray(value=1)}
+        state._new_stack.append(("var", "A", MArray(value="old")))
+        mark = len(state._new_stack)  # mark=1
+        # No entries above mark
+        unwind_new_stack_to_mark(state, mark)
+        assert len(state._new_stack) == 1  # original entry untouched
+        assert state._locals["X"].value == 1
+
+    def test_unwind_single_var(self):
+        """Unwind one ('var', name, saved) entry above mark."""
+        state = _MockState()
+        state._locals = {"X": MArray(value="inner")}
+        # Pre-existing entry (below mark)
+        state._new_stack.append(("var", "Y", MArray(value="outer_y")))
+        mark = len(state._new_stack)  # mark=1
+        # Entry pushed inside dot block (above mark)
+        state._new_stack.append(("var", "X", MArray(value="outer")))
+        state._locals.pop("X")  # NEW removes from _locals
+        # At this point X is not in _locals
+        assert "X" not in state._locals
+        unwind_new_stack_to_mark(state, mark)
+        # X should be restored
+        assert state._locals["X"].value == "outer"
+        # Stack should be back to mark
+        assert len(state._new_stack) == 1
+
+    def test_unwind_multiple_vars(self):
+        """Unwind multiple entries above mark in LIFO order."""
+        state = _MockState()
+        mark = 0
+        # Push two entries above mark
+        state._new_stack.append(("var", "A", MArray(value="a_orig")))
+        state._new_stack.append(("var", "B", MArray(value="b_orig")))
+        # Simulate NEW removing both
+        state._locals = {}
+        unwind_new_stack_to_mark(state, mark)
+        assert state._locals["A"].value == "a_orig"
+        assert state._locals["B"].value == "b_orig"
+        assert len(state._new_stack) == 0
+
+    def test_unwind_var_none_removes(self):
+        """('var', name, None) removes the variable on unwind."""
+        state = _MockState()
+        state._locals = {"X": MArray(value="shouldn't exist")}
+        mark = 0
+        state._new_stack.append(("var", "X", None))
+        unwind_new_stack_to_mark(state, mark)
+        assert "X" not in state._locals
+
+    def test_unwind_preserves_below_mark(self):
+        """Entries below the mark are not touched."""
+        state = _MockState()
+        state._new_stack.append(("var", "KEEP", MArray(value="keep")))
+        mark = len(state._new_stack)  # mark=1
+        state._new_stack.append(("var", "REMOVE", MArray(value="remove")))
+        state._locals = {}
+        unwind_new_stack_to_mark(state, mark)
+        assert state._locals["REMOVE"].value == "remove"
+        assert len(state._new_stack) == 1  # KEEP entry still there
+        assert state._new_stack[0][0] == "var"
+        assert state._new_stack[0][1] == "KEEP"
+        assert state._new_stack[0][2].value == "keep"
+
+    def test_unwind_all_entry_above_mark(self):
+        """('all', saved_dict) entry above mark restores full snapshot."""
+        state = _MockState()
+        mark = 0
+        saved = {"X": MArray(value="saved_x")}
+        state._new_stack.append(("all", saved))
+        state._locals = {"Y": MArray(value="current_y")}
+        unwind_new_stack_to_mark(state, mark)
+        assert "X" in state._locals
+        assert state._locals["X"].value == "saved_x"
+        assert "Y" not in state._locals  # replaced by snapshot
+
+    def test_unwind_excl_entry_above_mark(self):
+        """('excl', keep_set, saved_dict) entry above mark."""
+        state = _MockState()
+        mark = 0
+        state._new_stack.append(("excl", {"X"}, {"Y": MArray(value="saved_y")}))
+        state._locals = {"X": MArray(value="current_x"), "Z": MArray(value="z")}
+        unwind_new_stack_to_mark(state, mark)
+        # X was in keep set, so current value preserved
+        assert state._locals["X"].value == "current_x"
+        # Y restored from saved
+        assert state._locals["Y"].value == "saved_y"
+        # Z was not in saved and not in keep, so gone
+        assert "Z" not in state._locals
+
+    def test_nested_dot_block_pattern(self):
+        """Simulate nested dot blocks with marks at each level.
+
+        Outer dot block: NEW A
+        Inner dot block: NEW B
+        Inner exits → B restored
+        Outer exits → A restored
+        """
+        state = _MockState()
+        state._locals = {"A": MArray(value="orig_a"), "B": MArray(value="orig_b")}
+
+        # Outer dot block
+        mark_outer = len(state._new_stack)
+        state._new_stack.append(("var", "A", state._locals.pop("A")))
+
+        # Inner dot block
+        mark_inner = len(state._new_stack)
+        state._new_stack.append(("var", "B", state._locals.pop("B")))
+
+        # B is gone, A is gone
+        assert "A" not in state._locals
+        assert "B" not in state._locals
+
+        # Inner dot block exits
+        unwind_new_stack_to_mark(state, mark_inner)
+        assert state._locals["B"].value == "orig_b"
+        assert "A" not in state._locals
+
+        # Outer dot block exits
+        unwind_new_stack_to_mark(state, mark_outer)
+        assert state._locals["A"].value == "orig_a"
+        assert state._locals["B"].value == "orig_b"
 
 
 # =============================================================================

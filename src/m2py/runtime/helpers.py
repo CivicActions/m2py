@@ -1862,6 +1862,30 @@ class NewScopeManager:
         setter("")
 
 
+def _unwind_one_new_entry(state, entry) -> None:
+    """Unwind a single NEW stack entry, restoring the variable."""
+    if isinstance(entry, dict):
+        # Legacy format: argumentless NEW (full snapshot)
+        state._locals.clear()
+        state._locals.update(entry)
+    elif entry[0] == "all":
+        state._locals.clear()
+        state._locals.update(entry[1])
+    elif entry[0] == "excl":
+        keep_vars = entry[1]
+        saved = entry[2]
+        current_kept = {k: v for k, v in state._locals.items() if k in keep_vars}
+        state._locals.clear()
+        state._locals.update(saved)
+        state._locals.update(current_kept)
+    elif entry[0] == "var":
+        name, saved_value = entry[1], entry[2]
+        if saved_value is not None:
+            state._locals[name] = saved_value
+        else:
+            state._locals.pop(name, None)
+
+
 def unwind_new_stack(state) -> None:
     """Unwind all NEW frames in state._new_stack on subroutine exit.
 
@@ -1877,27 +1901,24 @@ def unwind_new_stack(state) -> None:
     """
     while state._new_stack:
         entry = state._new_stack.pop()
-        if isinstance(entry, dict):
-            # Legacy format: argumentless NEW (full snapshot)
-            state._locals.clear()
-            state._locals.update(entry)
-        elif entry[0] == "all":
-            state._locals.clear()
-            state._locals.update(entry[1])
-        elif entry[0] == "excl":
-            keep_vars = entry[1]
-            saved = entry[2]
-            # Keep current values of kept variables
-            current_kept = {k: v for k, v in state._locals.items() if k in keep_vars}
-            state._locals.clear()
-            state._locals.update(saved)
-            state._locals.update(current_kept)
-        elif entry[0] == "var":
-            name, saved_value = entry[1], entry[2]
-            if saved_value is not None:
-                state._locals[name] = saved_value
-            else:
-                state._locals.pop(name, None)
+        _unwind_one_new_entry(state, entry)
+
+
+def unwind_new_stack_to_mark(state, mark: int) -> None:
+    """Unwind NEW stack entries back to a saved mark.
+
+    Used in TRAMPOLINE mode to unwind NEW'd variables when a dot block
+    exits.  The mark is the len(state._new_stack) captured before the
+    dot block started.  All entries pushed since then are unwound in
+    LIFO order.
+
+    Args:
+        state: RoutineState with _new_stack and _locals
+        mark: Target stack depth to unwind to
+    """
+    while len(state._new_stack) > mark:
+        entry = state._new_stack.pop()
+        _unwind_one_new_entry(state, entry)
 
 
 # =============================================================================
