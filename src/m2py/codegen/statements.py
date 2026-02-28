@@ -6655,11 +6655,13 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
                                 f"_rt.execute_mumps({expr_code}, _scope, globals())"
                             )
                             ctx.emitter.line("_test = _rt._test")
+                            emit_scope_to_state_sync(ctx)
                     else:
                         ctx.emitter.line(
                             f"_rt.execute_mumps({expr_code}, _scope, globals())"
                         )
                         ctx.emitter.line("_test = _rt._test")
+                        emit_scope_to_state_sync(ctx)
                     continue
 
                 # Build per_level_subscripts argument if needed
@@ -6684,11 +6686,13 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
                             f"_rt.execute_mumps_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg}, caller_globals=globals())"
                         )
                         ctx.emitter.line("_test = _rt._test")
+                        emit_scope_to_state_sync(ctx)
                 else:
                     ctx.emitter.line(
                         f"_rt.execute_mumps_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg}, caller_globals=globals())"
                     )
                     ctx.emitter.line("_test = _rt._test")
+                    emit_scope_to_state_sync(ctx)
             else:
                 # Regular expression (variable, string, function call, etc.)
                 expr_code = generate_expr(xecute_arg.expression, ctx)
@@ -6701,11 +6705,13 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
                             f"_rt.execute_mumps({expr_code}, _scope, globals())"
                         )
                         ctx.emitter.line("_test = _rt._test")
+                        emit_scope_to_state_sync(ctx)
                 else:
                     ctx.emitter.line(
                         f"_rt.execute_mumps({expr_code}, _scope, globals())"
                     )
                     ctx.emitter.line("_test = _rt._test")
+                    emit_scope_to_state_sync(ctx)
 
     # Check if any constant strings contain control flow
     has_control_flow = False
@@ -6825,6 +6831,7 @@ def _generate_xecute_args_with_postconds(
                         f"_rt.execute_mumps({expr_code}, _scope, globals())"
                     )
                     ctx.emitter.line("_test = _rt._test")
+                    emit_scope_to_state_sync(ctx)
         else:
             # No postcondition - execute directly
             if is_constant:
@@ -6841,6 +6848,7 @@ def _generate_xecute_args_with_postconds(
                 expr_code = generate_expr(xarg.expression, ctx)
                 ctx.emitter.line(f"_rt.execute_mumps({expr_code}, _scope, globals())")
                 ctx.emitter.line("_test = _rt._test")
+                emit_scope_to_state_sync(ctx)
 
 
 def _generate_job_process_params(

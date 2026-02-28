@@ -894,6 +894,7 @@ def generate_indirect_do(
                 )
             ctx.emitter.line("_xecute_target = _xecute_target + _call_target.args_str")
             ctx.emitter.line(f'_rt.execute_mumps("D " + _xecute_target, {scope_ref})')
+            _emit_scope_to_state_sync(ctx)
 
         ctx.emitter.line(
             "elif _call_target.routine and _call_target.routine != _routine_name:"
@@ -1115,6 +1116,7 @@ def generate_set_argument_indirection(
     Evaluates expression to get SET argument string, executes via execute_mumps.
     """
     from m2py.codegen.expressions import generate_expr
+    from m2py.codegen.statements import emit_scope_to_state_sync
 
     if expr.expression is None:
         raise ValueError("Argument indirection requires an expression")
@@ -1122,6 +1124,7 @@ def generate_set_argument_indirection(
     target_expr = generate_expr(expr.expression, ctx)
     scope_expr = scope_dict_expr(ctx)
     ctx.emitter.line(f'_rt.execute_mumps("S " + str({target_expr}), {scope_expr})')
+    emit_scope_to_state_sync(ctx)
 
 
 def generate_increment_indirection(
