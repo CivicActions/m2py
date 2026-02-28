@@ -363,9 +363,21 @@ def _mark_unreachable_statements(statements: List[MStatement]) -> None:
 
         # Check if this statement is an unconditional exit
         if isinstance(stmt, (MQuitStatement, MGotoStatement, MHaltStatement)):
-            # Unconditional = no postcondition
+            # Unconditional = no postcondition on the statement itself
             if stmt.postcondition is None:
-                unreachable = True
+                # For GOTO, also check target-level postconditions.
+                # G N:A="" has stmt.postcondition=None but target.postcondition set.
+                # If ALL targets have postconditions, the GOTO is effectively
+                # conditional (none of the conditions may be true) and execution
+                # can fall through to the next statement.
+                if (
+                    isinstance(stmt, MGotoStatement)
+                    and stmt.targets
+                    and all(t.postcondition is not None for t in stmt.targets)
+                ):
+                    pass  # Effectively conditional — don't mark unreachable
+                else:
+                    unreachable = True
 
         # Recursively check nested scopes (FOR body, IF then_scope, etc.)
         # But don't propagate unreachable flag INTO nested scopes - each scope

@@ -174,8 +174,20 @@ class MLabel(ASGElement):
             return False
 
         # Check if it's an unconditional exit
-        if isinstance(last_stmt, (MQuitStatement, MGotoStatement, MHaltStatement)):
+        if isinstance(last_stmt, (MQuitStatement, MHaltStatement)):
             return last_stmt.postcondition is None
+
+        if isinstance(last_stmt, MGotoStatement):
+            if last_stmt.postcondition is not None:
+                return False
+            # G target1:pc1,target2:pc2 — if ALL targets have postconditions,
+            # the GOTO is effectively conditional (execution can fall through
+            # when none of the conditions are met).
+            if last_stmt.targets and all(
+                t.postcondition is not None for t in last_stmt.targets
+            ):
+                return False
+            return True
 
         return False
 
