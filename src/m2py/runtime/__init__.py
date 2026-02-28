@@ -1814,6 +1814,10 @@ class MUMPSRuntime:
         # Codegen callback for XECUTE: (code, routine_name) -> python_source
         # If None, auto-discovered from m2py.codegen when first needed.
         self._codegen_callback = codegen_callback
+        # Cache for XECUTE: mumps_code -> (python_source, compiled_code_object)
+        # Old-style cross-references execute the same M code for every entry,
+        # so caching avoids re-parsing and re-generating Python each time.
+        self._xecute_cache: Dict[str, Any] = {}
 
     def _get_codegen_callback(self) -> Any:
         """Get the codegen callback, using auto-discovery if not explicitly set."""
@@ -7682,14 +7686,21 @@ class MUMPSRuntime:
             # Already has structure, use as-is
             wrapped_code = mumps_code
 
-        # Generate Python code
-        try:
-            python_code = generate_python(wrapped_code, routine_name="XECUTE")
-        except Exception as e:
-            # Provide useful context in XECUTE syntax error message
-            # Include the original MUMPS code so user knows what failed
-            error_msg = f"XECUTE parse error in '{mumps_code}': {e}"
-            raise SyntaxError(error_msg) from e
+        # Generate Python code (cached to avoid re-parsing identical XECUTE strings)
+        cache_key = wrapped_code
+        cached = self._xecute_cache.get(cache_key)
+        if cached is not None:
+            python_code, code_obj = cached
+        else:
+            try:
+                python_code = generate_python(wrapped_code, routine_name="XECUTE")
+            except Exception as e:
+                # Provide useful context in XECUTE syntax error message
+                # Include the original MUMPS code so user knows what failed
+                error_msg = f"XECUTE parse error in '{mumps_code}': {e}"
+                raise SyntaxError(error_msg) from e
+            code_obj = compile(python_code, "<xecute>", "exec")
+            self._xecute_cache[cache_key] = (python_code, code_obj)
 
         # Create execution namespace with shared scope
         namespace: Dict[str, Any] = {
@@ -7718,8 +7729,8 @@ class MUMPSRuntime:
                     namespace[name] = value
 
         try:
-            # Execute the generated code
-            exec(python_code, namespace)
+            # Execute the generated code (use pre-compiled code object)
+            exec(code_obj, namespace)
 
             # The generated code defines a function, we need to call it
             if "XECUTE" in namespace and callable(namespace["XECUTE"]):
