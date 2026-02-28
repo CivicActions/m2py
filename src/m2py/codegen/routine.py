@@ -1369,27 +1369,35 @@ class RoutineGenerator:
                 if param in state_vars:
                     ctx.emitter.line(f"state.{param} = {param}")
 
-            # Initialize formal parameters in state._locals for dynamic locals
-            # The wrapper passes formal params as positional args to the internal
-            # function, but the body reads variables from state._locals dict.
-            # Without this, the initial parameter value is lost.
-            # If param is an MArray (by-ref), alias it directly for
-            # DATA-CELL semantics. Otherwise wrap the value in a new MArray.
+            # Initialize formal parameters in state._locals for dynamic locals.
+            # Formal parameters are implicitly NEWed per MUMPS spec — save
+            # the caller's value on _new_stack so unwind_new_stack() restores
+            # it when the subroutine returns.  The pop() disconnects the old
+            # MArray from state._locals, preventing the caller's shared
+            # MArray from being mutated when we assign the parameter value.
             if ctx.uses_dynamic_locals and formal_params:
                 for param in formal_params:
-                    ctx.emitter.line(f"if isinstance({param}, MArray):")
+                    # Implicit NEW — save and remove caller's value
+                    ctx.emitter.line(
+                        f"state._new_stack.append(('var', {param!r}, state._locals.pop({param!r}, None)))"
+                    )
+                    ctx.emitter.line(f"if {param} is not None:")
                     with ctx.emitter.indented():
-                        ctx.emitter.line(f"state._locals[{param!r}] = {param}")
-                    ctx.emitter.line("else:")
-                    with ctx.emitter.indented():
-                        ctx.emitter.line(
-                            f"state._locals.setdefault({param!r}, MArray()).value = {param}"
-                        )
+                        ctx.emitter.line(f"if isinstance({param}, MArray):")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(f"state._locals[{param!r}] = {param}")
+                        ctx.emitter.line("else:")
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                f"state._locals.setdefault({param!r}, MArray()).value = {param}"
+                            )
 
             # Fallback: formal params NOT in state_vars and NOT in dynamic_locals
             # must be placed into _scope so the body can read them via _scope[].
             # This handles TRAMPOLINE labels with static state vars where the
             # formal parameter is local to one label (not shared across GOTOs).
+            # Always create a new MArray to avoid mutating the caller's shared
+            # MArray object.
             if not ctx.uses_dynamic_locals and formal_params:
                 for param in formal_params:
                     if param not in state_vars:
@@ -1401,7 +1409,7 @@ class RoutineGenerator:
                             ctx.emitter.line("else:")
                             with ctx.emitter.indented():
                                 ctx.emitter.line(
-                                    f"_scope.setdefault({param!r}, MArray()).value = {param}"
+                                    f"_scope[{param!r}] = MArray(value={param})"
                                 )
 
             # Get label line number for offset calculation
