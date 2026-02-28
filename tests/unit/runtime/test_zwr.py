@@ -136,6 +136,57 @@ class TestParseZwrLine:
         name, subs, val = parse_zwr_line('^G(.01)="decimal"')
         assert subs == [".01"]
 
+    # ----- value-contains-parens / indirection edge cases -----
+
+    def test_value_with_paren_equals(self):
+        """Value containing )= pattern must not confuse subscript boundary.
+
+        This is the exact DD cross-reference SET code line that exposed the
+        original greedy-regex bug.
+        """
+        line = '^DD(0,".01",1,1,1)="S @(DIC_""""""B"""",X,DA)="""""""""")"'
+        name, subs, val = parse_zwr_line(line)
+        assert name == "^DD"
+        assert subs == ["0", ".01", "1", "1", "1"]
+        # Decoded value: S @(DIC_"""B"",X,DA)="""""")
+        # (the close-paren is part of the MUMPS code, not ZWR structure)
+        assert val == 'S @(DIC_"""B"",X,DA)=""""")'
+
+    def test_value_with_paren_equals_kill_code(self):
+        """DD KILL cross-reference code (piece 1,1,2) also has paren-eq."""
+        line = '^DD(0,".01",1,1,2)="K @(DIC_""""""B"""",X,DA)"'
+        name, subs, val = parse_zwr_line(line)
+        assert subs == ["0", ".01", "1", "1", "2"]
+        assert val == 'K @(DIC_"""B"",X,DA)'
+
+    def test_value_with_multiple_parens(self):
+        """Value with multiple nested parentheses."""
+        line = '^GLO(1,2)="S X=$P(Y,U,2) S @(""^A("",X,"")"")=1"'
+        name, subs, val = parse_zwr_line(line)
+        assert name == "^GLO"
+        assert subs == ["1", "2"]
+
+    def test_subscript_with_close_paren_in_quotes(self):
+        """Quoted subscript containing ) character."""
+        line = '^GLO("a)")="value"'
+        name, subs, val = parse_zwr_line(line)
+        assert subs == ["a)"]
+        assert val == "value"
+
+    def test_subscript_with_equals_in_quotes(self):
+        """Quoted subscript containing = character."""
+        line = '^GLO("a=b")="value"'
+        name, subs, val = parse_zwr_line(line)
+        assert subs == ["a=b"]
+        assert val == "value"
+
+    def test_subscript_with_paren_equals_in_quotes(self):
+        """Quoted subscript containing )= sequence — adversarial case."""
+        line = '^GLO("a)=b")="value"'
+        name, subs, val = parse_zwr_line(line)
+        assert subs == ["a)=b"]
+        assert val == "value"
+
 
 # =============================================================================
 # parse_zwr_stream
@@ -251,6 +302,15 @@ class TestRoundTrip:
             ("^G", [], "root value"),
             ("^G", ["-1", "0"], "negative"),
             ("^G", ["1"], "line1\nline2\ttab"),
+            # Values containing parens/equals (cross-ref code)
+            (
+                "^DD",
+                ["0", ".01", "1", "1", "1"],
+                'S @(DIC_"""B"",X,DA)=""""")',
+            ),
+            ("^DD", ["0", ".01", "1", "1", "2"], 'K @(DIC_"""B"",X,DA)'),
+            # Subscript containing ) inside quotes
+            ("^GLO", ["a)=b", "2"], "val"),
         ],
         ids=[
             "simple",
@@ -261,6 +321,9 @@ class TestRoundTrip:
             "root_node",
             "negative_sub",
             "non_printable",
+            "crossref_set_code",
+            "crossref_kill_code",
+            "paren_eq_in_subscript",
         ],
     )
     def test_round_trip(self, name: str, subs: list[str], value: str):

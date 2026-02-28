@@ -33,13 +33,12 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 # Match a ZWR line: ^NAME(subscripts)="value"  or  ^NAME="value"
-_ZWR_LINE_RE = re.compile(
-    r"^\^"  # Leading caret
-    r"([A-Za-z%][\w]*)"  # Global name (captured)
-    r"(?:\((.+)\))?"  # Optional subscripts in parens (captured)
-    r"="  # Equals
-    r"(.+)$"  # Value expression (captured)
-)
+# NOTE: We no longer use a single regex to split subscripts from value
+# because the old greedy `(.+)` pattern failed when values contained
+# `)=` sequences (e.g. cross-reference SET code with indirection).
+# Instead, _split_zwr_line() scans character-by-character with quote-
+# state tracking to locate the correct `)=` boundary.
+_ZWR_GLOBAL_RE = re.compile(r"^\^([A-Za-z%][\w]*)")
 
 # $C(n) or $CHAR(n) — for decoding non-printable characters in values
 _DOLLAR_C_RE = re.compile(r"\$C(?:HAR)?\((\d+(?:,\d+)*)\)", re.IGNORECASE)
@@ -48,6 +47,69 @@ _DOLLAR_C_RE = re.compile(r"\$C(?:HAR)?\((\d+(?:,\d+)*)\)", re.IGNORECASE)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+def _split_zwr_line(line: str) -> tuple[str, str | None, str] | None:
+    """Split a ZWR line into ``(global_name, raw_subscripts, raw_value)``.
+
+    Unlike a simple regex, this scanner tracks quote-state so that ``)``
+    and ``=`` characters *inside* quoted subscripts are not mistaken for
+    the subscript/value boundary.
+
+    Returns ``None`` if *line* is not valid ZWR format.
+    """
+    # --- global name ---
+    m = _ZWR_GLOBAL_RE.match(line)
+    if not m:
+        return None
+    global_name = m.group(1)
+    i = m.end()
+    n = len(line)
+
+    if i >= n:
+        return None  # need at least '=' after the name
+
+    # --- optional subscripts ---
+    if line[i] == "(":
+        i += 1  # skip '('
+        sub_start = i
+        in_quote = False
+        while i < n:
+            ch = line[i]
+            if in_quote:
+                if ch == '"':
+                    if i + 1 < n and line[i + 1] == '"':
+                        i += 2  # doubled-quote escape
+                    else:
+                        in_quote = False
+                        i += 1
+                else:
+                    i += 1
+            else:
+                if ch == '"':
+                    in_quote = True
+                    i += 1
+                elif ch == ")":
+                    raw_subs = line[sub_start:i]
+                    i += 1  # skip ')'
+                    break
+                else:
+                    i += 1
+        else:
+            return None  # unmatched '('
+
+        if i >= n or line[i] != "=":
+            return None
+        i += 1  # skip '='
+        return (global_name, raw_subs, line[i:])
+
+    elif line[i] == "=":
+        i += 1  # skip '='
+        if i >= n:
+            return None  # empty value
+        return (global_name, None, line[i:])
+
+    return None
 
 
 def _parse_subscripts(raw: str) -> list[str]:
@@ -293,14 +355,12 @@ def parse_zwr_line(line: str) -> tuple[str, list[str], str]:
         ValueError: If the line is not valid ZWR format.
     """
     line = line.strip()
-    m = _ZWR_LINE_RE.match(line)
-    if not m:
+    parts = _split_zwr_line(line)
+    if parts is None:
         raise ValueError(f"Invalid ZWR line: {line!r}")
 
-    name = "^" + m.group(1)
-    raw_subs = m.group(2)
-    raw_value = m.group(3)
-
+    global_name, raw_subs, raw_value = parts
+    name = "^" + global_name
     subscripts = _parse_subscripts(raw_subs) if raw_subs else []
     value = _decode_zwr_value(raw_value)
 
