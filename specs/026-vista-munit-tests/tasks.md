@@ -3,7 +3,7 @@
 **Input**: Design documents from `/specs/026-vista-munit-tests/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/ (models, parser, baseline-runner, pytest-adapter, zwr), quickstart.md
 
-**Organization**: Tasks use Phase 1–12 numbering, which refines and expands plan.md’s Phase A–G. Phases 1–5 deliver the MVP (Tier 1+2, 12 routines). Phases 6–11 deliver the stretch goal (Tier 3+4, 38 routines total). Phase 12 is polish.
+**Organization**: Tasks use Phase 1–13 numbering, which refines and expands plan.md’s Phase A–G. Phases 1–5 deliver the MVP (Tier 1+2, 12 routines). Phases 6–12 deliver the stretch goal (Tier 3+4, 38 routines total). Phase 8 adds backend compatibility for YottaDB and IRIS. Phase 13 is polish.
 
 **Phase Mapping** (plan.md → tasks.md):
 
@@ -15,11 +15,12 @@
 | C (Tier 2) | 5 (Tier 2 XML Parser) | M XML Parser tests |
 | — | 6 (Capture Stretch Baselines) | All remaining tiers captured from osehravista |
 | D (Tier 3, part) | 7 (ZWR Import/Export) | ZWR in m2py + vista-test fixtures |
-| D (Tier 3, part) | 8 (Tier 3 FileMan) | FileMan test routines |
-| E (Tier 4a) | 9 (Tier 4a Problem List) | Problem List test routines |
-| F (Tier 4b) | 10 (Tier 4b Scheduling) | Scheduling test routines |
-| G (Tier 4c) | 11 (Tier 4c Registration) | Registration test routine |
-| — | 12 (Polish) | Final validation, docs, CI |
+| — | 8 (Backend Compatibility) | YottaDB/IRIS testing infrastructure + regression fixes |
+| D (Tier 3, part) | 9 (Tier 3 FileMan) | FileMan test routines |
+| E (Tier 4a) | 10 (Tier 4a Problem List) | Problem List test routines |
+| F (Tier 4b) | 11 (Tier 4b Scheduling) | Scheduling test routines |
+| G (Tier 4c) | 12 (Tier 4c Registration) | Registration test routine |
+| — | 13 (Polish) | Final validation, docs, CI |
 
 **Cross-repo convention**: Tasks prefixed with `vista-test/` live in the vista-test repository. Tasks prefixed with `src/m2py/` or `tests/` (no `vista-test/`) live in the m2py root workspace. Each m2py fix gets a standalone unit test with no VistA dependency.
 
@@ -237,7 +238,72 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 ---
 
-## Phase 8: User Story 6 — Tier 3: VA FileMan (5 routines, ~174 assertions) [Stretch]
+## Phase 8: Backend Compatibility — YottaDB & IRIS Testing Infrastructure + Regression Fixes
+
+**Goal**: Make vista-test independently runnable against YottaDB and IRIS backends (reusing m2py's Docker infrastructure), fix m2py regressions found with external backends, and fix all vista-test failures when running against these backends.
+
+**Context**: m2py supports pluggable backends via `M2PY_GLOBAL_BACKEND` env var (inmemory, sqlite, yottadb, iris). The m2py test suite uses `--backend` CLI option (propagated to env var). vista-test currently has no backend switching — it always uses the default inmemory backend. The YottaDB backend runs inside Docker (`utils/ydb.sh` / `Dockerfile.yottadb`); the IRIS backend uses a Docker container for the server but runs Python locally (`utils/iris.sh`).
+
+**Known issues from initial backend testing**:
+- m2py + YottaDB: 55 failures (lock indirection, residual global state between tests, V4SYSTEM/V4PRIN/V4JOB system-specific, per02276, MERGE tests)
+- m2py + IRIS: 207 failures (above + empty string subscripts unsupported, IRIS-specific API differences)
+- vista-test + YottaDB: ZWR bootstrap too slow — 843K `set()` calls over C binding takes 18+ minutes
+- vista-test + IRIS: DMUFINIT crashes with `<SUBSCRIPT>` error on `$ORDER(^UTILITY("%RCR","","1","0"))` — IRIS doesn't support empty string subscripts
+
+**Independent Test**: `bash utils/ydb.sh uv run pytest vista-test/tests/vista/munit/ --backend yottadb -n0` and `bash utils/iris.sh uv run pytest vista-test/tests/vista/munit/ --backend iris -n0` both pass/xfail with no unexpected failures.
+
+### vista-test Backend Infrastructure (US3 + US5)
+
+- [x] T122 [US3] Add `--backend` CLI option to `vista-test/tests/vista/munit/conftest.py`: register `pytest_addoption` with choices inmemory/yottadb/iris, propagate to `M2PY_GLOBAL_BACKEND` env var (mirror m2py's pattern in `tests/conftest.py`)
+- [x] T123 [US3] Add backend-specific pytest markers to vista-test: register `backend_yottadb`, `backend_iris`, `backend_inmemory` markers in `vista-test/pyproject.toml` and implement `pytest_collection_modifyitems` skip logic in `vista-test/tests/vista/munit/conftest.py`
+- [x] T124 [P] [US3] Add `yottadb` and `iris` optional dependency groups to `vista-test/pyproject.toml`: `yottadb = ["yottadb>=2.0.0"]` and `backend = ["intersystems-irispython>=5.3.1"]` matching m2py's dependency structure
+- [x] T125 [P] [US3] Create `vista-test/Dockerfile.yottadb` for running vista-test inside YottaDB Docker: based on m2py's Dockerfile.yottadb, adds `uv pip install -e vista-test/` after m2py sync, sets `M2PY_GLOBAL_BACKEND=yottadb`
+- [x] T126 [P] [US3] Create `vista-test/utils/ydb.sh` wrapper: auto-builds vista-test Docker image, mounts workspace, runs commands inside container with YDB env configured (mirrors m2py's `utils/ydb.sh` pattern)
+- [x] T127 [P] [US3] Create `vista-test/utils/iris.sh` wrapper: auto-starts IRIS container, exports connection env vars, runs commands locally with `M2PY_GLOBAL_BACKEND=iris` (mirrors m2py's `utils/iris.sh` pattern)
+
+### ZWR Bulk Import Optimization (US4 + US5)
+
+- [ ] T128 [US4] Implement `import_zwr_ydb_native(path: Path) -> int` in `src/m2py/runtime/zwr.py`: use YottaDB's `MUPIP LOAD` for bulk ZWR import when running inside a YDB environment (subprocess call to `mupip load`), falling back to line-by-line `set()` when MUPIP unavailable. Target: 843K nodes in <30s vs 18+ minutes
+- [ ] T129 [US4] Add `import_zwr_bulk()` dispatch function in `src/m2py/runtime/zwr.py`: auto-detect backend type and use native bulk import when available (MUPIP LOAD for YDB), fall back to standard line-by-line import. Update `import_zwr()` to call this dispatcher
+- [ ] T130 [P] [US4] Write unit tests for `import_zwr_ydb_native()`: verify MUPIP LOAD subprocess invocation, fallback behavior when MUPIP unavailable, node count reporting in `tests/unit/runtime/test_zwr.py`
+- [ ] T131 [US4] Implement IRIS bulk import via `iris.cls` routine: write a helper that sends ZWR file contents through IRIS `%SYS.GlobalQuery` or uses `$SYSTEM.OBJ.Load()` for batch global import, avoiding per-node TCP round-trips. Add to `src/m2py/runtime/zwr.py`
+
+### Fix m2py YottaDB Backend Regressions (US5)
+
+- [ ] T132 [US5] Fix lock indirection tests failing with YottaDB backend: investigate whether lock state leaks between tests or if the YDB lock API behaves differently from inmemory; add test isolation (unlock-all in teardown) in `tests/conftest.py` or fix lock cleanup in `src/m2py/runtime/yottadb_backend.py`
+- [ ] T133 [US5] Fix residual global state failures in YottaDB: tests that pass with inmemory but fail with YDB due to leftover globals from previous tests. Add per-test global cleanup fixture or use YDB transaction rollback in `tests/conftest.py`
+- [ ] T134 [US5] Fix V4SYSTEM, V4PRIN, V4JOB MVTS test failures with YottaDB: these test system-specific intrinsic variables (`$SYSTEM`, `$PRINCIPAL`, `$JOB`). Investigate whether YDB returns different values and update test expectations or skip with `backend_yottadb` marker in test files under `tests/functional/`
+- [ ] T135 [US5] Fix per02276 MVTS test failure with YottaDB: investigate root cause (likely MERGE or $ORDER edge case with real YDB storage) and fix in `src/m2py/runtime/` or mark as backend-specific xfail with standalone m2py unit test
+- [ ] T136 [US5] Fix MERGE test failures with YottaDB backend: investigate whether MERGE codegen produces invalid YDB API calls or if subscript ordering differs; fix in `src/m2py/runtime/yottadb_backend.py` or `src/m2py/codegen/statements.py`
+
+### Fix m2py IRIS Backend Regressions (US5)
+
+- [ ] T137 [US5] Handle IRIS empty string subscript limitation: add guard in `src/m2py/runtime/iris_backend.py` `set()`/`get()`/`order()` methods to detect empty-string subscripts and either raise a clear error or remap to a sentinel value, with comprehensive unit tests in `tests/runtime/backend/`
+- [ ] T138 [US5] Fix IRIS-specific test failures beyond empty subscripts: categorize the ~150 additional IRIS failures (vs YDB's 55), determine which are IRIS API limitations vs m2py bugs, mark genuine IRIS limitations with `backend_iris` skip markers, fix m2py bugs with standalone tests
+- [ ] T139 [P] [US5] Add backend compatibility test matrix documentation in `docs/runtime.md`: document known backend differences (empty subscripts, lock semantics, system variables), supported operations per backend, and test skip reasons
+
+### Fix vista-test YottaDB Failures (US6)
+
+- [ ] T140 [US6] Wire vista-test `fileman_bootstrap` to use bulk ZWR import: update `vista-test/tests/vista/munit/conftest.py` to call `import_zwr_bulk()` (from T129) instead of `import_zwr()` for the 843K-node DD/DIC/INDEX load, making YDB bootstrap complete in <60s
+- [ ] T141 [US6] Run all vista-test M-Unit tests with YottaDB backend end-to-end: `bash vista-test/utils/ydb.sh uv run pytest tests/vista/munit/ --backend yottadb -n0 -v`. Fix or xfail any failures discovered
+- [ ] T142 [US5] Fix m2py issues discovered during vista-test YottaDB testing: each bug gets a standalone unit test in `tests/` (m2py root, no VistA dependency), then re-verify vista-test passes
+
+### Fix vista-test IRIS Failures (US6)
+
+- [ ] T143 [US6] Fix DMUFINIT `<SUBSCRIPT>` error with IRIS backend: the empty string subscript in `$ORDER(^UTILITY("%RCR","","1","0"))` crashes IRIS. Either (a) fix the transpiled code to avoid empty-string subscripts when on IRIS, (b) add an IRIS-specific codepath in the runtime, or (c) xfail DMUFINIT on IRIS with a clear skip reason in `vista-test/tests/vista/munit/test_dmufinit.py`
+- [ ] T144 [US6] Run all vista-test M-Unit tests with IRIS backend end-to-end: `bash vista-test/utils/iris.sh uv run pytest tests/vista/munit/ --backend iris -n0 -v`. Fix or xfail any failures discovered
+- [ ] T145 [US5] Fix m2py issues discovered during vista-test IRIS testing: each bug gets a standalone unit test in `tests/` (m2py root, no VistA dependency), then re-verify vista-test passes
+
+### CI Integration (US3)
+
+- [ ] T146 [P] [US3] Add backend test invocation examples to `vista-test/README.md`: document how to run tests with each backend, Docker prerequisites, and expected behavior differences
+- [ ] T147 [P] [US3] Create `vista-test/utils/run_all_backends.sh` convenience script: runs full vista-test suite against inmemory, then YottaDB, then IRIS, and reports a summary matrix of pass/fail/xfail per backend
+
+**Checkpoint**: vista-test passes with all three backends (inmemory, YottaDB, IRIS). m2py test suite has zero unexpected regressions with YDB and IRIS. Backend-specific limitations are documented and xfailed with clear reasons. ZWR bootstrap completes in <60s on YDB.
+
+---
+
+## Phase 9: User Story 6 — Tier 3: VA FileMan (5 routines, ~174 assertions) [Stretch]
 
 **Goal**: Validate date/time, dictionary lookup, computed field operations. First package requiring global bootstrap.
 
@@ -269,7 +335,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 ---
 
-## Phase 9: User Story 6 continued — Tier 4a: Problem List (8 routines, ~349 assertions) [Stretch]
+## Phase 10: User Story 6 continued — Tier 4a: Problem List (8 routines, ~349 assertions) [Stretch]
 
 **Goal**: Validate Problem List API: create, modify, delete, query problems.
 
@@ -302,7 +368,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 ---
 
-## Phase 10: User Story 6 continued — Tier 4b: Scheduling (12 routines, ~547 assertions) [Stretch]
+## Phase 11: User Story 6 continued — Tier 4b: Scheduling (12 routines, ~547 assertions) [Stretch]
 
 **Goal**: Validate Scheduling APIs: appointments, patient lists, scheduling actions. Largest package by assertion count.
 
@@ -342,7 +408,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 ---
 
-## Phase 11: User Story 6 continued — Tier 4c: Registration (1 routine, ~10 assertions) [Stretch]
+## Phase 12: User Story 6 continued — Tier 4c: Registration (1 routine, ~10 assertions) [Stretch]
 
 **Goal**: Validate patient combine/registration operations. Smallest stretch package.
 
@@ -365,7 +431,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 ---
 
-## Phase 12: Polish & Cross-Cutting Concerns
+## Phase 13: Polish & Cross-Cutting Concerns
 
 **Purpose**: Final validation, documentation, CI readiness.
 
@@ -398,17 +464,19 @@ Phase 2 (Foundational: models + parser) ─────────────�
     │                                                                             │
     └── Phase 7 (US4: ZWR Import/Export in m2py + vista-test fixtures) ────────┤
             │                                                                     │
-            ├── Phase 8 (US6: Tier 3 VA FileMan — 5 routines, ~174 asserts)      │
+            ├── Phase 8 (Backend: YottaDB/IRIS infra + regression fixes) ─────┤
+            │                                                                     │
+            ├── Phase 9 (US6: Tier 3 VA FileMan — 5 routines, ~174 asserts)      │
             │       │                                                             │
-            │       ├── Phase 9 (US6: Tier 4a Problem List — 8 routines, ~349)   │
+            │       ├── Phase 10 (US6: Tier 4a Problem List — 8 routines, ~349)  │
             │       │                                                             │
-            │       ├── Phase 10 (US6: Tier 4b Scheduling — 12 routines, ~547)   │
+            │       ├── Phase 11 (US6: Tier 4b Scheduling — 12 routines, ~547)  │
             │       │                                                             │
-            │       └── Phase 11 (US6: Tier 4c Registration — 1 routine, ~10)    │
+            │       └── Phase 12 (US6: Tier 4c Registration — 1 routine, ~10)   │
             │                                                                     │
             └─────────────────────────────────────────────────────────────────────┘
                                                                                   │
-Phase 12 (Polish) ────────────────────────────────────────────────────────────────┘
+Phase 13 (Polish) ────────────────────────────────────────────────────────────────┘
 ```
 
 ### User Story → Phase Mapping
@@ -417,10 +485,10 @@ Phase 12 (Polish) ────────────────────�
 |------------|-------------|--------|----------|
 | US1 | Capture osehravista Baseline | 3, 6 | P1 |
 | US2 | M-Unit Output Parser + Models | 2 | P1 |
-| US3 | Run Transpiled Tests via pytest | 4, 5 | P2 |
-| US4 | ZWR Import/Export + Global Bootstrap | 7 | P3 (Stretch) |
-| US5 | Fix m2py Issues | 4, 5, 8, 9, 10, 11 (cross-cutting) | P2 |
-| US6 | Incremental Package Expansion | 8, 9, 10, 11 | P3 (Stretch) |
+| US3 | Run Transpiled Tests via pytest | 4, 5, 8 | P2 |
+| US4 | ZWR Import/Export + Global Bootstrap | 7, 8 | P3 (Stretch) |
+| US5 | Fix m2py Issues | 4, 5, 8, 9, 10, 11, 12 (cross-cutting) | P2 |
+| US6 | Incremental Package Expansion | 8, 9, 10, 11, 12 | P3 (Stretch) |
 
 ### Within Each Phase
 
@@ -441,9 +509,11 @@ Phase 12 (Polish) ────────────────────�
 
 **Phase 7** (T045–T047 ZWR parser, T052–T056 ZWR tests): parser/serializer and their tests can be written in parallel.
 
-**Phase 8** (T061–T065 kernel utilities): `%DT`, `%DTC`, `%ZISH`, `%ZOSF`, `DICRW` verifications are independent.
+**Phase 8** (T124–T127 backend infrastructure): Dockerfile, ydb.sh, iris.sh, and dependency groups are independent. T132–T136 (YDB fixes) and T137–T138 (IRIS fixes) can run in parallel.
 
-**Phase 10** (T088–T090 scheduling APIs): SDK, Management, and test commons transpilation are independent.
+**Phase 9** (T061–T065 kernel utilities): `%DT`, `%DTC`, `%ZISH`, `%ZOSF`, `DICRW` verifications are independent.
+
+**Phase 11** (T088–T090 scheduling APIs): SDK, Management, and test commons transpilation are independent.
 
 **Cross-phase**: Phase 6 (stretch baselines) can run in parallel with Phases 4–5 (MVP transpilation) since they only need osehravista Docker.
 
@@ -460,15 +530,16 @@ Phase 12 (Polish) ────────────────────�
 5. **Phase 5**: Transpile + run Tier 2 XML parser (T035–T040)
 6. **STOP AND VALIDATE**: `uv run pytest tests/vista/munit/ -v` — 12 routines pass/xfail
 
-### Stretch Goal: 100% M-Unit Tests (Phases 6–11)
+### Stretch Goal: 100% M-Unit Tests (Phases 6–12)
 
 7. **Phase 6**: Capture remaining baselines (T041–T044) — can overlap with MVP validation
 8. **Phase 7**: ZWR import/export in m2py + vista-test fixtures (T045–T060)
-9. **Phase 8**: Tier 3 VA FileMan (T061–T073) — first stretch milestone (45%)
-10. **Phase 9**: Tier 4a Problem List (T074–T087) — second stretch milestone (66%)
-11. **Phase 10**: Tier 4b Scheduling (T088–T105) — third stretch milestone (97%)
-12. **Phase 11**: Tier 4c Registration (T106–T109) — **100% complete**
-13. **Phase 12**: Polish (T110–T115)
+9. **Phase 8**: Backend compatibility — YottaDB/IRIS infra + regression fixes (T122–T147)
+10. **Phase 9**: Tier 3 VA FileMan (T061–T073) — first stretch milestone (45%)
+11. **Phase 10**: Tier 4a Problem List (T074–T087) — second stretch milestone (66%)
+12. **Phase 11**: Tier 4b Scheduling (T088–T105) — third stretch milestone (97%)
+13. **Phase 12**: Tier 4c Registration (T106–T109) — **100% complete**
+14. **Phase 13**: Polish (T110–T115)
 
 ### Milestone Summary
 
@@ -479,10 +550,11 @@ Phase 12 (Polish) ────────────────────�
 | Phase 4 complete | T024–T034 | 8 | ~28 | Tier 1 passing (21%) |
 | Phase 5 complete | T035–T040 | 12 | ~124 | **MVP — Tier 1+2 (32%)** |
 | Phase 7 complete | T045–T060 | 0 | 0 | ZWR import/export ready (m2py + vista-test) |
-| Phase 8 complete | T061–T073 | 17 | ~298 | Tier 3 passing (45%) |
-| Phase 9 complete | T074–T087 | 25 | ~647 | Tier 4a passing (66%) |
-| Phase 10 complete | T088–T105 | 37 | ~1,194 | Tier 4b passing (97%) |
-| Phase 11 complete | T106–T109 | 38 | ~1,204 | **100% — All tiers** |
+| Phase 8 complete | T122–T147 | 0 | 0 | All backends passing — YDB/IRIS infra + fixes |
+| Phase 9 complete | T061–T073 | 17 | ~298 | Tier 3 passing (45%) |
+| Phase 10 complete | T074–T087 | 25 | ~647 | Tier 4a passing (66%) |
+| Phase 11 complete | T088–T105 | 37 | ~1,194 | Tier 4b passing (97%) |
+| Phase 12 complete | T106–T109 | 38 | ~1,204 | **100% — All tiers** |
 
 ---
 
@@ -495,5 +567,5 @@ Phase 12 (Polish) ────────────────────�
 - ZWR import/export lives in m2py (`src/m2py/runtime/zwr.py`) as a general-purpose capability for any `GlobalStorageBackend`; vista-test fixtures call `import_zwr()` to load cached ZWR data
 - Each m2py bug fix (US5) follows: discover → extract minimal MUMPS → fix → standalone test → verify M-Unit re-run
 - osehravista Docker is only needed for baseline capture (Phases 3, 6) and global data capture (T059–T060, T077, T091, T107); transpiled tests run offline with cached ZWR files
-- Stretch goal phases (7–11) can be attempted incrementally — each tier adds value independently
-- Registration (Phase 11) has fewest tests and could be attempted anytime after Phase 8 (FileMan infrastructure)
+- Stretch goal phases (7–12) can be attempted incrementally — each tier adds value independently
+- Registration (Phase 12) has fewest tests and could be attempted anytime after Phase 9 (FileMan infrastructure)
