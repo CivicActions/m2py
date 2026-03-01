@@ -360,16 +360,17 @@ class TestKillTrampolineDynamicLocals:
     """
 
     def test_kill_dynamic_locals_entire_variable(self, generate_python):
-        """K X with TRAMPOLINE+dynamic_locals uses state._locals.pop().
+        """K X with TRAMPOLINE+dynamic_locals uses state._locals.get().kill().
 
         When uses_dynamic_locals is True AND strategy is TRAMPOLINE,
-        K X should generate state._locals.pop('X', None).
+        K X should kill the MArray in-place via state._locals.get().kill()
+        to preserve call-by-reference aliasing.
         """
         # Cross-label GOTO + argumentless KILL triggers TRAMPOLINE + dynamic_locals
         code = generate_python("TEST K\n K X\n G END\n Q\nEND Q\n")
 
-        # Should use state._locals for variable removal (TRAMPOLINE + dynamic_locals)
-        assert "state._locals.pop('X', None)" in code
+        # Should use state._locals.get().kill() to preserve pass-by-ref alias
+        assert "state._locals.get('X', MArray()).kill()" in code
 
     def test_kill_dynamic_locals_subscripted(self, generate_python):
         """K X(1) with TRAMPOLINE+dynamic_locals uses state._locals.get().kill().
@@ -485,6 +486,89 @@ class TestKillAllMArrayKill:
         # After K N, $DATA(N)=0, then S N=10 sets it. Since N is aliased
         # to X via MArray, X should see the new value.
         assert result.output == "10\n"
+
+
+@pytest.mark.codegen
+class TestKillByRefTrampoline:
+    """Tests for KILL + pass-by-reference in trampoline (dynamic_locals) mode.
+
+    Verifies that when a callee receives a formal parameter by reference,
+    KILLing and re-SETting it correctly propagates back to the caller.
+    This is the pattern used in DIKC.m SETXARR (DINULL guard).
+    """
+
+    def test_byref_kill_set_propagates_simple(self, execute_mumps):
+        """K Y; S Y=42 inside callee propagates to caller via pass-by-ref."""
+        result = execute_mumps(
+            'TEST\n S Y="before" D SUB(.Y) W Y,! Q\nSUB(Y)\n K Y\n S Y=42\n Q\n'
+        )
+        assert result.output == "42\n"
+
+    def test_byref_kill_set_set_propagates(self, execute_mumps):
+        """K Y; S Y=0; S Y=1 propagates final value through pass-by-ref."""
+        result = execute_mumps(
+            'TEST\n S Y="before" D SUB(.Y) W Y,! Q\nSUB(Y)\n K Y\n S Y=0\n S Y=1\n Q\n'
+        )
+        assert result.output == "1\n"
+
+    def test_byref_kill_set_conditional_set(self, execute_mumps):
+        """K Y; S Y=0; I cond S Y=1 — conditional path propagates via byref."""
+        result = execute_mumps(
+            'TEST\n S Y="before" D SUB(.Y) W Y,! Q\n'
+            'SUB(Y)\n N X\n K Y\n S Y=0\n S X="" I X="" S Y=1\n Q\n'
+        )
+        assert result.output == "1\n"
+
+    def test_byref_double_pass_quit_conditional(self, execute_mumps):
+        """Double pass-by-ref: CALLER(.DINULL) → SETX(.DINULL) Q:DINULL.
+
+        Simulates the FIRE → SETXARR pattern in DIKC.m where:
+        1. FIRE receives DINULL by-ref from its own caller
+        2. FIRE calls SETXARR with .DINULL (by-ref)
+        3. SETXARR does K DINULL; S DINULL=0; ... S DINULL=1
+        4. FIRE checks Q:DINULL (should be truthy = 1)
+        """
+        result = execute_mumps(
+            'TEST\n S Y="before" D CALLER(.Y) W "Y=",Y,! Q\n'
+            'CALLER(DINULL)\n D SETX(.DINULL) Q:DINULL\n W "ERROR: DINULL=",DINULL,! Q\n'
+            'SETX(DINULL)\n N X\n K DINULL\n S DINULL=0\n S X="" I X="" S DINULL=1\n Q\n'
+        )
+        # SETX sets DINULL=1, FIRE sees DINULL=1 via byref, Q:DINULL exits
+        assert result.output == "Y=1\n"
+        assert "ERROR" not in result.output
+
+    def test_byref_kill_data_returns_zero(self, execute_mumps):
+        """After K inside callee, $D should return 0 for the killed variable."""
+        result = execute_mumps(
+            "TEST\n S X=5 D SUB(.X) W $D(X),! Q\nSUB(N)\n K N\n W $D(N),! Q\n"
+        )
+        # Inside SUB: $D(N) = 0 after K N
+        # Back in caller: $D(X) = 0 because X was killed via alias
+        assert result.output == "0\n0\n"
+
+    def test_byref_kill_then_set_data_returns_one(self, execute_mumps):
+        """After K+S inside callee, $D should return 1."""
+        result = execute_mumps(
+            "TEST\n S X=5 D SUB(.X) W $D(X),! Q\nSUB(N)\n K N\n S N=99\n Q\n"
+        )
+        # Back in caller: $D(X)=1, X=99
+        assert result.output == "1\n"
+
+    def test_byref_kill_preserves_caller_subscripts(self, execute_mumps):
+        """K N inside callee kills root AND children of caller's MArray."""
+        result = execute_mumps(
+            "TEST\n S X=1,X(1)=2,X(2)=3 D SUB(.X) W $D(X),$D(X(1)),! Q\n"
+            "SUB(N)\n K N\n Q\n"
+        )
+        # After K N: both X and X(1) are killed
+        assert result.output == "00\n"
+
+    def test_byref_kill_get_default(self, execute_mumps):
+        """$G(X,default) after kill-via-byref returns the default."""
+        result = execute_mumps(
+            'TEST\n S X=5 D SUB(.X) W $G(X,"gone"),! Q\nSUB(N)\n K N\n Q\n'
+        )
+        assert result.output == "gone\n"
 
 
 @pytest.mark.codegen

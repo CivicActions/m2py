@@ -5094,14 +5094,17 @@ def _generate_kill(stmt: MKillStatement, ctx: "GeneratorContext") -> None:
                     # stays in _scope so subsequent SET re-uses it (maintaining alias).
                     ctx.emitter.line(f"_scope.get({translated!r}, MArray()).kill()")
             elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-                # TRAMPOLINE with dynamic_locals - use state._locals with translated name
+                # TRAMPOLINE with dynamic_locals - use state._locals with translated name.
+                # Kill MArray content in-place to propagate through pass-by-reference
+                # aliases (same principle as SIMPLE_FUNCTIONS path).
                 if subscripts_args:
                     ctx.emitter.line(
                         f"state._locals.get({translated!r}, MArray()).kill({subscripts_args})"
                     )
                 else:
-                    # Kill entire variable - remove from state._locals
-                    ctx.emitter.line(f"state._locals.pop({translated!r}, None)")
+                    ctx.emitter.line(
+                        f"state._locals.get({translated!r}, MArray()).kill()"
+                    )
             else:
                 # TRAMPOLINE strategy with static state vars
                 if var_name in ctx.state_vars:
