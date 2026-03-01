@@ -222,6 +222,19 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 **Checkpoint**: `uv run pytest tests/test_zwr.py` passes in m2py. `import_zwr` can load VistA globals into any backend. Path to Tier 3 is unblocked.
 
+### DIKC Compiled Cross-Reference Engine (m2py fixes — resolves DMUFINIT tolerated extras)
+
+**Goal**: Fix the DIKC compiled cross-reference chain so that DMUFINIT produces exact-match output with no tolerated extras or known mismatches. All 4 tolerated entries share a common root cause in INDEX^DIKC → LOADALL^DIKC1 → FIREALL → FIRE → SETXARR → XECUTE.
+
+- [ ] T116 [US6] Debug DIKC LOADALL^DIKC1 @DIKTMP compilation: verify `"SS"` (subscript-used) flags are set correctly for subscript-type cross-reference fields, so SETXARR's `DINULL` null-subscript guard works. Root cause of D-xref empty-date extras (`^DMU(1009.801,"D","",9)`, `^DMU(1009.801,"D","",13)`).
+- [ ] T117 [US6] Fix DIKC FIRE/SETXARR null-subscript detection: ensure `I $G(X(DIKO))="",$G(@DIKTMP@(DIFILE,DIXR,DIKO,"SS")) S DINULL=1` correctly prevents xref entries with empty subscript values. Add m2py unit tests for SETXARR with null vs non-null subscript fields in `tests/` (m2py root).
+- [ ] T118 [US6] Fix DIKC FIREALL/FIRESUB sub-file recursion: investigate why `^DD(1009.802,0,0)` header node is written — FIRESUB should not recurse into DD metadata (field 0). Likely DIMF or `$D(@DISBROOT)` check misbehaving. Add m2py unit test for FIRESUB recursion boundary.
+- [ ] T119 [US6] Fix DIKC FIRE DIKON branch + DIKK2 UNIQUE key validation: in the `DIKON'=""` branch, `$$UNIQUE^DIKK2` should detect duplicate ZIP CODE key and kill entry 7 (`^DMU(1009.802,36,1,1,1,7,0)=12208`). Determine whether DIKON is incorrectly empty (wrong branch) or DIKK2 uniqueness check fails. Add m2py unit test.
+- [ ] T120 [US6] Remove `_KNOWN_TOLERATED_EXTRAS` and `_KNOWN_MISMATCHES` from `vista-test/tests/vista/munit/test_dmufinit.py`: once T116–T119 are fixed, delete toleration sets, remove associated filtering logic, and update comments. DMUFINIT test should pass with zero extras, zero mismatches, zero missing.
+- [ ] T121 [US6] Add m2py unit tests for DIKC chain edge cases: compiled xref with mixed subscript/non-subscript fields, FIREALL header-node counting across sub-files, UNIQUE key constraint enforcement. Tests in `tests/` (m2py root), no VistA dependency.
+
+**Checkpoint**: DMUFINIT test passes with exact match — `_KNOWN_TOLERATED_EXTRAS` and `_KNOWN_MISMATCHES` removed. DIKC compiled cross-reference engine handles null subscripts, sub-file recursion, and key uniqueness correctly.
+
 ---
 
 ## Phase 8: User Story 6 — Tier 3: VA FileMan (5 routines, ~174 assertions) [Stretch]

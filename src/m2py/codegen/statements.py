@@ -1495,8 +1495,12 @@ def _build_lhs_getter_setter(
     elif isinstance(target, NakedGlobal):
         # Naked global: resolve ONCE before the m_set_piece/m_set_extract call.
         # resolve_naked() returns (name, subscripts) from the naked indicator.
-        # We capture resolved name/subscripts BEFORE the call because the
-        # getter would update the naked indicator when it reads the value.
+        #
+        # IMPORTANT: Callers (_generate_lhs_piece, _generate_lhs_extract) must
+        # ensure the RHS value expression is pre-computed BEFORE calling this
+        # function for NakedGlobal targets.  In MUMPS, the RHS is evaluated
+        # before the LHS naked reference is resolved, so global refs in the
+        # RHS may change the naked indicator that resolve_naked uses.
         subscripts_tuple = gen_subscripts_tuple(target.subscripts, ctx)
 
         temp_name = f"_lhs_name_{id(target) % 10000}"
@@ -1625,9 +1629,7 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
     if len(args) < 2:
         raise ValueError(f"LHS $PIECE requires at least 2 arguments, got {len(args)}")
 
-    # First argument must be a variable (local, global, naked global, or indirection)
     first_arg = args[0]
-    getter, setter = _build_lhs_getter_setter(first_arg, ctx, str_wrap_getter=True)
 
     # Generate delimiter expression (must be string)
     # Use m_str for MUMPS canonical form (e.g., 0.0 → "0")
@@ -1652,6 +1654,27 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
     # Generate value expression (wrapped in m_str to ensure string type)
     assert assignment.value is not None, "LHS $PIECE requires a value"
     value_expr = f"m_str({generate_expr(assignment.value, ctx)})"
+
+    # CRITICAL: MUMPS evaluation order for S $P(^(subs),delim,from,to)=value:
+    # 1. Evaluate ALL expressions (subscripts, delim, from, to, value)
+    # 2. THEN resolve the naked reference for the target variable
+    # 3. Read current value of target, modify pieces, write back
+    #
+    # When the LHS is a NakedGlobal, global references in the value
+    # expression (or other arguments) may change the naked indicator.
+    # We must pre-compute the value BEFORE calling _build_lhs_getter_setter
+    # (which emits resolve_naked for NakedGlobal targets).
+    if isinstance(first_arg, NakedGlobal):
+        ctx.emitter.line(f"_sp_value = {value_expr}")
+        getter, setter = _build_lhs_getter_setter(first_arg, ctx, str_wrap_getter=True)
+        ctx.emitter.line(
+            f"m_set_piece({getter}, {setter}, {delimiter_expr}, "
+            f"{piece_from_expr}, {piece_to_expr}, _sp_value)"
+        )
+        return
+
+    # Non-naked targets: standard order (resolve LHS, then evaluate args inline)
+    getter, setter = _build_lhs_getter_setter(first_arg, ctx, str_wrap_getter=True)
 
     # Emit m_set_piece call
     ctx.emitter.line(
@@ -1694,7 +1717,6 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
 
     # First argument must be a variable (local or global)
     first_arg = args[0]
-    getter, setter = _build_lhs_getter_setter(first_arg, ctx)
 
     # Generate from_pos and to_pos expressions
     if len(args) == 1:
@@ -1713,6 +1735,20 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
     # Generate value expression
     assert assignment.value is not None, "LHS $EXTRACT requires a value"
     value_expr = generate_expr(assignment.value, ctx)
+
+    # CRITICAL: Same naked evaluation order fix as _generate_lhs_piece.
+    # For NakedGlobal targets, pre-compute value BEFORE resolve_naked.
+    if isinstance(first_arg, NakedGlobal):
+        ctx.emitter.line(f"_se_value = {value_expr}")
+        getter, setter = _build_lhs_getter_setter(first_arg, ctx)
+        ctx.emitter.line(
+            f"m_set_extract({getter}, {setter}, {from_pos_expr}, "
+            f"{to_pos_expr}, _se_value)"
+        )
+        return
+
+    # Non-naked targets: standard order
+    getter, setter = _build_lhs_getter_setter(first_arg, ctx)
 
     # Emit m_set_extract call
     ctx.emitter.line(
