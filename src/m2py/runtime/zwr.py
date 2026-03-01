@@ -21,12 +21,17 @@ Subscripts:
 
 from __future__ import annotations
 
+import logging
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, TextIO, Union
 
 if TYPE_CHECKING:
     from m2py.runtime.globals import GlobalStorageBackend
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Regex patterns
@@ -516,6 +521,249 @@ def export_zwr(
         _write_stream(dest)
 
     return count
+
+
+# ---------------------------------------------------------------------------
+# Bulk import — native backends
+# ---------------------------------------------------------------------------
+
+# Regex to extract node count from MUPIP LOAD output:
+#   "LOAD TOTAL              Key Cnt: 2  Max Subsc Len: 9  Max Data Len: 5"
+_MUPIP_KEY_CNT_RE = re.compile(r"Key Cnt:\s*(\d+)")
+
+# ZWR header that MUPIP LOAD requires.  The first line must contain
+# "UTF-8" when ydb_chset=UTF-8, and the second line must say "ZWR".
+_ZWR_MUPIP_HEADER = "YottaDB MUPIP EXTRACT UTF-8\nZWR\n"
+
+
+def _is_ydb_environment() -> bool:
+    """Detect whether we are running inside a YottaDB environment."""
+    import os
+
+    # ydb_dist is set by the YDB sourcing script
+    return bool(os.environ.get("ydb_dist"))
+
+
+def _mupip_available() -> bool:
+    """Check whether the ``mupip`` binary is on $PATH."""
+    return shutil.which("mupip") is not None
+
+
+def import_zwr_ydb_native(source: Path) -> int:
+    """Bulk-import a ZWR file using MUPIP LOAD.
+
+    This is dramatically faster than per-node ``set()`` calls for large
+    ZWR files because MUPIP operates at the database level.
+
+    The function prepends a two-line ZWR header (required by MUPIP LOAD)
+    and pipes the original file content via stdin.  ``-ignorechset`` is
+    used so existing ZWR files with M-mode headers are accepted.
+
+    Args:
+        source: Path to a ZWR file.
+
+    Returns:
+        Number of nodes imported (parsed from MUPIP output).
+
+    Raises:
+        FileNotFoundError: If *source* does not exist.
+        RuntimeError: If MUPIP is not available or returns an error.
+    """
+    if not source.exists():
+        raise FileNotFoundError(f"ZWR file not found: {source}")
+
+    if not _mupip_available():
+        raise RuntimeError("mupip not found on PATH — are you inside a YDB container?")
+
+    # Build a subprocess that reads our synthesised ZWR header + the
+    # original file content from stdin.
+    cmd = ["mupip", "load", "-format=zwr", "-stdin", "-ignorechset"]
+
+    try:
+        with open(source, "rb") as f:
+            file_data = f.read()
+
+        stdin_data = _ZWR_MUPIP_HEADER.encode("utf-8") + file_data
+
+        result = subprocess.run(
+            cmd,
+            input=stdin_data,
+            capture_output=True,
+            timeout=600,  # 10 min ceiling
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"mupip load timed out after 600s for {source}") from exc
+
+    combined = result.stdout.decode("utf-8", errors="replace") + result.stderr.decode(
+        "utf-8", errors="replace"
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"mupip load failed (rc={result.returncode}) for {source}:\n{combined}"
+        )
+
+    return _parse_mupip_key_count(combined)
+
+
+def _parse_mupip_key_count(output: str) -> int:
+    """Extract the ``Key Cnt:`` value from MUPIP LOAD output.
+
+    Returns 0 if the pattern is not found (e.g. empty file).
+    """
+    m = _MUPIP_KEY_CNT_RE.search(output)
+    return int(m.group(1)) if m else 0
+
+
+def import_zwr_iris_native(
+    backend: "GlobalStorageBackend",
+    source: Union[Path, TextIO],
+    batch_size: int = 10_000,
+) -> int:
+    """Bulk-import ZWR data into an IRIS backend with transaction batching.
+
+    Instead of committing after each ``set()`` call, this groups *batch_size*
+    SET operations inside ``tStart()`` / ``tCommit()`` transactions.  This
+    drastically reduces per-node commit overhead over the TCP connection.
+
+    It also bypasses the high-level ``backend.set()`` method (which does
+    naked-indicator tracking and canonicalization per call) and calls the
+    low-level ``_iris.set()`` directly for speed.
+
+    Args:
+        backend: An ``IRISGlobalStorage`` instance.
+        source: Path to a ZWR file, or an open text stream.
+        batch_size: Number of SET operations per transaction batch.
+
+    Returns:
+        Number of nodes imported.
+    """
+    # Ensure the connection is established before we bypass the public API.
+    backend._ensure_connected()  # type: ignore[attr-defined]
+    iris_obj = backend._iris  # type: ignore[attr-defined]
+
+    count = 0
+    batch_count = 0
+
+    def _do_set(name: str, subs: list[str], value: str) -> None:
+        nonlocal count, batch_count
+        bare_name = name[1:] if name.startswith("^") else name
+        gname = f"^{bare_name}"
+        backend._known_globals.add(bare_name)  # type: ignore[attr-defined]
+        if subs:
+            iris_obj.set(value, gname, *subs)
+        else:
+            iris_obj.set(value, gname)
+        count += 1
+        batch_count += 1
+
+    def _process_stream(stream: TextIO) -> None:
+        nonlocal batch_count
+        iris_obj.tStart()
+        try:
+            for name, subs, value in parse_zwr_stream(stream):
+                _do_set(name, subs, value)
+                if batch_count >= batch_size:
+                    iris_obj.tCommit()
+                    batch_count = 0
+                    iris_obj.tStart()
+            # Commit any remaining operations (or balance an empty tStart)
+            iris_obj.tCommit()
+            batch_count = 0
+        except Exception:
+            # Rollback on error
+            try:
+                iris_obj.tRollback()
+            except Exception:
+                pass
+            raise
+
+    if isinstance(source, Path):
+        with open(source, errors="replace") as f:
+            _process_stream(f)
+    else:
+        _process_stream(source)
+
+    return count
+
+
+def _detect_backend_type(backend: "GlobalStorageBackend") -> str:
+    """Detect the backend type from the class name.
+
+    Returns one of: ``'yottadb'``, ``'iris'``, ``'inmemory'``, ``'sqlite'``,
+    or ``'unknown'``.
+    """
+    cls_name = type(backend).__name__.lower()
+    if "yottadb" in cls_name:
+        return "yottadb"
+    elif "iris" in cls_name:
+        return "iris"
+    elif "inmemory" in cls_name:
+        return "inmemory"
+    elif "sqlite" in cls_name:
+        return "sqlite"
+    return "unknown"
+
+
+def import_zwr_bulk(
+    backend: "GlobalStorageBackend",
+    source: Union[Path, TextIO],
+) -> int:
+    """Import ZWR data using the fastest available method for the backend.
+
+    Backend-specific strategies:
+
+    - **YottaDB**: Uses ``mupip load`` subprocess for database-level import.
+      Falls back to line-by-line ``import_zwr()`` if MUPIP is unavailable
+      or the source is a stream (not a file path).
+    - **IRIS**: Uses transaction-batched ``set()`` calls via ``tStart()`` /
+      ``tCommit()`` to reduce per-node TCP round-trip overhead.
+    - **Other** (inmemory, sqlite): Falls back to standard ``import_zwr()``.
+
+    Args:
+        backend: Any ``GlobalStorageBackend`` implementation.
+        source: Path to a ZWR file, or an open text stream.
+
+    Returns:
+        Number of nodes imported.
+    """
+    backend_type = _detect_backend_type(backend)
+
+    if backend_type == "yottadb" and isinstance(source, Path):
+        if _is_ydb_environment() and _mupip_available():
+            try:
+                n = import_zwr_ydb_native(source)
+                logger.info("Loaded %d nodes via mupip load from %s", n, source.name)
+                return n
+            except RuntimeError:
+                logger.warning(
+                    "mupip load failed for %s; falling back to line-by-line",
+                    source.name,
+                    exc_info=True,
+                )
+                return import_zwr(backend, source)
+        else:
+            # Not in YDB env or mupip not available: fall back
+            return import_zwr(backend, source)
+
+    if backend_type == "iris":
+        try:
+            n = import_zwr_iris_native(backend, source)
+            logger.info(
+                "Loaded %d nodes via IRIS transaction batching%s",
+                n,
+                f" from {source.name}" if isinstance(source, Path) else "",
+            )
+            return n
+        except Exception:
+            logger.warning(
+                "IRIS native import failed; falling back to line-by-line",
+                exc_info=True,
+            )
+            return import_zwr(backend, source)
+
+    # Default: standard line-by-line import
+    return import_zwr(backend, source)
 
 
 def _parse_query_ref(
