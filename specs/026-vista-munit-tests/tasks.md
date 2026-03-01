@@ -263,10 +263,10 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 ### ZWR Bulk Import Optimization (US4 + US5)
 
-- [ ] T128 [US4] Implement `import_zwr_ydb_native(path: Path) -> int` in `src/m2py/runtime/zwr.py`: use YottaDB's `MUPIP LOAD` for bulk ZWR import when running inside a YDB environment (subprocess call to `mupip load`), falling back to line-by-line `set()` when MUPIP unavailable. Target: 843K nodes in <30s vs 18+ minutes
-- [ ] T129 [US4] Add `import_zwr_bulk()` dispatch function in `src/m2py/runtime/zwr.py`: auto-detect backend type and use native bulk import when available (MUPIP LOAD for YDB), fall back to standard line-by-line import. Update `import_zwr()` to call this dispatcher
-- [ ] T130 [P] [US4] Write unit tests for `import_zwr_ydb_native()`: verify MUPIP LOAD subprocess invocation, fallback behavior when MUPIP unavailable, node count reporting in `tests/unit/runtime/test_zwr.py`
-- [ ] T131 [US4] Implement IRIS bulk import via `iris.cls` routine: write a helper that sends ZWR file contents through IRIS `%SYS.GlobalQuery` or uses `$SYSTEM.OBJ.Load()` for batch global import, avoiding per-node TCP round-trips. Add to `src/m2py/runtime/zwr.py`
+- [x] T128 [US4] Implement `import_zwr_ydb_native(path: Path) -> int` in `src/m2py/runtime/zwr.py`: use YottaDB's `MUPIP LOAD` for bulk ZWR import when running inside a YDB environment (subprocess call to `mupip load`), falling back to line-by-line `set()` when MUPIP unavailable. Target: 843K nodes in <30s vs 18+ minutes
+- [x] T129 [US4] Add `import_zwr_bulk()` dispatch function in `src/m2py/runtime/zwr.py`: auto-detect backend type and use native bulk import when available (MUPIP LOAD for YDB), fall back to standard line-by-line import. Update `import_zwr()` to call this dispatcher
+- [x] T130 [P] [US4] Write unit tests for `import_zwr_ydb_native()`: verify MUPIP LOAD subprocess invocation, fallback behavior when MUPIP unavailable, node count reporting in `tests/unit/runtime/test_zwr.py`
+- [x] T131 [US4] Implement IRIS bulk import via `iris.cls` routine: write a helper that sends ZWR file contents through IRIS `%SYS.GlobalQuery` or uses `$SYSTEM.OBJ.Load()` for batch global import, avoiding per-node TCP round-trips. Add to `src/m2py/runtime/zwr.py`
 
 ### Fix m2py YottaDB Backend Regressions (US5)
 
