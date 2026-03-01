@@ -12,11 +12,14 @@ Features:
     - Tracks known globals for reliable kill_all()
 """
 
-from __future__ import annotations
+# pyright: reportOptionalMemberAccess=false
+# All methods call _ensure_connected() which guarantees self._ydb is set,
+# but pyright cannot track this narrowing across method boundaries.
 
 import os
 import threading
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, TextIO
 
 from m2py.core.subscripts import SubscriptCanonicalizer
 from m2py.runtime.helpers import (
@@ -557,7 +560,9 @@ class YottaDBGlobalStorage:
             self._ensure_initialized()
             ydb = self._ydb
             try:
-                timeout_nsec = int(timeout * 1_000_000_000) if timeout is not None else 0
+                timeout_nsec = (
+                    int(timeout * 1_000_000_000) if timeout is not None else 0
+                )
                 ydb.lock_incr(
                     f"^{name}",
                     list(subscripts),
@@ -647,7 +652,13 @@ class YottaDBGlobalStorage:
             d = key.data
             if d in (1, 11):
                 val = key.get()
-                v = val.decode("utf-8") if isinstance(val, bytes) else str(val) if val is not None else None
+                v = (
+                    val.decode("utf-8")
+                    if isinstance(val, bytes)
+                    else str(val)
+                    if val is not None
+                    else None
+                )
                 nodes.append((subscripts, v))
             elif d == 0:
                 nodes.append((subscripts, None))
@@ -678,13 +689,23 @@ class YottaDBGlobalStorage:
                 break
             if next_sub_b is None or next_sub_b == b"":
                 break
-            sub_str = next_sub_b.decode("utf-8") if isinstance(next_sub_b, bytes) else str(next_sub_b)
+            sub_str = (
+                next_sub_b.decode("utf-8")
+                if isinstance(next_sub_b, bytes)
+                else str(next_sub_b)
+            )
             child_subs = subscripts + (sub_str,)
             child_ydb = parent_key[sub_str]
             d = child_ydb.data
             if d in (1, 11):
                 val = child_ydb.get()
-                v = val.decode("utf-8") if isinstance(val, bytes) else str(val) if val is not None else None
+                v = (
+                    val.decode("utf-8")
+                    if isinstance(val, bytes)
+                    else str(val)
+                    if val is not None
+                    else None
+                )
                 nodes.append((child_subs, v))
             if d in (10, 11):
                 self._snapshot_children(name, child_subs, nodes)
@@ -857,5 +878,56 @@ class YottaDBGlobalStorage:
             return "1"
 
         return ""
+
+    # =========================================================================
+    # ZWR Import
+    # =========================================================================
+
+    def import_zwr(self, source: "Path | TextIO") -> int:
+        """Import ZWR data, using MUPIP LOAD when available.
+
+        Falls back to line-by-line ``set()`` if MUPIP is unavailable or
+        the source is a stream rather than a file path.
+        """
+        import logging
+
+        from m2py.runtime.zwr import (
+            _is_ydb_environment,
+            _mupip_available,
+            import_zwr_ydb_native,
+            parse_zwr_stream,
+        )
+
+        log = logging.getLogger(__name__)
+
+        # Fast path: file + MUPIP available
+        if isinstance(source, Path) and _is_ydb_environment() and _mupip_available():
+            try:
+                n = import_zwr_ydb_native(source)
+                log.info("Loaded %d nodes via mupip load from %s", n, source.name)
+                return n
+            except RuntimeError:
+                log.warning(
+                    "mupip load failed for %s; falling back to line-by-line",
+                    source.name,
+                    exc_info=True,
+                )
+
+        # Fallback: line-by-line
+        count = 0
+
+        def _load(stream: TextIO) -> int:
+            nonlocal count
+            for name, subs, value in parse_zwr_stream(stream):
+                bare_name = name[1:] if name.startswith("^") else name
+                self.set(bare_name, tuple(subs), value)
+                count += 1
+            return count
+
+        if isinstance(source, Path):
+            with open(source, errors="replace") as f:
+                return _load(f)
+        return _load(source)
+
         """Close the backend (no-op for in-process YDB)."""
         pass

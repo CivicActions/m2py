@@ -19,7 +19,8 @@ import os
 import sqlite3
 import tempfile
 import time
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, TextIO
 
 from m2py.core.subscripts import SubscriptCanonicalizer
 from m2py.runtime.helpers import (
@@ -1052,3 +1053,26 @@ class SQLiteGlobalStorage:
     ) -> str:
         """$QUERY for namespace-qualified global."""
         return self.query(self._ns_name(name, namespace), subscripts)
+
+    # =========================================================================
+    # ZWR Import
+    # =========================================================================
+
+    def import_zwr(self, source: Path | TextIO) -> int:
+        """Import ZWR data via line-by-line ``parse_zwr_stream`` + ``set()``."""
+        from m2py.runtime.zwr import parse_zwr_stream
+
+        count = 0
+
+        def _load(stream: TextIO) -> int:
+            nonlocal count
+            for name, subs, value in parse_zwr_stream(stream):
+                bare_name = name[1:] if name.startswith("^") else name
+                self.set(bare_name, tuple(subs), value)
+                count += 1
+            return count
+
+        if isinstance(source, Path):
+            with open(source, errors="replace") as f:
+                return _load(f)
+        return _load(source)

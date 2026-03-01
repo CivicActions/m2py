@@ -19,20 +19,13 @@ import pytest
 
 from m2py.runtime.zwr import (
     _decode_zwr_value,
-    _detect_backend_type,
     _encode_zwr_value,
     _format_subscript,
     _is_canonical_number,
-    _is_ydb_environment,
-    _mupip_available,
     _parse_mupip_key_count,
     _parse_subscripts,
-    _ZWR_MUPIP_HEADER,
     export_zwr,
     import_zwr,
-    import_zwr_bulk,
-    import_zwr_iris_native,
-    import_zwr_ydb_native,
     parse_zwr_line,
     parse_zwr_stream,
     serialize_zwr_node,
@@ -802,162 +795,82 @@ class TestParseMupipKeyCount:
         assert _parse_mupip_key_count(output) == 0
 
 
-class TestDetectBackendType:
-    """Tests for _detect_backend_type — class-name inspection."""
+class TestBackendImportZwr:
+    """Tests for the ``backend.import_zwr()`` method via InMemoryGlobalStorage.
 
-    def _make_backend(self, cls_name: str):
-        """Create a dummy object whose class has the given name."""
-        cls = type(cls_name, (), {})
-        return cls()
+    These are backend-agnostic functional tests — they verify that ZWR
+    data gets correctly loaded into *any* backend that implements the
+    ``import_zwr()`` protocol method.
+    """
 
-    def test_yottadb(self):
-        assert (
-            _detect_backend_type(self._make_backend("YottaDBGlobalStorage"))
-            == "yottadb"
-        )
+    def _backend(self):
+        from m2py.runtime import InMemoryGlobalStorage
 
-    def test_iris(self):
-        assert _detect_backend_type(self._make_backend("IRISGlobalStorage")) == "iris"
+        return InMemoryGlobalStorage()
 
-    def test_inmemory(self):
-        assert (
-            _detect_backend_type(self._make_backend("InMemoryGlobalStorage"))
-            == "inmemory"
-        )
+    def test_import_from_file(self, tmp_path):
+        backend = self._backend()
+        zwr = tmp_path / "test.zwr"
+        zwr.write_text('^GLO(1)="hello"\n^GLO(2)="world"\n')
+        n = backend.import_zwr(zwr)
+        assert n == 2
+        assert backend.get("GLO", ("1",)) == "hello"
+        assert backend.get("GLO", ("2",)) == "world"
 
-    def test_sqlite(self):
-        assert (
-            _detect_backend_type(self._make_backend("SQLiteGlobalStorage")) == "sqlite"
-        )
+    def test_import_from_stream(self):
+        backend = self._backend()
+        stream = io.StringIO('^A="val"\n^B(1,"x")="y"\n')
+        n = backend.import_zwr(stream)
+        assert n == 2
+        assert backend.get("A", ()) == "val"
+        assert backend.get("B", ("1", "x")) == "y"
 
-    def test_unknown(self):
-        assert _detect_backend_type(self._make_backend("FancyBackend")) == "unknown"
+    def test_empty_file(self, tmp_path):
+        backend = self._backend()
+        zwr = tmp_path / "empty.zwr"
+        zwr.write_text("")
+        n = backend.import_zwr(zwr)
+        assert n == 0
 
+    def test_skips_headers_and_comments(self):
+        backend = self._backend()
+        stream = io.StringIO('OSEHRA ZGO Export\nZWR\n; comment\n\n^G(1)="val"\n')
+        n = backend.import_zwr(stream)
+        assert n == 1
+        assert backend.get("G", ("1",)) == "val"
 
-class TestIsYdbEnvironment:
-    """Tests for _is_ydb_environment — env var detection."""
+    def test_free_function_delegates_to_backend(self, tmp_path):
+        """The free ``import_zwr()`` function delegates to ``backend.import_zwr()``."""
+        backend = self._backend()
+        zwr = tmp_path / "test.zwr"
+        zwr.write_text('^X="1"\n')
+        n = import_zwr(backend, zwr)
+        assert n == 1
+        assert backend.get("X", ()) == "1"
 
-    def test_ydb_dist_set(self, monkeypatch):
-        monkeypatch.setenv("ydb_dist", "/opt/yottadb/current")
-        assert _is_ydb_environment() is True
-
-    def test_ydb_dist_unset(self, monkeypatch):
-        monkeypatch.delenv("ydb_dist", raising=False)
-        assert _is_ydb_environment() is False
-
-    def test_ydb_dist_empty(self, monkeypatch):
-        monkeypatch.setenv("ydb_dist", "")
-        assert _is_ydb_environment() is False
-
-
-class TestMupipAvailable:
-    """Tests for _mupip_available — PATH detection."""
-
-    def test_available(self, monkeypatch):
-        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/mupip")
-        assert _mupip_available() is True
-
-    def test_not_available(self, monkeypatch):
-        monkeypatch.setattr("shutil.which", lambda name: None)
-        assert _mupip_available() is False
-
-
-class TestImportZwrYdbNative:
-    """Tests for import_zwr_ydb_native — mocked subprocess."""
-
-    def test_success(self, tmp_path, monkeypatch):
-        """Happy path: mupip returns success with Key Cnt."""
-        zwr_file = tmp_path / "test.zwr"
-        zwr_file.write_text('^GLO(1)="hello"\n^GLO(2)="world"\n')
-
-        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/mupip")
-
-        import subprocess as _sp
-
-        def fake_run(cmd, *, input=None, capture_output=False, timeout=None):
-            # Verify the correct command was built
-            assert cmd == ["mupip", "load", "-format=zwr", "-stdin", "-ignorechset"]
-            # Verify header was prepended
-            assert input.startswith(_ZWR_MUPIP_HEADER.encode("utf-8"))
-            return _sp.CompletedProcess(
-                cmd,
-                returncode=0,
-                stdout=b"LOAD TOTAL Key Cnt: 2 Max Subsc Len: 9\n",
-                stderr=b"",
-            )
-
-        monkeypatch.setattr("m2py.runtime.zwr.subprocess.run", fake_run)
-        assert import_zwr_ydb_native(zwr_file) == 2
-
-    def test_file_not_found(self, tmp_path):
-        with pytest.raises(FileNotFoundError):
-            import_zwr_ydb_native(tmp_path / "nope.zwr")
-
-    def test_mupip_not_on_path(self, tmp_path, monkeypatch):
-        zwr_file = tmp_path / "test.zwr"
-        zwr_file.write_text('^GLO(1)="hello"\n')
-        monkeypatch.setattr("shutil.which", lambda name: None)
-        with pytest.raises(RuntimeError, match="mupip not found"):
-            import_zwr_ydb_native(zwr_file)
-
-    def test_mupip_nonzero_exit(self, tmp_path, monkeypatch):
-        zwr_file = tmp_path / "test.zwr"
-        zwr_file.write_text('^GLO(1)="hello"\n')
-        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/mupip")
-
-        import subprocess as _sp
-
-        def fake_run(cmd, **kwargs):
-            return _sp.CompletedProcess(
-                cmd, returncode=1, stdout=b"", stderr=b"%YDB-E-SOMETHING"
-            )
-
-        monkeypatch.setattr("m2py.runtime.zwr.subprocess.run", fake_run)
-        with pytest.raises(RuntimeError, match="mupip load failed"):
-            import_zwr_ydb_native(zwr_file)
-
-    def test_timeout(self, tmp_path, monkeypatch):
-        import subprocess as _sp
-
-        zwr_file = tmp_path / "test.zwr"
-        zwr_file.write_text('^GLO(1)="hello"\n')
-        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/mupip")
-
-        def fake_run(cmd, **kwargs):
-            raise _sp.TimeoutExpired(cmd, 600)
-
-        monkeypatch.setattr("m2py.runtime.zwr.subprocess.run", fake_run)
-        with pytest.raises(RuntimeError, match="timed out"):
-            import_zwr_ydb_native(zwr_file)
-
-    def test_header_prepended_to_file_content(self, tmp_path, monkeypatch):
-        """Verify the full stdin payload is header + file bytes."""
-        zwr_file = tmp_path / "test.zwr"
-        content = b'^GLO("a")="1"\n'
-        zwr_file.write_bytes(content)
-        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/mupip")
-
-        import subprocess as _sp
-
-        captured_input = {}
-
-        def fake_run(cmd, *, input=None, **kwargs):
-            captured_input["data"] = input
-            return _sp.CompletedProcess(
-                cmd, returncode=0, stdout=b"Key Cnt: 1\n", stderr=b""
-            )
-
-        monkeypatch.setattr("m2py.runtime.zwr.subprocess.run", fake_run)
-        import_zwr_ydb_native(zwr_file)
-        expected = _ZWR_MUPIP_HEADER.encode("utf-8") + content
-        assert captured_input["data"] == expected
+    def test_round_trip(self, tmp_path):
+        """Import then export should produce equivalent ZWR."""
+        backend = self._backend()
+        zwr_in = tmp_path / "in.zwr"
+        zwr_in.write_text('^T(1)="a"\n^T(2)="b"\n^T(3)="c"\n')
+        backend.import_zwr(zwr_in)
+        zwr_out = tmp_path / "out.zwr"
+        export_zwr(backend, ["T"], zwr_out)
+        backend2 = self._backend()
+        n = backend2.import_zwr(zwr_out)
+        assert n == 3
+        assert backend2.get("T", ("1",)) == "a"
+        assert backend2.get("T", ("2",)) == "b"
+        assert backend2.get("T", ("3",)) == "c"
 
 
-class TestImportZwrIrisNative:
-    """Tests for import_zwr_iris_native — transaction batching with mock IRIS backend."""
+class TestIRISBackendImportZwr:
+    """Tests for IRISGlobalStorage._import_zwr_batched — transaction batching."""
 
     def _make_iris_backend(self):
-        """Create a minimal mock IRIS backend."""
+        """Create a mock that mimics IRISGlobalStorage with _import_zwr_batched."""
+        from m2py.runtime.iris_backend import IRISGlobalStorage
+
         sets = []
         tx_starts = []
         tx_commits = []
@@ -976,84 +889,69 @@ class TestImportZwrIrisNative:
             def tRollback(self):
                 tx_rollbacks.append(True)
 
-        class FakeBackend:
-            __class__ = type("IRISGlobalStorage", (), {})
-            _iris = FakeIris()
-            _known_globals: set = set()
+        # Build a real IRISGlobalStorage but inject a fake _iris object
+        # so we don't need a real IRIS connection.
+        backend = object.__new__(IRISGlobalStorage)
+        backend._iris_module = None
+        backend._conn = "fake"  # non-None so _ensure_connected is a no-op
+        backend._iris = FakeIris()
+        backend._lock = __import__("threading").Lock()
+        backend._naked_indicator_value = None
+        backend._locks_held = {}
+        backend._tlevel = 0
+        backend._lock_snapshot = None
+        backend._last_global_ref = ""
+        backend._known_globals = set()
 
-            def _ensure_connected(self):
-                pass
-
-        # Override __class__ properly by creating the class with the right name
-        fb = type(
-            "IRISGlobalStorage",
-            (),
-            {
-                "_iris": FakeIris(),
-                "_known_globals": set(),
-                "_ensure_connected": lambda self: None,
-            },
-        )()
-
-        return fb, sets, tx_starts, tx_commits, tx_rollbacks
+        return backend, sets, tx_starts, tx_commits, tx_rollbacks
 
     def test_basic_import(self, tmp_path):
-        """Import a small ZWR file and verify nodes were set."""
         zwr = tmp_path / "test.zwr"
         zwr.write_text('^GLO(1)="hello"\n^GLO(2)="world"\n')
         backend, sets, starts, commits, rollbacks = self._make_iris_backend()
-        n = import_zwr_iris_native(backend, zwr)
+        n = backend.import_zwr(zwr)
         assert n == 2
-        assert len(sets) == 2
         assert sets[0] == ("^GLO", ["1"], "hello")
         assert sets[1] == ("^GLO", ["2"], "world")
 
     def test_transaction_batch_boundaries(self):
-        """Verify tStart/tCommit at batch_size boundaries."""
         lines = "".join(f'^G({i})="{i}"\n' for i in range(25))
         stream = io.StringIO(lines)
         backend, sets, starts, commits, rollbacks = self._make_iris_backend()
-        n = import_zwr_iris_native(backend, stream, batch_size=10)
+        n = backend.import_zwr(stream, batch_size=10)
         assert n == 25
         assert len(sets) == 25
-        # With 25 items and batch_size=10:
-        # batch 1: items 0–9 (tStart, 10 sets, tCommit at item 10 then tStart)
-        # batch 2: items 10–19 (10 sets, tCommit at item 20 then tStart)
-        # batch 3: items 20–24 (5 sets, final tCommit)
-        # That's 3 tStart and 3 tCommit calls
+        # 25 items / batch_size=10 → 3 batches → 3 tStart + 3 tCommit
         assert len(starts) == 3
         assert len(commits) == 3
 
     def test_stream_input(self):
-        """Accept a TextIO stream directly."""
         stream = io.StringIO('^A="val"\n')
-        backend, sets, starts, commits, rollbacks = self._make_iris_backend()
-        n = import_zwr_iris_native(backend, stream)
+        backend, sets, *_ = self._make_iris_backend()
+        n = backend.import_zwr(stream)
         assert n == 1
         assert sets[0] == ("^A", [], "val")
 
     def test_empty_file(self, tmp_path):
-        """An empty file produces zero nodes and no errors."""
         zwr = tmp_path / "empty.zwr"
         zwr.write_text("")
         backend, sets, starts, commits, rollbacks = self._make_iris_backend()
-        n = import_zwr_iris_native(backend, zwr)
+        n = backend.import_zwr(zwr)
         assert n == 0
-        # Still one tStart/tCommit pair even with nothing
         assert len(starts) == 1
         assert len(commits) == 1
 
     def test_known_globals_tracking(self, tmp_path):
-        """Verify _known_globals is populated."""
         zwr = tmp_path / "test.zwr"
         zwr.write_text('^FOO(1)="a"\n^BAR(1)="b"\n')
         backend, sets, *_ = self._make_iris_backend()
-        import_zwr_iris_native(backend, zwr)
+        backend.import_zwr(zwr)
         assert "FOO" in backend._known_globals
         assert "BAR" in backend._known_globals
 
-    def test_rollback_on_error(self):
-        """Verify tRollback is called when set() raises."""
+    def test_rollback_on_error(self, tmp_path):
+        """Verify tRollback is called when _import_zwr_batched raises."""
+        from m2py.runtime.iris_backend import IRISGlobalStorage
 
         class ErrorIris:
             call_count = 0
@@ -1073,74 +971,24 @@ class TestImportZwrIrisNative:
                 self.rolled_back = True
 
         iris = ErrorIris()
-        backend = type(
-            "IRISGlobalStorage",
-            (),
-            {
-                "_iris": iris,
-                "_known_globals": set(),
-                "_ensure_connected": lambda self: None,
-            },
-        )()
+        backend = object.__new__(IRISGlobalStorage)
+        backend._iris_module = None
+        backend._conn = "fake"
+        backend._iris = iris
+        backend._lock = __import__("threading").Lock()
+        backend._naked_indicator_value = None
+        backend._locks_held = {}
+        backend._tlevel = 0
+        backend._lock_snapshot = None
+        backend._last_global_ref = ""
+        backend._known_globals = set()
 
-        stream = io.StringIO('^G(1)="a"\n^G(2)="b"\n')
-        with pytest.raises(RuntimeError, match="boom"):
-            import_zwr_iris_native(backend, stream)
+        # Use a file so the fallback can re-read it (streams are consumed)
+        zwr = tmp_path / "test.zwr"
+        zwr.write_text('^G(1)="a"\n^G(2)="b"\n')
+        # The batched path will fail and trigger rollback.
+        # The fallback re-reads the file and will also fail (ErrorIris
+        # still raises), but rollback should have been called.
+        with pytest.raises(Exception):
+            backend.import_zwr(zwr)
         assert iris.rolled_back is True
-
-
-class TestImportZwrBulk:
-    """Tests for import_zwr_bulk — dispatcher and fallback logic."""
-
-    def _make_backend(self, cls_name: str):
-        """Create a dummy backend with the given class name."""
-        from m2py.runtime import InMemoryGlobalStorage
-
-        if cls_name == "InMemoryGlobalStorage":
-            return InMemoryGlobalStorage()
-        return type(cls_name, (), {})()
-
-    def test_inmemory_uses_standard_import(self, tmp_path):
-        """InMemory backends use the standard line-by-line import_zwr."""
-        from m2py.runtime import InMemoryGlobalStorage
-
-        backend = InMemoryGlobalStorage()
-        zwr = tmp_path / "test.zwr"
-        zwr.write_text('^GLO(1)="hello"\n^GLO(2)="world"\n')
-        n = import_zwr_bulk(backend, zwr)
-        assert n == 2
-        assert backend.get("GLO", ("1",)) == "hello"
-        assert backend.get("GLO", ("2",)) == "world"
-
-    def test_ydb_without_env_falls_back(self, tmp_path, monkeypatch):
-        """YDB backend without ydb_dist env falls back to line-by-line."""
-        monkeypatch.delenv("ydb_dist", raising=False)
-        from m2py.runtime import InMemoryGlobalStorage
-
-        # Use an InMemoryGlobalStorage but pretend it's YDB via class name
-        backend = type("YottaDBGlobalStorage", (InMemoryGlobalStorage,), {})()
-        zwr = tmp_path / "test.zwr"
-        zwr.write_text('^T(1)="v"\n')
-        n = import_zwr_bulk(backend, zwr)
-        assert n == 1
-
-    def test_stream_source_with_ydb_falls_back(self, monkeypatch):
-        """YDB backend with a stream (not Path) falls back to line-by-line."""
-        monkeypatch.setenv("ydb_dist", "/opt/ydb")
-        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/mupip")
-        from m2py.runtime import InMemoryGlobalStorage
-
-        backend = type("YottaDBGlobalStorage", (InMemoryGlobalStorage,), {})()
-        stream = io.StringIO('^T(1)="v"\n')
-        n = import_zwr_bulk(backend, stream)
-        assert n == 1
-
-    def test_unknown_backend_falls_back(self, tmp_path):
-        """An unknown backend type falls back to standard import_zwr."""
-        from m2py.runtime import InMemoryGlobalStorage
-
-        backend = type("WeirdBackend", (InMemoryGlobalStorage,), {})()
-        zwr = tmp_path / "test.zwr"
-        zwr.write_text('^X="1"\n')
-        n = import_zwr_bulk(backend, zwr)
-        assert n == 1

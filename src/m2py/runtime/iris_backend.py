@@ -13,11 +13,16 @@ Features:
     - Namespace support for extended global references
 """
 
+# pyright: reportOptionalMemberAccess=false
+# All methods call _ensure_connected() which guarantees self._iris is set,
+# but pyright cannot track this narrowing across method boundaries.
+
 from __future__ import annotations
 
 import os
 import threading
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, TextIO
 
 from m2py.core.subscripts import SubscriptCanonicalizer
 from m2py.runtime.helpers import (
@@ -968,6 +973,102 @@ class IRISGlobalStorage:
             return "1"
 
         return ""
+
+    # =========================================================================
+    # ZWR Import
+    # =========================================================================
+
+    def import_zwr(self, source: Path | TextIO, batch_size: int = 10_000) -> int:
+        """Import ZWR data with transaction batching for speed.
+
+        Groups *batch_size* SET operations inside ``tStart()``/``tCommit()``
+        transactions to reduce per-node TCP overhead.  Bypasses the
+        high-level ``self.set()`` and calls ``_iris.set()`` directly.
+
+        Falls back to line-by-line ``self.set()`` if the native path fails.
+        """
+        import logging
+
+        from m2py.runtime.zwr import parse_zwr_stream
+
+        log = logging.getLogger(__name__)
+
+        try:
+            return self._import_zwr_batched(source, batch_size)
+        except Exception:
+            log.warning(
+                "IRIS batched import failed; falling back to line-by-line",
+                exc_info=True,
+            )
+
+        # Fallback: line-by-line
+        count = 0
+
+        def _load(stream: TextIO) -> int:
+            nonlocal count
+            for name, subs, value in parse_zwr_stream(stream):
+                bare_name = name[1:] if name.startswith("^") else name
+                self.set(bare_name, tuple(subs), value)
+                count += 1
+            return count
+
+        if isinstance(source, Path):
+            with open(source, errors="replace") as f:
+                return _load(f)
+        return _load(source)
+
+    def _import_zwr_batched(
+        self, source: Path | TextIO, batch_size: int = 10_000
+    ) -> int:
+        """Core batched import via low-level ``_iris.set()``."""
+        from m2py.runtime.zwr import parse_zwr_stream
+
+        self._ensure_connected()
+        iris_obj = self._iris
+        assert iris_obj is not None  # guaranteed by _ensure_connected
+
+        count = 0
+        batch_count = 0
+
+        def _do_set(name: str, subs: list[str], value: str) -> None:
+            nonlocal count, batch_count
+            bare_name = name[1:] if name.startswith("^") else name
+            gname = f"^{bare_name}"
+            self._known_globals.add(bare_name)
+            if subs:
+                iris_obj.set(value, gname, *subs)
+            else:
+                iris_obj.set(value, gname)
+            count += 1
+            batch_count += 1
+
+        def _process_stream(stream) -> None:
+            nonlocal batch_count
+            iris_obj.tStart()
+            try:
+                for name, subs, value in parse_zwr_stream(stream):
+                    _do_set(name, subs, value)
+                    if batch_count >= batch_size:
+                        iris_obj.tCommit()
+                        batch_count = 0
+                        iris_obj.tStart()
+                # Commit any remaining operations (or balance an empty tStart)
+                iris_obj.tCommit()
+                batch_count = 0
+            except Exception:
+                try:
+                    iris_obj.tRollback()
+                except Exception:
+                    pass
+                raise
+
+        if isinstance(source, Path):
+            with open(source, errors="replace") as f:
+                _process_stream(f)
+        else:
+            _process_stream(source)
+
+        return count
 
     # =========================================================================
     # Connection Management
