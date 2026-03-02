@@ -18,7 +18,9 @@ from m2py.runtime.globals import GlobalStorageBackend
 class TestIRISNamespaceAccess:
     """Tests for IRIS namespace-based global access."""
 
-    def test_default_namespace_is_user(self, backend: GlobalStorageBackend, backend_name: str):
+    def test_default_namespace_is_user(
+        self, backend: GlobalStorageBackend, backend_name: str
+    ):
         """Backend connects to USER namespace by default."""
         if backend_name != "iris":
             pytest.skip("IRIS-specific test")
@@ -26,7 +28,9 @@ class TestIRISNamespaceAccess:
         backend.set("NSTEST", ("1",), "default")
         assert backend.get("NSTEST", ("1",)) == "default"
 
-    def test_set_get_in_default_namespace(self, backend: GlobalStorageBackend, backend_name: str):
+    def test_set_get_in_default_namespace(
+        self, backend: GlobalStorageBackend, backend_name: str
+    ):
         """Basic set/get works in the default (USER) namespace."""
         if backend_name != "iris":
             pytest.skip("IRIS-specific test")
@@ -34,7 +38,9 @@ class TestIRISNamespaceAccess:
         result = backend.get("NSDATA", ("key",))
         assert result == "value123"
 
-    def test_data_in_default_namespace(self, backend: GlobalStorageBackend, backend_name: str):
+    def test_data_in_default_namespace(
+        self, backend: GlobalStorageBackend, backend_name: str
+    ):
         """$DATA works correctly in default namespace."""
         if backend_name != "iris":
             pytest.skip("IRIS-specific test")
@@ -42,7 +48,9 @@ class TestIRISNamespaceAccess:
         d = backend.data("NSDATA2", ("a",))
         assert d == 10  # has descendants, no own value
 
-    def test_order_in_default_namespace(self, backend: GlobalStorageBackend, backend_name: str):
+    def test_order_in_default_namespace(
+        self, backend: GlobalStorageBackend, backend_name: str
+    ):
         """$ORDER traversal works in default namespace."""
         if backend_name != "iris":
             pytest.skip("IRIS-specific test")
@@ -54,7 +62,9 @@ class TestIRISNamespaceAccess:
         assert backend.order("NSORD", ("b",)) == "c"
         assert backend.order("NSORD", ("c",)) == ""
 
-    def test_kill_in_default_namespace(self, backend: GlobalStorageBackend, backend_name: str):
+    def test_kill_in_default_namespace(
+        self, backend: GlobalStorageBackend, backend_name: str
+    ):
         """KILL removes data in the current namespace."""
         if backend_name != "iris":
             pytest.skip("IRIS-specific test")
@@ -68,7 +78,9 @@ class TestIRISNamespaceAccess:
 class TestIRISNamespaceIsolation:
     """Tests validating namespace isolation semantics."""
 
-    def test_globals_scoped_to_namespace(self, backend: GlobalStorageBackend, backend_name: str):
+    def test_globals_scoped_to_namespace(
+        self, backend: GlobalStorageBackend, backend_name: str
+    ):
         """Globals written to one namespace are only visible in that namespace.
 
         This tests the fundamental IRIS namespace isolation property:

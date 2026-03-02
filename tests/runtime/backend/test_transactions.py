@@ -255,6 +255,7 @@ class TestTransactionLockRollback:
         locks = backend.get_locks()
         lock_names = {(r[0], r[1]) for r in locks}
         import json
+
         assert ("TLCK", json.dumps(["pre"])) in lock_names, (
             "pre-txn lock should survive"
         )
@@ -274,10 +275,9 @@ class TestTransactionLockRollback:
         for name, subs_json, count in locks:
             if name == "TLCK":
                 import json
+
                 if json.loads(subs_json) == ["cnt"]:
-                    assert count == 1, (
-                        f"lock count should restore to 1, got {count}"
-                    )
+                    assert count == 1, f"lock count should restore to 1, got {count}"
                     break
         else:
             pytest.fail("lock should still exist with count=1")
