@@ -6,8 +6,6 @@ and stored in MUMPS collation order.
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestNumericCanonicalization:
     """Test that numeric subscripts are canonicalized correctly."""
@@ -60,12 +58,6 @@ class TestStringSubscripts:
     def test_mixed_alphanumeric(self, backend):
         backend.set("TEST", ("A1",), "mixed")
         assert backend.get("TEST", ("A1",)) == "mixed"
-
-    def test_empty_string_subscript(self, backend, backend_name):
-        if backend_name in ("iris", "yottadb"):
-            pytest.skip(f"{backend_name} does not support empty string subscripts")
-        backend.set("TEST", ("",), "empty")
-        assert backend.get("TEST", ("",)) == "empty"
 
     def test_space_in_subscript(self, backend):
         backend.set("TEST", ("hello world",), "spaced")

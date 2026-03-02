@@ -13,6 +13,15 @@ RUN apt-get update -qq \
         gcc ca-certificates curl libffi-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Node.js 18 LTS (required by pyright) — remove old v12 first
+RUN apt-get update -qq \
+    && apt-get remove -y nodejs libnode72 libnode-dev 2>/dev/null || true \
+    && apt-get autoremove -y \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && node --version
+
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:${PATH}"
