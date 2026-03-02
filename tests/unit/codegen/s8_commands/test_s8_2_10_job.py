@@ -71,6 +71,7 @@ class TestJobCommandCodegen:
             result = runtime.execute(python_code, capture_output=True)
             # Timeout present + success = $TEST=1
             assert result.output == "1"
+            runtime.cleanup()
             storage.close()
         finally:
             sys.path.remove(str(routine_dir))

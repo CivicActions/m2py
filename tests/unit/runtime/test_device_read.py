@@ -98,6 +98,7 @@ class TestReadFromFileDevice:
 
         result2 = rt.read_line()
         assert result2 == "line2"
+        rt.close_device(str(test_file))
 
     def test_read_line_updates_key_on_device(self, tmp_path):
         """read_line() updates $KEY on the current device, not _rt._key."""
@@ -112,6 +113,7 @@ class TestReadFromFileDevice:
         # $KEY should reflect the file device's key, not _rt._key
         # FileDevice sets key to "\n" for newline-terminated lines
         assert rt.key() != ""  # key accessor reads from current device
+        rt.close_device(str(test_file))
 
     def test_read_maxlen_from_file(self, tmp_path):
         """read_maxlen reads limited chars from file device."""
@@ -124,6 +126,7 @@ class TestReadFromFileDevice:
 
         data, key = rt.read_maxlen(3)
         assert data == "abc"
+        rt.close_device(str(test_file))
 
     def test_read_switches_back_to_principal(self, tmp_path):
         """After USE 0, reads go back to principal device."""
@@ -143,6 +146,7 @@ class TestReadFromFileDevice:
 
         # Now reads should go to principal again
         assert rt._current_device is rt._principal_device
+        rt.close_device(str(test_file))
 
     def test_read_char_from_file(self, tmp_path):
         """read_char() reads single char from file and returns ASCII code."""
@@ -155,6 +159,7 @@ class TestReadFromFileDevice:
 
         result = rt.read_char()
         assert result == "65"  # ASCII code of 'A'
+        rt.close_device(str(test_file))
 
     def test_read_tracks_zeof(self, tmp_path):
         """$ZEOF is set when file is exhausted."""
@@ -169,6 +174,7 @@ class TestReadFromFileDevice:
         # After reading past EOF, $ZEOF should be set
         rt.read_line()  # This should hit EOF
         assert rt._current_device.zeof is True
+        rt.close_device(str(test_file))
 
 
 class TestReadLineTimeoutFromFile:
@@ -186,6 +192,7 @@ class TestReadLineTimeoutFromFile:
         data, test = rt.read_line_timeout(5.0)
         assert data == "data"
         assert test == 1
+        rt.close_device(str(test_file))
 
     def test_file_read_timeout_eof(self, tmp_path):
         """At EOF, file read returns empty data."""
@@ -200,3 +207,4 @@ class TestReadLineTimeoutFromFile:
         # At EOF: empty data, depends on device implementation
         # FileDevice returns ("", "") at EOF
         assert data == ""
+        rt.close_device(str(test_file))

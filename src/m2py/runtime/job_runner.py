@@ -130,6 +130,10 @@ def main() -> None:
     except Exception:
         pass  # JOB'd routine errors shouldn't crash anything
     finally:
+        # Close all open devices (file handles, TCP connections)
+        for _dev_name in list(rt._device_table.keys()):
+            if _dev_name != "0":
+                rt.close_device(_dev_name)
         # Release all locks held by this process
         rt._globals.unlock_all()
         # Close storage connection (SQLite uses close(); others may not have it)

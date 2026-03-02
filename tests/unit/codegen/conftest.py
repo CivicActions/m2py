@@ -41,13 +41,19 @@ def execute_mumps():
     from m2py.codegen import generate_python
     from m2py.runtime import MUMPSRuntime
 
+    runtimes: list[MUMPSRuntime] = []
+
     def _execute(source: str, *, capture_output: bool = True, global_storage=None):
         """Execute MUMPS source and return result."""
         python_code = generate_python(source)
         runtime = MUMPSRuntime(global_storage=global_storage)
+        runtimes.append(runtime)
         return runtime.execute(python_code, capture_output=capture_output)
 
-    return _execute
+    yield _execute
+
+    for rt in runtimes:
+        rt.cleanup()
 
 
 @pytest.fixture

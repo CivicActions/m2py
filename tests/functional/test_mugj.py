@@ -286,7 +286,8 @@ def _load_all_mugj_routines() -> tuple[
 
         py_path = os.path.join(cache_dir, f"{module_name}.py")
         try:
-            python_code = open(py_path).read()
+            with open(py_path) as fh:
+                python_code = fh.read()
             module = types.ModuleType(module_name)
             sys.modules[module_name] = module
             exec(python_code, module.__dict__)

@@ -27,6 +27,7 @@ class TestFileReadIntegration:
 
         line2 = rt.read_line()
         assert line2 == "World"
+        rt.cleanup()
 
     def test_open_use_read_write_to_principal(self, tmp_path):
         """Read from file, switch to principal, write what was read."""
@@ -45,6 +46,7 @@ class TestFileReadIntegration:
         rt.write(value)
 
         assert rt.get_output() == "TestData"
+        rt.cleanup()
 
     def test_read_multiple_files(self, tmp_path):
         """Can read from multiple files by switching USE."""
@@ -65,6 +67,7 @@ class TestFileReadIntegration:
 
         assert val_a == "AAA"
         assert val_b == "BBB"
+        rt.cleanup()
 
     def test_close_file_after_read(self, tmp_path):
         """CLOSE after READ switches back to principal device."""
@@ -91,6 +94,7 @@ class TestFileReadIntegration:
 
         data, key = rt.read_maxlen(3)
         assert data == "ABC"
+        rt.cleanup()
 
     def test_key_tracks_per_device(self, tmp_path):
         """$KEY is per-device — file device has its own $KEY."""
@@ -110,6 +114,7 @@ class TestFileReadIntegration:
 
         # File device should have its own key set from the read
         assert file_key != "" or file_key == "\r"  # depends on FileDevice impl
+        rt.cleanup()
 
     def test_zeof_set_at_end_of_file(self, tmp_path):
         """$ZEOF is 1 after reading past end of file."""
@@ -124,3 +129,4 @@ class TestFileReadIntegration:
         rt.read_line()  # Try to read past EOF
 
         assert rt._current_device.zeof is True
+        rt.cleanup()

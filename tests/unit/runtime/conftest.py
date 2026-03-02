@@ -26,7 +26,9 @@ def sqlite_storage(db_path):
 @pytest.fixture
 def sqlite_rt(sqlite_storage):
     """Create a MUMPSRuntime backed by SQLiteGlobalStorage."""
-    return MUMPSRuntime(global_storage=sqlite_storage)
+    rt = MUMPSRuntime(global_storage=sqlite_storage)
+    yield rt
+    rt.cleanup()
 
 
 @pytest.fixture

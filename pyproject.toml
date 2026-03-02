@@ -67,6 +67,9 @@ markers = [
     "backend_yottadb: marks tests requiring yottadb backend",
     "backend_iris: marks tests requiring iris backend",
 ]
+filterwarnings = [
+    "error",
+]
 
 [tool.ruff.lint]
 select = ["E", "F"]

@@ -166,7 +166,7 @@ def _run_lock_child(
         [sys.executable, "-c", code],
         env=env,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
     )
 
 
@@ -354,5 +354,6 @@ class TestJobLockIntegration:
 
             assert storage.get("lockresult", ()) == "0"  # Child was blocked
         finally:
+            rt.cleanup()
             sys.path.remove(str(routine_dir))
             storage.close()

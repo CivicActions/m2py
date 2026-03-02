@@ -4392,6 +4392,25 @@ class MUMPSRuntime:
                     pass
         self._job_processes.clear()
 
+    def cleanup(self) -> None:
+        """Release all resources: close open devices and kill JOB processes.
+
+        Call this in test teardown to prevent ResourceWarnings from
+        unclosed file handles and orphaned subprocesses.
+        """
+        # Close all non-principal devices
+        for device_name in list(self._device_table):
+            if device_name != "0":
+                try:
+                    self._device_table[device_name].close()
+                except Exception:
+                    pass
+        self._device_table = {"0": self._principal_device}
+        self._current_device = self._principal_device
+
+        # Kill any JOB'd child processes
+        self.kill_job_processes()
+
     def get_data(self, name: str, _scope: Dict[str, Any]) -> int:
         """Get $DATA value for variable by name (indirection support).
 
