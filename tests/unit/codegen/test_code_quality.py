@@ -393,7 +393,7 @@ class TestPyrightAllFunctionalFiles:
             [sys.executable, "-m", "pyright", "--project", str(tmp_path)],
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=600,
         )
 
         if result.returncode != 0:

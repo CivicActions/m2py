@@ -56,6 +56,7 @@ def _load(source: str, name: str) -> types.ModuleType:
     return mod
 
 
+@pytest.mark.codegen
 class TestDotBlockNewUnwindBasic:
     """NEW inside dot blocks is unwound on block exit in TRAMPOLINE mode."""
 
@@ -114,6 +115,7 @@ class TestDotBlockNewUnwindBasic:
         assert runtime.get_output() == "1,2,3,outer"
 
 
+@pytest.mark.codegen
 class TestDotBlockNewUnwindEdgeCases:
     """Edge cases for dot-block NEW unwind."""
 
@@ -187,6 +189,7 @@ class TestDotBlockNewUnwindEdgeCases:
         assert runtime.get_output() == "4"
 
 
+@pytest.mark.codegen
 class TestDotBlockNewCodegen:
     """Codegen structure tests for dot-block NEW unwind."""
 
