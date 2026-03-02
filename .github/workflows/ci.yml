@@ -1,0 +1,165 @@
+# CI — lint + test matrix (backend × split)
+#
+# Runs 13 parallel jobs:
+#   - lint: ruff + pyright
+#   - test: 3 backends × 4 splits = 12 test jobs
+#
+# Backends: inmemory (parallel via xdist), yottadb (Docker), iris (Docker service)
+# Splits:   unit, functional-mvts, functional-other, slow
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# ---------------------------------------------------------------------------
+# Lint
+# ---------------------------------------------------------------------------
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync
+
+      - name: Ruff lint
+        run: uv run ruff check src/ tests/
+
+      - name: Ruff format check
+        run: uv run ruff format --check src/ tests/
+
+      - name: Pyright type check
+        run: uv run pyright
+
+  # -----------------------------------------------------------------------
+  # Tests — backend × split matrix
+  # -----------------------------------------------------------------------
+  test:
+    name: test (${{ matrix.backend }}, ${{ matrix.split }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [inmemory, yottadb, iris]
+        split: [unit, functional-mvts, functional-other, slow]
+
+    env:
+      # IRIS connection defaults (used only when backend=iris)
+      IRIS_HOST: localhost
+      IRIS_PORT: '1972'
+      IRIS_NAMESPACE: USER
+      IRIS_USER: _SYSTEM
+      IRIS_PASSWORD: SYS
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Python + uv (inmemory / iris — ydb runs inside Docker) ────
+      - uses: actions/setup-python@v5
+        if: matrix.backend != 'yottadb'
+        with:
+          python-version: '3.10'
+
+      - uses: astral-sh/setup-uv@v4
+        if: matrix.backend != 'yottadb'
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        if: matrix.backend == 'inmemory'
+        run: uv sync
+
+      - name: Install dependencies (IRIS backend)
+        if: matrix.backend == 'iris'
+        run: uv sync --extra backend
+
+      # ── YDB: build Docker image with layer caching ────────────────
+      - uses: docker/setup-buildx-action@v3
+        if: matrix.backend == 'yottadb'
+
+      - name: Build YDB Docker image
+        if: matrix.backend == 'yottadb'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.yottadb
+          load: true
+          tags: m2py-ydb
+          cache-from: type=gha,scope=ydb-build
+          cache-to: type=gha,mode=max,scope=ydb-build
+
+      # ── IRIS: start container ─────────────────────────────────────
+      - name: Start IRIS container
+        if: matrix.backend == 'iris'
+        run: |
+          docker run -d \
+            --name m2py-iris \
+            -p 1972:1972 \
+            intersystemsdc/iris-community:latest \
+            --check-caps false
+
+          # Wait for IRIS to be ready (up to 120s)
+          echo -n "Waiting for IRIS"
+          for i in $(seq 1 60); do
+            if echo "H" | docker exec -i m2py-iris iris session IRIS -U USER >/dev/null 2>&1; then
+              echo " ready ($((i * 2))s)."
+              break
+            fi
+            echo -n "."
+            sleep 2
+          done
+
+          # Fix expired default password on fresh community images
+          echo -e 'set p("Password")="SYS"\nset p("PasswordNeverExpires")=1\nset sc=##class(Security.Users).Modify("_SYSTEM",.p)\nhalt' \
+            | docker exec -i m2py-iris iris session IRIS -U "%SYS" >/dev/null 2>&1 || true
+
+      # ── Run tests ─────────────────────────────────────────────────
+      - name: Run tests
+        env:
+          M2PY_GLOBAL_BACKEND: ${{ matrix.backend }}
+        run: |
+          # Map split name → pytest target paths / flags
+          case "${{ matrix.split }}" in
+            unit)
+              TARGETS="tests/unit/ tests/integration/ tests/runtime/"
+              ;;
+            functional-mvts)
+              TARGETS="tests/functional/test_mvts.py"
+              ;;
+            functional-other)
+              TARGETS="tests/functional/ --ignore=tests/functional/test_mvts.py"
+              ;;
+            slow)
+              TARGETS="-m slow"
+              ;;
+          esac
+
+          COMMON="--ignore=tmp --ignore=vista-test --tb=short -q"
+
+          if [ "${{ matrix.backend }}" = "yottadb" ]; then
+            docker run --rm -v "$PWD:/workspace" m2py-ydb \
+              uv run pytest $TARGETS $COMMON
+          else
+            uv run pytest $TARGETS $COMMON
+          fi
+
+      # ── Cleanup ───────────────────────────────────────────────────
+      - name: Stop IRIS container
+        if: matrix.backend == 'iris' && always()
+        run: docker rm -f m2py-iris || true
