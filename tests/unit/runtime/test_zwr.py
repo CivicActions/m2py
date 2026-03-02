@@ -897,7 +897,7 @@ class TestIRISBackendImportZwr:
         backend._iris = FakeIris()
         backend._lock = __import__("threading").Lock()
         backend._naked_indicator_value = None
-        backend._locks_held = {}
+        backend._lock_table = {}
         backend._tlevel = 0
         backend._lock_snapshot = None
         backend._last_global_ref = ""
@@ -977,7 +977,7 @@ class TestIRISBackendImportZwr:
         backend._iris = iris
         backend._lock = __import__("threading").Lock()
         backend._naked_indicator_value = None
-        backend._locks_held = {}
+        backend._lock_table = {}
         backend._tlevel = 0
         backend._lock_snapshot = None
         backend._last_global_ref = ""

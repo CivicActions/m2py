@@ -289,7 +289,7 @@ class TestLockOperations:
         result = backend.lock("PATIENT", ("123",), lock_type="+")
         assert result is True
         assert ("PATIENT", ("123",)) in backend._lock_table
-        assert backend._lock_table[("PATIENT", ("123",))][1] == 1
+        assert backend._lock_table[("PATIENT", ("123",))] == 1
 
     def test_lock_increment(self):
         """Multiple lock acquires increment the count."""
@@ -298,7 +298,7 @@ class TestLockOperations:
         backend = InMemoryGlobalStorage()
         backend.lock("PATIENT", ("123",), lock_type="+")
         backend.lock("PATIENT", ("123",), lock_type="+")
-        assert backend._lock_table[("PATIENT", ("123",))][1] == 2
+        assert backend._lock_table[("PATIENT", ("123",))] == 2
 
     def test_lock_decrement(self):
         """Lock release decrements the count."""
@@ -308,7 +308,7 @@ class TestLockOperations:
         backend.lock("PATIENT", ("123",), lock_type="+")
         backend.lock("PATIENT", ("123",), lock_type="+")
         backend.lock("PATIENT", ("123",), lock_type="-")
-        assert backend._lock_table[("PATIENT", ("123",))][1] == 1
+        assert backend._lock_table[("PATIENT", ("123",))] == 1
 
     def test_lock_release_removes_entry(self):
         """Lock release to 0 removes the entry."""
@@ -327,7 +327,7 @@ class TestLockOperations:
         backend.lock("X", (), lock_type="+")
         backend.lock("X", (), lock_type="+")
         backend.unlock("X", ())
-        assert backend._lock_table[("X", ())][1] == 1
+        assert backend._lock_table[("X", ())] == 1
 
     def test_unlock_all(self):
         """unlock_all() clears all locks."""

@@ -479,18 +479,16 @@ class InMemoryGlobalStorage:
         # Naked indicator (single-process, no threading needed)
         self._naked_indicator_value: tuple[str, tuple[str, ...]] | None = None
 
-        # Lock table - maps (name, subscripts) to (owner_pid, count)
+        # Lock table - maps (name, subscripts) to lock count
         # Simple dict — no blocking, no threading. Single-process only.
-        self._lock_table: dict[tuple[str, tuple[str, ...]], tuple[int, int]] = {}
+        self._lock_table: dict[tuple[str, tuple[str, ...]], int] = {}
 
         # Transaction support
         self._tlevel: int = 0
         self._transaction_snapshots: list[dict[str, MArray]] = []
         # Lock snapshot for TROLLBACK — per spec §6.3.2, ROLLBACK removes
         # any nrefs from the Lock-LIST not present when the TRANSACTION started
-        self._lock_snapshot: (
-            dict[tuple[str, tuple[str, ...]], tuple[int, int]] | None
-        ) = None
+        self._lock_snapshot: dict[tuple[str, tuple[str, ...]], int] | None = None
 
         # $ZREFERENCE — last global reference string (e.g. "^ZZTEST(1,2)")
         self._last_global_ref: str = ""
@@ -585,9 +583,15 @@ class InMemoryGlobalStorage:
         return node._value
 
     def set(self, name: str, subscripts: tuple[str, ...], value: str) -> None:
-        """Set value at ^NAME(subscripts)."""
+        """Set value at ^NAME(subscripts).
+
+        All MUMPS values are strings.  Coerce to ``str`` on entry so that
+        callers passing numeric intermediates (e.g. MArray int values)
+        are normalised before storage.
+        """
         from m2py.runtime import MArray
 
+        value = str(value)  # MUMPS canonical: all values are strings
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -999,64 +1003,44 @@ class InMemoryGlobalStorage:
         Returns:
             True if lock acquired/released, False on timeout
         """
-        import os
-
         subscripts = self._canonicalize_subscripts(subscripts)
         key = (name, subscripts)
-        owner = os.getpid()
 
         if lock_type == "-":
             # Decrement lock count (release)
             current = self._lock_table.get(key)
-            if current is not None and current[0] == owner:
-                new_count = current[1] - 1
+            if current is not None:
+                new_count = current - 1
                 if new_count <= 0:
                     del self._lock_table[key]
                 else:
-                    self._lock_table[key] = (owner, new_count)
+                    self._lock_table[key] = new_count
             return True
 
         # Acquire (increment)
-        current = self._lock_table.get(key)
-        if current is None or current[0] == owner:
-            # Lock is free or already owned by us — acquire
-            count = (current[1] if current else 0) + 1
-            self._lock_table[key] = (owner, count)
-            return True
-
-        # Held by another PID (shouldn't happen in single-process mode)
-        return False
+        current = self._lock_table.get(key, 0)
+        self._lock_table[key] = current + 1
+        return True
 
     def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
-        """Release a lock on ^NAME(subscripts).
-
-        Only releases locks owned by the current process.
-        """
-        import os
-
+        """Release a lock on ^NAME(subscripts)."""
         subscripts = self._canonicalize_subscripts(subscripts)
         key = (name, subscripts)
-        owner = os.getpid()
 
         current = self._lock_table.get(key)
-        if current is not None and current[0] == owner:
-            new_count = current[1] - 1
+        if current is not None:
+            new_count = current - 1
             if new_count <= 0:
                 del self._lock_table[key]
             else:
-                self._lock_table[key] = (owner, new_count)
+                self._lock_table[key] = new_count
 
     def unlock_all(self) -> None:
         """Release all locks held by the current process.
 
         Argumentless LOCK releases all locks.
         """
-        import os
-
-        owner = os.getpid()
-        keys_to_remove = [k for k, v in self._lock_table.items() if v[0] == owner]
-        for k in keys_to_remove:
-            del self._lock_table[k]
+        self._lock_table.clear()
 
     def get_locks(self) -> list[tuple[str, str, int]]:
         """Return all locks held by the current process.
@@ -1067,13 +1051,10 @@ class InMemoryGlobalStorage:
             List of (lock_name, subscripts_json, lock_count) tuples
         """
         import json
-        import os
 
-        owner = os.getpid()
         rows: list[tuple[str, str, int]] = []
-        for (name, subs), (own, count) in self._lock_table.items():
-            if own == owner:
-                rows.append((name, json.dumps(list(subs)), count))
+        for (name, subs), count in self._lock_table.items():
+            rows.append((name, json.dumps(list(subs)), count))
         rows.sort(key=lambda r: (r[0], r[1]))
         return rows
 
@@ -1204,7 +1185,7 @@ class InMemoryGlobalStorage:
         # For simplicity, treat subscript as global name with no subscripts
         key = (subscript, ())
         entry = self._lock_table.get(key)
-        count = entry[1] if entry else 0
+        count = entry if entry else 0
         return str(count) if count > 0 else ""
 
     def ssvn_routine(self, subscript: str) -> str:

@@ -71,28 +71,28 @@ class TestMergeTreeStringification:
 
 
 class TestSetDefensiveStringification:
-    """Verify set() accepts non-string values without crashing."""
+    """Verify set() coerces non-string values to strings (MUMPS canonical)."""
 
     def test_set_integer(self, backend):
-        """set() with int value should not crash."""
+        """set() with int value should store as string."""
         backend.set("TST", ("A",), 42)
-        assert str(backend.get("TST", ("A",))) == "42"
+        assert backend.get("TST", ("A",)) == "42"
 
     def test_set_float(self, backend):
-        """set() with float value should not crash."""
+        """set() with float value should store as string."""
         backend.set("TST", ("B",), 3.14)
-        assert str(backend.get("TST", ("B",))) == "3.14"
+        assert backend.get("TST", ("B",)) == "3.14"
 
     def test_set_bool(self, backend):
-        """set() with bool value should not crash."""
+        """set() with bool value should store as string."""
         backend.set("TST", ("C",), True)
-        result = str(backend.get("TST", ("C",)))
+        result = backend.get("TST", ("C",))
         assert result in ("True", "1")
 
     def test_set_zero(self, backend):
-        """set() with zero should not crash."""
+        """set() with zero should store as string."""
         backend.set("TST", ("D",), 0)
-        assert str(backend.get("TST", ("D",))) == "0"
+        assert backend.get("TST", ("D",)) == "0"
 
     def test_set_string_unchanged(self, backend):
         """set() with string passes through unchanged."""
@@ -156,15 +156,12 @@ class TestLockTable:
         assert ("TST", ("1",)) not in lt
 
     def test_lock_table_format(self, backend):
-        """_lock_table values are (pid, count) tuples."""
+        """_lock_table values are lock counts (int)."""
         backend.lock("TST", ("A",), lock_type="+")
         lt = backend._lock_table
         val = lt[("TST", ("A",))]
-        assert isinstance(val, tuple)
-        assert len(val) == 2
-        pid, count = val
-        assert isinstance(pid, int)
-        assert count >= 1
+        assert isinstance(val, int)
+        assert val >= 1
 
 
 class TestKillAll:
@@ -219,7 +216,7 @@ class TestIRISConnectionLifecycle:
         storage.lock("TST", ("X",), lock_type="+")
         assert ("TST", ("X",)) in storage._lock_table
         storage.close()
-        assert storage._locks_held == {}
+        assert storage._lock_table == {}
         assert storage._conn is None
 
     @pytest.mark.skipif(
@@ -248,5 +245,5 @@ class TestIRISConnectionLifecycle:
         # timeout=None means untimed MUMPS LOCK (wait indefinitely)
         result = storage.lock("TST", ("LK",), timeout=None, lock_type="+")
         assert result is True
-        assert ("TST", ("LK",)) in storage._locks_held
+        assert ("TST", ("LK",)) in storage._lock_table
         storage.close()

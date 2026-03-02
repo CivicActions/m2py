@@ -58,7 +58,7 @@ class IRISGlobalStorage:
         self._naked_indicator_value: tuple[str, tuple[str, ...]] | None = None
 
         # Lock tracking: {(name, subscripts): count}
-        self._locks_held: dict[tuple[str, tuple[str, ...]], int] = {}
+        self._lock_table: dict[tuple[str, tuple[str, ...]], int] = {}
 
         # Transaction state
         self._tlevel: int = 0
@@ -76,19 +76,6 @@ class IRISGlobalStorage:
     # IRIS shares a single database so kill_all() on any instance must
     # be able to clean up globals created by other instances.
     _all_known_globals: set[str] = set()
-
-    @property
-    def _lock_table(self) -> dict[tuple[str, tuple[str, ...]], tuple[int, int]]:
-        """Compatibility view matching InMemory's _lock_table format.
-
-        InMemory stores (owner_pid, count); this wraps _locks_held to
-        provide the same shape so tests that inspect _lock_table work
-        across all backends.
-        """
-        import os
-
-        pid = os.getpid()
-        return {key: (pid, count) for key, count in self._locks_held.items()}
 
     @property
     def _naked_indicator(self) -> tuple[str, tuple[str, ...]] | None:
@@ -250,7 +237,7 @@ class IRISGlobalStorage:
         self._update_naked_indicator(name, subscripts)
         self._known_globals.add(name)
         IRISGlobalStorage._all_known_globals.add(name)
-        value = str(value)  # Ensure string (MArray values may be int/float)
+        value = str(value)  # MUMPS canonical: all values are strings
 
         with self._lock:
             self._ensure_connected()
@@ -844,10 +831,10 @@ class IRISGlobalStorage:
 
         if lock_type == "-":
             # Decremental unlock
-            if lock_key in self._locks_held:
-                self._locks_held[lock_key] -= 1
-                if self._locks_held[lock_key] <= 0:
-                    del self._locks_held[lock_key]
+            if lock_key in self._lock_table:
+                self._lock_table[lock_key] -= 1
+                if self._lock_table[lock_key] <= 0:
+                    del self._lock_table[lock_key]
 
             with self._lock:
                 self._ensure_connected()
@@ -875,7 +862,7 @@ class IRISGlobalStorage:
                 else:
                     self._iris.lock("", timeout_sec, lock_name)
 
-                self._locks_held[lock_key] = self._locks_held.get(lock_key, 0) + 1
+                self._lock_table[lock_key] = self._lock_table.get(lock_key, 0) + 1
                 return True
             except Exception as e:
                 msg = str(e)
@@ -887,10 +874,10 @@ class IRISGlobalStorage:
         """Release a lock on ^NAME(subscripts)."""
         subscripts = self._canonicalize_subscripts(subscripts)
         lock_key = (name, subscripts)
-        if lock_key in self._locks_held:
-            self._locks_held[lock_key] -= 1
-            if self._locks_held[lock_key] <= 0:
-                del self._locks_held[lock_key]
+        if lock_key in self._lock_table:
+            self._lock_table[lock_key] -= 1
+            if self._lock_table[lock_key] <= 0:
+                del self._lock_table[lock_key]
 
         with self._lock:
             self._ensure_connected()
@@ -911,14 +898,14 @@ class IRISGlobalStorage:
                 self._iris.releaseAllLocks()
             except Exception:
                 pass
-        self._locks_held.clear()
+        self._lock_table.clear()
 
     def get_locks(self) -> list[tuple[str, str, int]]:
         """Return all locks held by the current process/thread."""
         import json
 
         result = []
-        for (lock_name, lock_subs), count in self._locks_held.items():
+        for (lock_name, lock_subs), count in self._lock_table.items():
             subs_json = json.dumps(list(lock_subs))
             result.append((lock_name, subs_json, count))
         return result
@@ -934,7 +921,7 @@ class IRISGlobalStorage:
         """
         # Snapshot lock state at outermost TSTART only
         if self._tlevel == 0:
-            self._lock_snapshot = dict(self._locks_held)
+            self._lock_snapshot = dict(self._lock_table)
 
         self._tlevel += 1
         if self._tlevel == 1:
@@ -978,7 +965,7 @@ class IRISGlobalStorage:
             # Restore lock state to what it was at outermost TSTART
             if self._lock_snapshot is not None:
                 # Release native locks that were acquired during the transaction
-                for lock_key, count in self._locks_held.items():
+                for lock_key, count in self._lock_table.items():
                     if lock_key not in self._lock_snapshot:
                         # This lock was acquired during the txn — release it
                         name, subs = lock_key
@@ -1007,7 +994,7 @@ class IRISGlobalStorage:
                                 except Exception:
                                     pass
                 # Restore the Python-side lock tracking dict
-                self._locks_held = dict(self._lock_snapshot)
+                self._lock_table = dict(self._lock_snapshot)
                 self._lock_snapshot = None
 
     def get_tlevel(self) -> int:
@@ -1047,7 +1034,7 @@ class IRISGlobalStorage:
 
     def ssvn_lock(self, subscript: str) -> str:
         """Query ^$LOCK(lockname) for lock information."""
-        for (lock_name, _), count in self._locks_held.items():
+        for (lock_name, _), count in self._lock_table.items():
             if lock_name == subscript:
                 return str(count)
         return ""
@@ -1282,7 +1269,7 @@ class IRISGlobalStorage:
                 pass
             self._conn = None
             self._iris = None
-            self._locks_held.clear()
+            self._lock_table.clear()
 
     def __del__(self) -> None:
         """Close connection on garbage collection."""

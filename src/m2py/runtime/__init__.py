@@ -5070,7 +5070,7 @@ class MUMPSRuntime:
             eval_subs = _evaluate_subscripts(subscripts, _scope)
             naked_subs = tuple(str(s) for s in eval_subs) if eval_subs else ()
             resolved_name, full_subs = self._globals.resolve_naked(naked_subs)
-            self._globals.set(resolved_name, full_subs, value)
+            self._globals.set(resolved_name, full_subs, str(value))
             return
 
         # Validate the base name

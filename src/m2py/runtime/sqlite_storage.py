@@ -206,6 +206,7 @@ class SQLiteGlobalStorage:
 
     def set(self, name: str, subscripts: tuple[str, ...], value: str) -> None:
         """Set value at ^NAME(subscripts)."""
+        value = str(value)  # MUMPS canonical: all values are strings
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -575,7 +576,7 @@ class SQLiteGlobalStorage:
     ) -> None:
         """Recursively merge MArray node into global storage."""
         if node._value is not None:
-            self.set(name, subscripts, node._value)
+            self.set(name, subscripts, str(node._value))
         for key, child in node._children.items():
             child_sub = str(key)
             self._merge_tree_recursive(name, subscripts + (child_sub,), child)
