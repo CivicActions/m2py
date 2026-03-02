@@ -93,19 +93,27 @@ def pytest_configure(config):
 
     if not _is_xdist_worker and not _has_cli_opt(user_args, "-n", "--numprocesses"):
         if hasattr(config.option, "numprocesses"):  # xdist installed
-            # Use all available CPUs.  Functional tests that spawn
-            # multiprocessing.Process children use the 'spawn' start
-            # method (see tests/functional/conftest.py) so they don't
-            # deadlock inside multi-threaded xdist workers.
-            config.option.numprocesses = os.cpu_count() or 1
-            # xdist also needs dist mode enabled (defaults to "no"
-            # when -n is absent from the CLI)
-            if getattr(config.option, "dist", "no") == "no":
-                config.option.dist = "load"
-            # xdist requires tx (test execution environments) to be populated
-            # with one entry per worker to actually create the workers
-            if getattr(config.option, "tx", None) == []:
-                config.option.tx = ["popen"] * config.option.numprocesses
+            backend_name = os.environ.get("M2PY_GLOBAL_BACKEND", "inmemory")
+            if backend_name in ("yottadb", "iris"):
+                # Database backends share a single database across all
+                # xdist workers — parallel execution causes kill_all()
+                # in one worker to wipe another worker's test data.
+                # Force sequential execution for correctness.
+                config.option.numprocesses = 0
+            else:
+                # Use all available CPUs.  Functional tests that spawn
+                # multiprocessing.Process children use the 'spawn' start
+                # method (see tests/functional/conftest.py) so they don't
+                # deadlock inside multi-threaded xdist workers.
+                config.option.numprocesses = os.cpu_count() or 1
+                # xdist also needs dist mode enabled (defaults to "no"
+                # when -n is absent from the CLI)
+                if getattr(config.option, "dist", "no") == "no":
+                    config.option.dist = "load"
+                # xdist requires tx (test execution environments) to be
+                # populated with one entry per worker to create workers
+                if getattr(config.option, "tx", None) == []:
+                    config.option.tx = ["popen"] * config.option.numprocesses
 
     if not _has_cli_opt(user_args, "-m", "--markexpr"):
         config.option.markexpr = "not slow"
