@@ -137,6 +137,33 @@ export M2PY_GLOBAL_BACKEND=iris
 bash utils/iris.sh uv run python my_script.py
 ```
 
+### Backend Compatibility Notes
+
+All four backends implement the `GlobalStorageBackend` protocol and pass the full test suite. Key behavioral differences:
+
+| Aspect | InMemory | SQLite | YottaDB | IRIS |
+|--------|----------|--------|---------|------|
+| **Persistence** | Process lifetime | File-backed | Database | Database |
+| **Cross-process** | No | Yes (WAL) | Yes | Yes (TCP) |
+| **Namespace isolation** | Dict-per-namespace | N/A | Subscript prefix `~NS:` | Subscript prefix `~NS:` |
+| **kill_all scope** | Clear all dicts | DROP/recreate tables | Enumerate all globals | SQL enumeration + system global protection |
+| **System globals** | None | None | None | ^DD, ^DIC, ^ZOSF, etc. protected from kill_all |
+| **Empty subscripts** | Supported | Supported | Supported | Not supported (IRIS `<SUBSCRIPT>` error) |
+| **Lock mechanism** | In-process dict | SQLite `locks` table | `yottadb.lock_incr/decr` | `iris.lock/unlock` (connection-scoped) |
+| **Untimed LOCK** | Instant (no contention) | Row-level wait | Indefinite wait | 30s practical timeout |
+| **Value types** | Stores as-is | Stringified | Stringified via `.encode()` | Stringified via `str()` |
+| **JOB child backend** | New InMemory (isolated) | Shared SQLite (via path) | Same YDB database | Same IRIS database |
+
+**IRIS-specific considerations:**
+- IRIS Community Edition has a license limit on concurrent connections. The test fixture releases connections after each test to free license slots.
+- IRIS ships with pre-populated system globals (^DD, ^DIC, etc.). Tests should use non-system names (e.g., ^ZTDD instead of ^DD) to avoid data pollution.
+- IRIS locks are connection-scoped. `close()` calls `releaseAllLocks()` before disconnecting. The test fixture tracks all `IRISGlobalStorage` instances and closes stale ones between tests.
+
+**YottaDB-specific considerations:**
+- Must run inside the YDB Docker container (`bash utils/ydb.sh`).
+- Global names cannot contain `:` or `__`. Namespace simulation uses subscript-based prefixing instead of name embedding.
+- `kill_all()` enumerates all globals via `subscript_next("^%")` loop rather than tracking names, because `run_mumps()` child processes create globals invisible to the parent's tracking set.
+
 #### Environment Variables
 
 | Variable | Default | Description |
