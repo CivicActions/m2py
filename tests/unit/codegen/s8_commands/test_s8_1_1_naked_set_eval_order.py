@@ -69,24 +69,25 @@ class TestNakedSetEvalOrder:
     def test_set_piece_naked_range_rhs_global(self, execute_mumps):
         """S $P(^(0),U,3,4)=rhs_with_global — DMUFINIT line 24 pattern.
 
-        After SET ^DD(N,0,"VR"), naked = ^DD(N,0).
-        RHS evaluates $P(^DIC(0),U,4), changing naked to ^DIC().
-        So ^(0) resolves to ^DIC(0), NOT ^DD(N,0,0).
+        After SET ^ZDD(N,0,"VR"), naked = ^ZDD(N,0).
+        RHS evaluates $P(^ZDIC(0),U,4), changing naked to ^ZDIC().
+        So ^(0) resolves to ^ZDIC(0), NOT ^ZDD(N,0,0).
 
         This is the exact pattern from DMUFINIT line 24.
         Verified against YDB (tmp/DMUFINIT_DBG.m).
+        Uses ^ZDD/^ZDIC instead of ^DD/^DIC to avoid IRIS system globals.
         """
         result = execute_mumps(
             "TEST\n"
             ' S U="^"\n'
-            ' S ^DD(100,0,"VR")="0.1"\n'
-            ' S ^DIC(0)="FILE^1^100^2706"\n'
-            ' S X=^DD(100,0,"VR")\n'
+            ' S ^ZDD(100,0,"VR")="0.1"\n'
+            ' S ^ZDIC(0)="FILE^1^100^2706"\n'
+            ' S X=^ZDD(100,0,"VR")\n'
             ' S DIFQN="2^100"\n'
-            " S $P(^(0),U,3,4)=$P(DIFQN,U,2)_U_($P(^DIC(0),U,4)+DIFQN)\n"
+            " S $P(^(0),U,3,4)=$P(DIFQN,U,2)_U_($P(^ZDIC(0),U,4)+DIFQN)\n"
             " K DIFQN\n"
-            " ; ^DIC(0) should be modified, not ^DD(100,0,0)\n"
-            ' W ^DIC(0),"/",$G(^DD(100,0,0),"undef")\n'
+            " ; ^ZDIC(0) should be modified, not ^ZDD(100,0,0)\n"
+            ' W ^ZDIC(0),"/",$G(^ZDD(100,0,0),"undef")\n'
             " Q\n",
         )
         assert result.output == "FILE^1^100^2708/undef"

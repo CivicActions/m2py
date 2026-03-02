@@ -4139,10 +4139,46 @@ class MUMPSRuntime:
 
         routine_name = routine or self._current_routine
 
-        # Check if we have SQLiteGlobalStorage (cross-process capable)
+        # Detect active backend type for cross-process global sharing.
+        # YDB and IRIS backends share a single database natively —
+        # the child process just connects to the same database.
+        # SQLite also shares via a file path.
+        # InMemory creates a temporary SQLite for the child.
+        backend_type = type(self._globals).__name__
         db_path = getattr(self._globals, "_db_path", None)
 
-        if db_path is None:
+        if backend_type == "YottaDBGlobalStorage":
+            return self._start_job_subprocess(
+                label,
+                routine_name,
+                args,
+                params,
+                timeout,
+                db_path=None,
+                backend_name="yottadb",
+            )
+        elif backend_type == "IRISGlobalStorage":
+            return self._start_job_subprocess(
+                label,
+                routine_name,
+                args,
+                params,
+                timeout,
+                db_path=None,
+                backend_name="iris",
+            )
+        elif db_path is not None:
+            # SQLiteGlobalStorage — pass the shared DB path
+            return self._start_job_subprocess(
+                label,
+                routine_name,
+                args,
+                params,
+                timeout,
+                db_path=db_path,
+                backend_name=None,
+            )
+        else:
             # InMemoryGlobalStorage — create a temporary SQLite DB for the
             # subprocess. The child process won't share in-memory globals,
             # but this is the expected behavior: JOB requires cross-process
@@ -4161,7 +4197,13 @@ class MUMPSRuntime:
             os.close(fd)
 
         return self._start_job_subprocess(
-            label, routine_name, args, params, timeout, db_path
+            label,
+            routine_name,
+            args,
+            params,
+            timeout,
+            db_path=db_path,
+            backend_name=None,
         )
 
     def _start_job_subprocess(
@@ -4171,12 +4213,17 @@ class MUMPSRuntime:
         args: List[Any],
         params: Optional[List[str]],
         timeout: Optional[float],
-        db_path: str,
+        db_path: str | None,
+        backend_name: str | None = None,
     ) -> bool:
         """Start JOB as a real subprocess using job_runner.py.
 
         Creates a real process with independent locals
-        and shared globals via SQLite.
+        and shared globals via the specified backend.
+
+        Args:
+            db_path: SQLite database path (for sqlite backend)
+            backend_name: Backend name ('yottadb', 'iris') or None for sqlite
         """
         import json
         import os
@@ -4198,9 +4245,12 @@ class MUMPSRuntime:
             routine_name,
             "--label",
             entry_label,
-            "--db-path",
-            db_path,
         ]
+
+        if backend_name:
+            cmd.extend(["--backend", backend_name])
+        elif db_path:
+            cmd.extend(["--db-path", db_path])
 
         if args:
             cmd.extend(["--args", json.dumps([str(a) for a in args])])

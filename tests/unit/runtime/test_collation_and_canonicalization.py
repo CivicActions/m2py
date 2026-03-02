@@ -237,15 +237,16 @@ class TestCanonicalSubscriptRoundtrip:
 
     def test_order_traversal_decimal_subscripts(self, runtime):
         """$ORDER traverses decimal subscripts in correct numeric order."""
+        # Use ZTDD (not DD) to avoid IRIS pre-populated system data.
         for n in (".06", ".01", ".03", ".02"):
-            runtime.globals.set("DD", ("1009", n, "0"), f"field_{n}")
+            runtime.globals.set("ZTDD", ("1009", n, "0"), f"field_{n}")
 
         # $ORDER should return in numeric order: .01, .02, .03, .06
         result = []
-        sub = runtime.globals.order("DD", ("1009", ""), 1)
+        sub = runtime.globals.order("ZTDD", ("1009", ""), 1)
         while sub:
             result.append(sub)
-            sub = runtime.globals.order("DD", ("1009", sub), 1)
+            sub = runtime.globals.order("ZTDD", ("1009", sub), 1)
 
         assert result == [".01", ".02", ".03", ".06"]
 
@@ -253,24 +254,25 @@ class TestCanonicalSubscriptRoundtrip:
         """Reproduce DMUFI001 data loading pattern: S @X=Y for DD entries."""
         scope = {}
         # Simulate what DMUFI001 does: S @"^DD(1009.801,.01,0)"=value
+        # Use ZTDD (not DD) to avoid IRIS pre-populated system data.
         entries = [
-            ("^DD(1009.801,0)", "FIELD^^.06^6"),
-            ("^DD(1009.801,.01,0)", "NAME^RF^^0;1^K:X"),
-            ("^DD(1009.801,.01,3)", "Answer must be 3-60 characters."),
-            ("^DD(1009.801,.02,0)", "POINTER^P.85'^DI(.85,^0;2^Q"),
+            ("^ZTDD(1009.801,0)", "FIELD^^.06^6"),
+            ("^ZTDD(1009.801,.01,0)", "NAME^RF^^0;1^K:X"),
+            ("^ZTDD(1009.801,.01,3)", "Answer must be 3-60 characters."),
+            ("^ZTDD(1009.801,.02,0)", "POINTER^P.85'^DI(.85,^0;2^Q"),
         ]
         for ref, value in entries:
             runtime.set_indirected(ref, value, scope, levels=0)
 
         # Verify all stored at canonical subscripts
-        assert runtime.globals.get("DD", ("1009.801", "0")) == "FIELD^^.06^6"
-        assert runtime.globals.get("DD", ("1009.801", ".01", "0")) is not None
-        assert runtime.globals.get("DD", ("1009.801", ".02", "0")) is not None
+        assert runtime.globals.get("ZTDD", ("1009.801", "0")) == "FIELD^^.06^6"
+        assert runtime.globals.get("ZTDD", ("1009.801", ".01", "0")) is not None
+        assert runtime.globals.get("ZTDD", ("1009.801", ".02", "0")) is not None
 
         # $ORDER should find: 0, .01, .02 (numeric order)
         subs = []
-        sub = runtime.globals.order("DD", ("1009.801", ""), 1)
+        sub = runtime.globals.order("ZTDD", ("1009.801", ""), 1)
         while sub:
             subs.append(sub)
-            sub = runtime.globals.order("DD", ("1009.801", sub), 1)
+            sub = runtime.globals.order("ZTDD", ("1009.801", sub), 1)
         assert subs == ["0", ".01", ".02"]

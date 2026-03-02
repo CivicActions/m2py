@@ -28,7 +28,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="m2py JOB subprocess runner")
     parser.add_argument("--routine", required=True, help="Routine module name")
     parser.add_argument("--label", required=True, help="Entry label name")
-    parser.add_argument("--db-path", required=True, help="SQLite database path")
+    parser.add_argument("--db-path", default=None, help="SQLite database path")
+    parser.add_argument(
+        "--backend",
+        default=None,
+        choices=["sqlite", "yottadb", "iris"],
+        help="Global storage backend (default: sqlite via --db-path)",
+    )
     parser.add_argument("--args", default="[]", help="JSON-encoded argument list")
     parser.add_argument("--output", default=None, help="Output file path for child I/O")
     parser.add_argument("--input", default=None, help="Input file path for child I/O")
@@ -40,10 +46,23 @@ def main() -> None:
     # Parse actual list arguments
     actual_args = json.loads(args.args)
 
-    # Create SQLite storage connected to shared database
-    from m2py.runtime.sqlite_storage import SQLiteGlobalStorage
+    # Create global storage based on backend selection
+    storage: object
+    if args.backend == "yottadb":
+        from m2py.runtime.yottadb_backend import YottaDBGlobalStorage
 
-    storage = SQLiteGlobalStorage(args.db_path)
+        storage = YottaDBGlobalStorage()
+    elif args.backend == "iris":
+        from m2py.runtime.iris_backend import IRISGlobalStorage
+
+        storage = IRISGlobalStorage()
+    else:
+        # Default: SQLite (original behavior)
+        if not args.db_path:
+            sys.exit(1)  # SQLite requires --db-path
+        from m2py.runtime.sqlite_storage import SQLiteGlobalStorage
+
+        storage = SQLiteGlobalStorage(args.db_path)
 
     # Create child runtime with shared globals but independent locals
     from m2py.runtime import MUMPSRuntime
@@ -113,8 +132,9 @@ def main() -> None:
     finally:
         # Release all locks held by this process
         rt._globals.unlock_all()
-        # Close storage connection
-        storage.close()
+        # Close storage connection (SQLite uses close(); others may not have it)
+        if hasattr(storage, "close"):
+            storage.close()  # type: ignore[union-attr]
 
 
 def _import_routine(routine_name: str) -> object | None:

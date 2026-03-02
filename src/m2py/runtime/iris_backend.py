@@ -44,6 +44,9 @@ class IRISGlobalStorage:
     The IRIS connection is not inherently thread-safe.
     """
 
+    # Class-level tracking of all live instances for cleanup in test fixtures.
+    _all_instances: set["IRISGlobalStorage"] = set()
+
     def __init__(self) -> None:
         """Initialize IRIS backend (lazy — no connection yet)."""
         self._iris_module = None  # Lazy import of iris module
@@ -68,6 +71,51 @@ class IRISGlobalStorage:
 
         # Track known global names for kill_all()
         self._known_globals: set[str] = set()
+
+    # Class-level set tracking all global names written by ANY instance.
+    # IRIS shares a single database so kill_all() on any instance must
+    # be able to clean up globals created by other instances.
+    _all_known_globals: set[str] = set()
+
+    @property
+    def _lock_table(self) -> dict[tuple[str, tuple[str, ...]], tuple[int, int]]:
+        """Compatibility view matching InMemory's _lock_table format.
+
+        InMemory stores (owner_pid, count); this wraps _locks_held to
+        provide the same shape so tests that inspect _lock_table work
+        across all backends.
+        """
+        import os
+
+        pid = os.getpid()
+        return {key: (pid, count) for key, count in self._locks_held.items()}
+
+    @property
+    def _naked_indicator(self) -> tuple[str, tuple[str, ...]] | None:
+        """Naked indicator for global reference resolution."""
+        return self._naked_indicator_value
+
+    @_naked_indicator.setter
+    def _naked_indicator(self, value: tuple[str, tuple[str, ...]] | None) -> None:
+        self._naked_indicator_value = value
+
+    def _resolve_ns_name(
+        self, name: str, subscripts: tuple[str, ...]
+    ) -> tuple[str, tuple[str, ...]]:
+        """Resolve namespace-prefixed names like ``"NS:X"`` into (name, subs).
+
+        Codegen may emit ``set("NS:X", subs, val)`` using the ``NS:name``
+        convention from the InMemory backend.  IRIS global names cannot
+        contain ``:``, so we translate:
+
+            ("NS:X", ("a",)) → ("X", ("~NS:NS", "a"))
+
+        Plain names (no ``:``) pass through unchanged.
+        """
+        if ":" in name:
+            ns, real_name = name.split(":", 1)
+            return real_name, (f"~NS:{ns}", *subscripts)
+        return name, subscripts
 
     def _ensure_connected(self) -> None:
         """Lazily connect to IRIS on first use."""
@@ -99,6 +147,8 @@ class IRISGlobalStorage:
                 config.password,
             )
             self._iris = iris_module.createIRIS(self._conn)
+            # Track this instance so test fixtures can close all connections.
+            IRISGlobalStorage._all_instances.add(self)
         except Exception as e:
             from m2py.runtime.backend_exceptions import BackendConnectionError
 
@@ -170,6 +220,7 @@ class IRISGlobalStorage:
         self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
     ) -> str | None:
         """Get value at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         if update_naked:
             self._update_naked_indicator(name, subscripts)
@@ -194,9 +245,12 @@ class IRISGlobalStorage:
 
     def set(self, name: str, subscripts: tuple[str, ...], value: str) -> None:
         """Set value at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
         self._known_globals.add(name)
+        IRISGlobalStorage._all_known_globals.add(name)
+        value = str(value)  # Ensure string (MArray values may be int/float)
 
         with self._lock:
             self._ensure_connected()
@@ -211,6 +265,7 @@ class IRISGlobalStorage:
 
     def kill(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Kill node and all descendants at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -229,22 +284,61 @@ class IRISGlobalStorage:
                     return
                 raise self._translate_exception(e)
 
+    # Globals that belong to the IRIS platform and must not be killed.
+    # Includes HealthShare/Ensemble package globals (contain dots) and
+    # well-known IRIS internals.  Checked by kill_all().
+    _IRIS_SYSTEM_GLOBALS: frozenset[str] = frozenset(
+        {"ZOSF", "DD", "DIC", "DMU", "DST", "CFG"}
+    )
+
     def kill_all(self) -> None:
-        """Kill all known globals. Used for testing/reset."""
+        """Kill all globals in the database. Used for testing/reset.
+
+        Enumerates all globals via the ``%SYS.GlobalQuery`` SQL class so
+        that globals created in child processes (e.g. multiprocessing
+        workers) are also cleaned up, not just those tracked in
+        ``_known_globals``.  System/package globals (names containing
+        dots or in the ``_IRIS_SYSTEM_GLOBALS`` set) are preserved.
+        """
         with self._lock:
             self._ensure_connected()
-            for gname in list(self._known_globals):
-                try:
-                    self._iris.kill(f"^{gname}")
-                except Exception:
-                    pass
+            # Enumerate all globals from the IRIS global directory
+            try:
+                rs = self._iris.classMethodValue(
+                    "%SYSTEM.SQL",
+                    "Execute",
+                    "SELECT Name FROM %SYS.GlobalQuery_NameSpaceList()",
+                )
+                while rs.invokeBoolean("%Next"):
+                    raw_name = str(rs.get("Name"))
+                    # Skip package globals (contain dots) and known IRIS internals
+                    if "." in raw_name or raw_name in self._IRIS_SYSTEM_GLOBALS:
+                        continue
+                    # Skip names with special SQL notation (subscript refs)
+                    if "(" in raw_name:
+                        continue
+                    try:
+                        self._iris.kill(f"^{raw_name}")
+                    except Exception:
+                        pass
+            except Exception:
+                # Fallback: kill only tracked globals
+                all_names = self._known_globals | IRISGlobalStorage._all_known_globals
+                for gname in list(all_names):
+                    try:
+                        self._iris.kill(f"^{gname}")
+                    except Exception:
+                        pass
+
             self._known_globals.clear()
+            IRISGlobalStorage._all_known_globals.clear()
 
         self._naked_indicator_value = None
         self._last_global_ref = ""
 
     def data(self, name: str, subscripts: tuple[str, ...]) -> int:
         """Return $DATA value for ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -305,6 +399,7 @@ class IRISGlobalStorage:
         update_naked: bool = True,
     ) -> str:
         """Return next/previous subscript in MUMPS collation order."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         if update_naked:
             self._update_naked_indicator(name, subscripts)
@@ -343,6 +438,7 @@ class IRISGlobalStorage:
         Uses manual tree traversal since IRIS Native API doesn't expose
         $QUERY directly via the Python SDK.
         """
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -609,6 +705,7 @@ class IRISGlobalStorage:
         """Get subtree as MArray for MERGE source."""
         from m2py.runtime import MArray
 
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -687,9 +784,11 @@ class IRISGlobalStorage:
         self, name: str, subscripts: tuple[str, ...], source: "MArray"
     ) -> None:
         """Merge MArray tree into global at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
         self._known_globals.add(name)
+        IRISGlobalStorage._all_known_globals.add(name)
         self._merge_tree_recursive(name, subscripts, source)
 
     def _merge_tree_recursive(
@@ -697,7 +796,7 @@ class IRISGlobalStorage:
     ) -> None:
         """Recursively merge MArray node into IRIS global."""
         if node._value is not None:
-            self.set(name, subscripts, node._value)
+            self.set(name, subscripts, str(node._value))
         for key, child in node._children.items():
             child_sub = str(key)
             self._merge_tree_recursive(name, subscripts + (child_sub,), child)
@@ -708,9 +807,11 @@ class IRISGlobalStorage:
 
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
         """Atomically increment value at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
         self._known_globals.add(name)
+        IRISGlobalStorage._all_known_globals.add(name)
 
         with self._lock:
             self._ensure_connected()
@@ -765,7 +866,9 @@ class IRISGlobalStorage:
             self._ensure_connected()
             try:
                 lock_name = f"^{name}"
-                timeout_sec = int(timeout) if timeout is not None else 0
+                # MUMPS untimed LOCK waits indefinitely; use 30s as practical max.
+                # timeout=0 means "try once, fail immediately" in IRIS.
+                timeout_sec = int(timeout) if timeout is not None else 30
                 # lock(lockMode, timeout, globalName, subscripts...)
                 if subscripts:
                     self._iris.lock("", timeout_sec, lock_name, *subscripts)
@@ -975,6 +1078,96 @@ class IRISGlobalStorage:
         return ""
 
     # =========================================================================
+    # Namespace (Extended Global References)
+    # =========================================================================
+
+    def _ns_subs(self, subscripts: tuple[str, ...], namespace: str) -> tuple[str, ...]:
+        """Prepend namespace qualifier as first subscript.
+
+        IRIS global names only allow alphanumeric chars, so we cannot
+        embed the namespace in the name (e.g. ``NS:X`` is invalid).  Instead,
+        we prepend a namespace tag as the first subscript:
+
+            _ns_subs(("a",), "NS") → ("~NS:NS", "a")
+
+        The ``~NS:`` prefix sorts after all normal subscripts and is never
+        generated by user code, guaranteeing isolation.
+        """
+        if namespace:
+            return (f"~NS:{namespace}", *subscripts)
+        return subscripts
+
+    def set_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        value: str,
+        namespace: str = "",
+    ) -> None:
+        """Set a global variable in a specific namespace."""
+        self.set(name, self._ns_subs(subscripts, namespace), value)
+
+    def get_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        namespace: str = "",
+    ) -> str | None:
+        """Get a global variable from a specific namespace."""
+        return self.get(name, self._ns_subs(subscripts, namespace))
+
+    def data_ns(
+        self, name: str, subscripts: tuple[str, ...], namespace: str = ""
+    ) -> int:
+        """$DATA for namespace-qualified global."""
+        return self.data(name, self._ns_subs(subscripts, namespace))
+
+    def order_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        namespace: str = "",
+    ) -> str:
+        """$ORDER for namespace-qualified global."""
+        return self.order(name, self._ns_subs(subscripts, namespace), direction)
+
+    def kill_ns(
+        self, name: str, subscripts: tuple[str, ...], namespace: str = ""
+    ) -> None:
+        """KILL for namespace-qualified global."""
+        self.kill(name, self._ns_subs(subscripts, namespace))
+
+    def query_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        namespace: str = "",
+    ) -> str:
+        """$QUERY for namespace-qualified global."""
+        return self.query(name, self._ns_subs(subscripts, namespace))
+
+    def merge_tree_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        source: "MArray",
+        namespace: str = "",
+    ) -> None:
+        """MERGE for namespace-qualified global."""
+        self.merge_tree(name, self._ns_subs(subscripts, namespace), source)
+
+    def get_tree_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        namespace: str = "",
+    ) -> "MArray | None":
+        """Get subtree for namespace-qualified global."""
+        return self.get_tree(name, self._ns_subs(subscripts, namespace))
+
+    # =========================================================================
     # ZWR Import
     # =========================================================================
 
@@ -1035,6 +1228,7 @@ class IRISGlobalStorage:
             bare_name = name[1:] if name.startswith("^") else name
             gname = f"^{bare_name}"
             self._known_globals.add(bare_name)
+            IRISGlobalStorage._all_known_globals.add(bare_name)
             if subs:
                 iris_obj.set(value, gname, *subs)
             else:
@@ -1075,14 +1269,20 @@ class IRISGlobalStorage:
     # =========================================================================
 
     def close(self) -> None:
-        """Close the IRIS connection."""
+        """Release all locks and close the IRIS connection."""
+        IRISGlobalStorage._all_instances.discard(self)
         if self._conn is not None:
+            try:
+                self._iris.releaseAllLocks()
+            except Exception:
+                pass
             try:
                 self._conn.close()
             except Exception:
                 pass
             self._conn = None
             self._iris = None
+            self._locks_held.clear()
 
     def __del__(self) -> None:
         """Close connection on garbage collection."""

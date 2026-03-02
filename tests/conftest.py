@@ -134,6 +134,79 @@ def pytest_addoption(parser):
     )
 
 
+# =============================================================================
+# Backend Global State Cleanup
+# =============================================================================
+
+# Shared backend storage instance for database-backed backends (YDB, IRIS).
+# Reused across tests to avoid reconnecting on every test invocation.
+_backend_storage = None
+
+
+@pytest.fixture(autouse=True)
+def _clean_backend_globals(request):
+    """Kill all globals and release locks around each test for database backends.
+
+    InMemory and SQLite backends create fresh instances per MUMPSRuntime(),
+    so they don't leak state between tests.  YDB and IRIS share a single
+    database, so globals from one test can pollute the next.
+
+    Setup: kill_all() before test (clean slate).
+    Teardown: gc.collect() + disconnect to release IRIS connection-scoped
+    locks left by the test's MUMPSRuntime instances.
+
+    In xdist parallel mode, cleanup is skipped because workers share the
+    same database and would destroy each other's data mid-test.
+    """
+    global _backend_storage
+
+    import os
+
+    backend_name = os.environ.get("M2PY_GLOBAL_BACKEND", "inmemory")
+    if backend_name not in ("yottadb", "iris"):
+        yield
+        return
+
+    # Skip per-test cleanup in xdist parallel mode — workers share the
+    # database and would nuke each other's data.
+    worker_count = request.config.getoption("numprocesses", default=None)
+    if worker_count is not None and worker_count != 0:
+        yield
+        return
+
+    if _backend_storage is None:
+        from m2py.runtime import get_global_storage
+
+        _backend_storage = get_global_storage(backend_name)
+    _backend_storage.kill_all()
+
+    yield  # ---- test runs here ----
+
+    # Teardown: close all IRISGlobalStorage instances created during the test.
+    # Tests create MUMPSRuntime→IRISGlobalStorage which hold connection-scoped
+    # locks. These must be released before the next test to avoid hierarchical
+    # lock conflicts. sys.modules keeps references alive past test scope.
+    if backend_name == "iris":
+        from m2py.runtime.iris_backend import IRISGlobalStorage
+
+        stale = [
+            inst
+            for inst in IRISGlobalStorage._all_instances
+            if inst is not _backend_storage
+        ]
+        for inst in stale:
+            inst.close()
+    # Also disconnect the fixture's own connection to free the license slot.
+    if backend_name == "iris" and hasattr(_backend_storage, "_conn"):
+        try:
+            if _backend_storage._conn is not None:
+                _backend_storage._conn.close()
+                _backend_storage._conn = None
+                _backend_storage._iris = None
+        except Exception:
+            pass
+
+
 def pytest_sessionfinish(session, exitstatus):
     """Clean up shared transpile caches after the test session.
 

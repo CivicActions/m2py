@@ -65,6 +65,51 @@ class YottaDBGlobalStorage:
         # Track known global names for kill_all()
         self._known_globals: set[str] = set()
 
+    # Class-level set tracking all global names written by ANY instance.
+    # YDB shares a single database so kill_all() on any instance must
+    # be able to clean up globals created by other instances.
+    _all_known_globals: set[str] = set()
+
+    @property
+    def _lock_table(self) -> dict[tuple[str, tuple[str, ...]], tuple[int, int]]:
+        """Compatibility view matching InMemory's _lock_table format.
+
+        InMemory stores (owner_pid, count); this wraps _locks_held to
+        provide the same shape so tests that inspect _lock_table work
+        across all backends.
+        """
+        import os
+
+        pid = os.getpid()
+        return {key: (pid, count) for key, count in self._locks_held.items()}
+
+    @property
+    def _naked_indicator(self) -> tuple[str, tuple[str, ...]] | None:
+        """Naked indicator for global reference resolution."""
+        return self._naked_indicator_value
+
+    @_naked_indicator.setter
+    def _naked_indicator(self, value: tuple[str, tuple[str, ...]] | None) -> None:
+        self._naked_indicator_value = value
+
+    def _resolve_ns_name(
+        self, name: str, subscripts: tuple[str, ...]
+    ) -> tuple[str, tuple[str, ...]]:
+        """Resolve namespace-prefixed names like ``"NS:X"`` into (name, subs).
+
+        Codegen may emit ``set("NS:X", subs, val)`` using the ``NS:name``
+        convention from the InMemory backend.  YDB/IRIS global names cannot
+        contain ``:``, so we translate:
+
+            ("NS:X", ("a",)) → ("X", ("~NS:NS", "a"))
+
+        Plain names (no ``:``) pass through unchanged.
+        """
+        if ":" in name:
+            ns, real_name = name.split(":", 1)
+            return real_name, (f"~NS:{ns}", *subscripts)
+        return name, subscripts
+
     def _ensure_initialized(self) -> None:
         """Lazily import yottadb SDK on first use."""
         if self._ydb is None:
@@ -146,6 +191,7 @@ class YottaDBGlobalStorage:
         self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
     ) -> str | None:
         """Get value at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         if update_naked:
             self._update_naked_indicator(name, subscripts)
@@ -172,9 +218,11 @@ class YottaDBGlobalStorage:
 
     def set(self, name: str, subscripts: tuple[str, ...], value: str) -> None:
         """Set value at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
         self._known_globals.add(name)
+        YottaDBGlobalStorage._all_known_globals.add(name)
 
         with self._lock:
             self._ensure_initialized()
@@ -186,12 +234,13 @@ class YottaDBGlobalStorage:
                     self._transaction_journal[-1].append(
                         ("set", name, subscripts, old_val)
                     )
-                key.value = value.encode("utf-8")
+                key.value = str(value).encode("utf-8")
             except Exception as e:
                 raise self._translate_exception(e)
 
     def kill(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Kill node and all descendants at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -213,22 +262,40 @@ class YottaDBGlobalStorage:
                 raise self._translate_exception(e)
 
     def kill_all(self) -> None:
-        """Kill all known globals. Used for testing/reset."""
+        """Kill all globals in the database. Used for testing/reset.
+
+        Enumerates all globals via $ORDER on the global directory so that
+        globals created in child processes (e.g. multiprocessing workers)
+        are also cleaned up, not just those tracked in _known_globals.
+        """
         with self._lock:
             self._ensure_initialized()
             ydb = self._ydb
-            for gname in list(self._known_globals):
-                try:
-                    ydb.Key(f"^{gname}").delete_tree()
-                except Exception:
-                    pass
+            # Enumerate all globals starting from ^%
+            try:
+                name = ydb.subscript_next("^%")
+                while True:
+                    try:
+                        ydb.Key(
+                            name.decode() if isinstance(name, bytes) else name
+                        ).delete_tree()
+                    except Exception:
+                        pass
+                    name = ydb.subscript_next(
+                        name.decode() if isinstance(name, bytes) else name
+                    )
+            except Exception:
+                # YDBNodeEnd or similar — enumeration finished
+                pass
             self._known_globals.clear()
+            YottaDBGlobalStorage._all_known_globals.clear()
 
         self._naked_indicator_value = None
         self._last_global_ref = ""
 
     def data(self, name: str, subscripts: tuple[str, ...]) -> int:
         """Return $DATA value for ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -286,6 +353,7 @@ class YottaDBGlobalStorage:
         update_naked: bool = True,
     ) -> str:
         """Return next/previous subscript in MUMPS collation order."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         if update_naked:
             self._update_naked_indicator(name, subscripts)
@@ -330,6 +398,7 @@ class YottaDBGlobalStorage:
 
         Uses yottadb.node_next() for $QUERY equivalent.
         """
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -400,6 +469,7 @@ class YottaDBGlobalStorage:
         """Get subtree as MArray for MERGE source."""
         from m2py.runtime import MArray
 
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -479,9 +549,11 @@ class YottaDBGlobalStorage:
         self, name: str, subscripts: tuple[str, ...], source: "MArray"
     ) -> None:
         """Merge MArray tree into global at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
         self._known_globals.add(name)
+        YottaDBGlobalStorage._all_known_globals.add(name)
         self._merge_tree_recursive(name, subscripts, source)
 
     def _merge_tree_recursive(
@@ -489,7 +561,7 @@ class YottaDBGlobalStorage:
     ) -> None:
         """Recursively merge MArray node into YDB global."""
         if node._value is not None:
-            self.set(name, subscripts, node._value)
+            self.set(name, subscripts, str(node._value))
         for key, child in node._children.items():
             child_sub = str(key)
             self._merge_tree_recursive(name, subscripts + (child_sub,), child)
@@ -500,9 +572,11 @@ class YottaDBGlobalStorage:
 
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
         """Atomically increment value at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
         self._known_globals.add(name)
+        YottaDBGlobalStorage._all_known_globals.add(name)
 
         with self._lock:
             self._ensure_initialized()
@@ -878,6 +952,96 @@ class YottaDBGlobalStorage:
             return "1"
 
         return ""
+
+    # =========================================================================
+    # Namespace (Extended Global References)
+    # =========================================================================
+
+    def _ns_subs(self, subscripts: tuple[str, ...], namespace: str) -> tuple[str, ...]:
+        """Prepend namespace qualifier as first subscript.
+
+        YDB/IRIS global names only allow alphanumeric chars, so we cannot
+        embed the namespace in the name (e.g. ``NS:X`` is invalid).  Instead,
+        we prepend a namespace tag as the first subscript:
+
+            _ns_subs(("a",), "NS") → ("~NS:NS", "a")
+
+        The ``~NS:`` prefix sorts after all normal subscripts and is never
+        generated by user code, guaranteeing isolation.
+        """
+        if namespace:
+            return (f"~NS:{namespace}", *subscripts)
+        return subscripts
+
+    def set_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        value: str,
+        namespace: str = "",
+    ) -> None:
+        """Set a global variable in a specific namespace."""
+        self.set(name, self._ns_subs(subscripts, namespace), value)
+
+    def get_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        namespace: str = "",
+    ) -> str | None:
+        """Get a global variable from a specific namespace."""
+        return self.get(name, self._ns_subs(subscripts, namespace))
+
+    def data_ns(
+        self, name: str, subscripts: tuple[str, ...], namespace: str = ""
+    ) -> int:
+        """$DATA for namespace-qualified global."""
+        return self.data(name, self._ns_subs(subscripts, namespace))
+
+    def order_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        namespace: str = "",
+    ) -> str:
+        """$ORDER for namespace-qualified global."""
+        return self.order(name, self._ns_subs(subscripts, namespace), direction)
+
+    def kill_ns(
+        self, name: str, subscripts: tuple[str, ...], namespace: str = ""
+    ) -> None:
+        """KILL for namespace-qualified global."""
+        self.kill(name, self._ns_subs(subscripts, namespace))
+
+    def query_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        namespace: str = "",
+    ) -> str:
+        """$QUERY for namespace-qualified global."""
+        return self.query(name, self._ns_subs(subscripts, namespace))
+
+    def merge_tree_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        source: "MArray",
+        namespace: str = "",
+    ) -> None:
+        """MERGE for namespace-qualified global."""
+        self.merge_tree(name, self._ns_subs(subscripts, namespace), source)
+
+    def get_tree_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        namespace: str = "",
+    ) -> "MArray | None":
+        """Get subtree for namespace-qualified global."""
+        return self.get_tree(name, self._ns_subs(subscripts, namespace))
 
     # =========================================================================
     # ZWR Import

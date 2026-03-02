@@ -416,8 +416,9 @@ class TestSetVarNakedReferences:
         scope = {}
         rt.set_var("^(3)", 42, scope)
 
-        # Verify ^V(3) was set (values are stored as-is, not converted to string)
-        assert rt.globals.get("V", ("3",)) == 42
+        # Verify ^V(3) was set (database backends return strings)
+        result = rt.globals.get("V", ("3",))
+        assert str(result) == "42"
 
     def test_set_naked_reference_deep(self, rt):
         """set_var with naked reference appending multiple subscripts."""

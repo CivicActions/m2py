@@ -913,7 +913,7 @@ class InMemoryGlobalStorage:
         """
         # If this node has a value, set it in the global
         if node._value is not None:
-            self.set(name, subscripts, node._value)
+            self.set(name, subscripts, str(node._value))
 
         # Recursively merge children
         for key, child in node._children.items():
