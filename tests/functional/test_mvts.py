@@ -24,12 +24,14 @@ Usage:
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
 import sys
 import tempfile
 import types
+import warnings
 from dataclasses import dataclass
 
 import pytest
@@ -240,7 +242,12 @@ def _load_all_mvts_routines() -> tuple[
                 source = source_path.read_text()
 
                 try:
-                    python_code = generate_python(source)
+                    # Suppress UNRESOLVED GOTO warnings from codegen —
+                    # routines like V3ALDO1/V3ALDO2 intentionally test
+                    # unreachable code paths.
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", message="UNRESOLVED GOTO")
+                        python_code = generate_python(source)
 
                     py_path = os.path.join(cache_dir, f"{module_name}.py")
                     with open(py_path, "w") as f:
@@ -264,7 +271,8 @@ def _load_all_mvts_routines() -> tuple[
 
         py_path = os.path.join(cache_dir, f"{module_name}.py")
         try:
-            python_code = open(py_path).read()
+            with open(py_path) as f:
+                python_code = f.read()
             module = types.ModuleType(module_name)
             sys.modules[module_name] = module
             exec(python_code, module.__dict__)
@@ -402,6 +410,13 @@ class TestMvtsSuite:
             if not entry_func or not callable(entry_func):
                 pytest.xfail(f"No entry point for {routine_name}")
 
+            # Redirect stdin so interactive MVTS prompts get a safe default
+            # answer instead of raising EOFError in CI.  V1GVN, for example,
+            # asks "DO YOU MIND IF GLOBAL ... IS KILLD (Y/N)?" when %-prefixed
+            # globals pre-exist on IRIS; "N" means "go ahead and kill them".
+            saved_stdin = sys.stdin
+            sys.stdin = io.StringIO("N\n" * 100)
+
             try:
                 run_with_goto_support(entry_func, runtime, {})
                 output = runtime.get_output()
@@ -409,6 +424,8 @@ class TestMvtsSuite:
                 # Capture partial output even on crash — allows tests that crash
                 # mid-execution to still validate passes collected before the crash
                 output = runtime.get_output()
+            finally:
+                sys.stdin = saved_stdin
         finally:
             # Kill any orphaned JOB child processes before closing storage
             runtime.kill_job_processes()
