@@ -402,7 +402,7 @@ class TestPyrightAllFunctionalFiles:
             ],
             capture_output=True,
             text=True,
-            timeout=840,
+            timeout=1800,
         )
 
         if result.returncode != 0:

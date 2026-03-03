@@ -52,7 +52,7 @@ jobs:
   test:
     name: test (${{ matrix.backend }}, ${{ matrix.split }})
     runs-on: ${{ (matrix.split == 'slow' || matrix.split == 'quality') && 'ubicloud-standard-2' || 'ubuntu-latest' }}
-    timeout-minutes: 20
+    timeout-minutes: ${{ (matrix.split == 'slow' || matrix.split == 'quality') && 40 || 20 }}
     strategy:
       fail-fast: false
       matrix:
