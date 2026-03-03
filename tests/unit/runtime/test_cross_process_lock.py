@@ -357,3 +357,157 @@ class TestJobLockIntegration:
             rt.cleanup()
             sys.path.remove(str(routine_dir))
             storage.close()
+
+
+# =========================================================================
+# Indefinite-Wait Lock Tests (V3LOCK root cause)
+# =========================================================================
+
+
+def _run_indefinite_lock_child(
+    db_path: str, lock_name: str, lock_subs: str, result_global: str
+) -> subprocess.Popen:
+    """Start a child that acquires a lock with NO timeout (indefinite wait).
+
+    This is the pattern used by MUMPS ``LOCK +^VA`` — no timeout means
+    "wait forever until the lock becomes available".
+
+    Writes "1" to result_global after lock acquisition, plus timestamp.
+    """
+    code = textwrap.dedent(f"""\
+        import sys, json, time
+        sys.path.insert(0, '')
+        from m2py.runtime.sqlite_storage import SQLiteGlobalStorage
+        storage = SQLiteGlobalStorage({db_path!r})
+        subs = tuple(json.loads({lock_subs!r}))
+        # timeout=None means indefinite wait (MUMPS LOCK +^VA with no timeout)
+        result = storage.lock({lock_name!r}, subs, timeout=None, lock_type="+")
+        storage.set({result_global!r}, (), "1" if result else "0")
+        storage.set({result_global!r}, ("t",), str(time.monotonic()))
+        storage.close()
+    """)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(sys.path)
+    return subprocess.Popen(
+        [sys.executable, "-c", code],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+class TestIndefiniteWaitLock:
+    """Test that lock(timeout=None) blocks until the lock is available.
+
+    This is the root cause of V3LOCK YDB failures: the YDB backend was
+    passing timeout_nsec=0 (non-blocking) for indefinite waits, causing
+    child processes to fail immediately instead of waiting for the parent
+    to release.
+    """
+
+    def test_indefinite_wait_blocks_then_succeeds(self, storage, db_path):
+        """Child with timeout=None blocks until parent releases."""
+        # Parent acquires lock
+        storage.lock("INDEF", (), lock_type="+")
+
+        # Child tries to lock with timeout=None (indefinite wait)
+        child = _run_indefinite_lock_child(db_path, "INDEF", "[]", "indef_result")
+
+        # Give child time to start and begin blocking
+        time.sleep(0.5)
+
+        # Verify child has NOT acquired the lock yet
+        s_check = SQLiteGlobalStorage(db_path)
+        assert s_check.get("indef_result", ()) is None, (
+            "Child should be blocking, not yet returned"
+        )
+        s_check.close()
+
+        # Parent releases the lock
+        storage.unlock_all()
+
+        # Child should now acquire and finish
+        child.wait(timeout=15)
+
+        s2 = SQLiteGlobalStorage(db_path)
+        assert s2.get("indef_result", ()) == "1", (
+            "Child should have acquired lock after parent released"
+        )
+        s2.close()
+
+    def test_indefinite_wait_conflict_timeout_zero_vs_none(self, storage, db_path):
+        """timeout=0 fails immediately; timeout=None blocks (key distinction)."""
+        storage.lock("COMP", (), lock_type="+")
+
+        # timeout=0: should fail immediately
+        child_zero = _run_lock_child(db_path, "COMP", "[]", 0.0, "zero_result")
+        child_zero.wait(timeout=10)
+
+        s2 = SQLiteGlobalStorage(db_path)
+        assert s2.get("zero_result", ()) == "0", (
+            "timeout=0 should fail immediately when lock held"
+        )
+        s2.close()
+
+        # timeout=None: should block until released
+        child_none = _run_indefinite_lock_child(db_path, "COMP", "[]", "none_result")
+        time.sleep(0.5)
+
+        s3 = SQLiteGlobalStorage(db_path)
+        assert s3.get("none_result", ()) is None, "Should be blocking"
+        s3.close()
+
+        storage.unlock_all()
+        child_none.wait(timeout=15)
+
+        s4 = SQLiteGlobalStorage(db_path)
+        assert s4.get("none_result", ()) == "1", "Should succeed after release"
+        s4.close()
+
+    def test_indefinite_wait_with_subscripts(self, storage, db_path):
+        """Indefinite wait works for subscripted lock names."""
+        storage.lock("SUB", ("1", "2"), lock_type="+")
+
+        child = _run_indefinite_lock_child(db_path, "SUB", '["1", "2"]', "sub_result")
+
+        time.sleep(0.5)
+        s_check = SQLiteGlobalStorage(db_path)
+        assert s_check.get("sub_result", ()) is None
+        s_check.close()
+
+        storage.unlock_all()
+        child.wait(timeout=15)
+
+        s2 = SQLiteGlobalStorage(db_path)
+        assert s2.get("sub_result", ()) == "1"
+        s2.close()
+
+    def test_indefinite_wait_hierarchical_blocking(self, storage, db_path):
+        """Parent holds ^A, child LOCK +^A(1):None blocks on hierarchy."""
+        storage.lock("HIER", (), lock_type="+")
+
+        child = _run_indefinite_lock_child(db_path, "HIER", '["1"]', "hier_indef")
+        time.sleep(0.5)
+
+        s_check = SQLiteGlobalStorage(db_path)
+        assert s_check.get("hier_indef", ()) is None, (
+            "Child blocked by parent's hierarchical lock"
+        )
+        s_check.close()
+
+        storage.unlock_all()
+        child.wait(timeout=15)
+
+        s2 = SQLiteGlobalStorage(db_path)
+        assert s2.get("hier_indef", ()) == "1"
+        s2.close()
+
+    def test_indefinite_wait_no_conflict_proceeds(self, storage, db_path):
+        """Indefinite wait with no conflict acquires immediately."""
+        # Don't lock anything — child should get lock right away
+        child = _run_indefinite_lock_child(db_path, "FREE", "[]", "free_result")
+        child.wait(timeout=10)
+
+        s2 = SQLiteGlobalStorage(db_path)
+        assert s2.get("free_result", ()) == "1"
+        s2.close()

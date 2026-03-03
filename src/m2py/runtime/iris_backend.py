@@ -849,26 +849,56 @@ class IRISGlobalStorage:
             return True
 
         # Incremental lock (+)
+        #
+        # IRIS timeout semantics: timeout=0 means "try once, fail immediately".
+        # MUMPS untimed LOCK waits indefinitely, so we retry in a loop with
+        # 10-second per-attempt timeouts up to a 300-second safety limit.
+        import time as _time
+
+        _PER_ATTEMPT_SEC = 10
+        _MAX_INDEFINITE = 300  # 5-minute safety limit
+
         with self._lock:
             self._ensure_connected()
-            try:
-                lock_name = f"^{name}"
-                # MUMPS untimed LOCK waits indefinitely; use 30s as practical max.
-                # timeout=0 means "try once, fail immediately" in IRIS.
-                timeout_sec = int(timeout) if timeout is not None else 30
-                # lock(lockMode, timeout, globalName, subscripts...)
-                if subscripts:
-                    self._iris.lock("", timeout_sec, lock_name, *subscripts)
-                else:
-                    self._iris.lock("", timeout_sec, lock_name)
+            lock_name = f"^{name}"
 
-                self._lock_table[lock_key] = self._lock_table.get(lock_key, 0) + 1
-                return True
-            except Exception as e:
-                msg = str(e)
-                if "TIMEOUT" in msg or "timeout" in msg.lower():
-                    return False
-                raise self._translate_exception(e)
+            if timeout is not None:
+                # Explicit timeout — single attempt
+                timeout_sec = int(timeout)
+                try:
+                    if subscripts:
+                        self._iris.lock("", timeout_sec, lock_name, *subscripts)
+                    else:
+                        self._iris.lock("", timeout_sec, lock_name)
+                    self._lock_table[lock_key] = self._lock_table.get(lock_key, 0) + 1
+                    return True
+                except Exception as e:
+                    msg = str(e)
+                    if "TIMEOUT" in msg or "timeout" in msg.lower():
+                        return False
+                    raise self._translate_exception(e)
+            else:
+                # Indefinite wait — retry with per-attempt timeouts
+                deadline = _time.monotonic() + _MAX_INDEFINITE
+                while True:
+                    remaining = deadline - _time.monotonic()
+                    if remaining <= 0:
+                        return False
+                    attempt_sec = min(_PER_ATTEMPT_SEC, int(remaining) + 1)
+                    try:
+                        if subscripts:
+                            self._iris.lock("", attempt_sec, lock_name, *subscripts)
+                        else:
+                            self._iris.lock("", attempt_sec, lock_name)
+                        self._lock_table[lock_key] = (
+                            self._lock_table.get(lock_key, 0) + 1
+                        )
+                        return True
+                    except Exception as e:
+                        msg = str(e)
+                        if "TIMEOUT" in msg or "timeout" in msg.lower():
+                            continue  # retry until deadline
+                        raise self._translate_exception(e)
 
     def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Release a lock on ^NAME(subscripts)."""

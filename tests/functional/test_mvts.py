@@ -211,9 +211,27 @@ def _load_all_mvts_routines() -> tuple[
     Returns:
         Tuple of (routine_modules dict, transpile_errors dict, cache_dir path)
     """
+    import hashlib
+
     from filelock import FileLock
 
     from m2py.codegen import generate_python
+
+    # Compute a fingerprint of the codegen + helpers source so we
+    # auto-invalidate the cache when the transpiler changes.
+    def _codegen_fingerprint() -> str:
+        import m2py.codegen as _cg
+        import m2py.runtime.helpers as _rh
+
+        h = hashlib.sha256()
+        for mod in (_cg, _rh):
+            src_path = getattr(mod, "__file__", None)
+            if src_path and os.path.isfile(src_path):
+                with open(src_path, "rb") as fh:
+                    h.update(fh.read())
+        return h.hexdigest()[:16]
+
+    codegen_hash = _codegen_fingerprint()
 
     # Deterministic cache directory (shared across xdist workers)
     _WORKSPACE_TMP.mkdir(exist_ok=True)
@@ -229,13 +247,17 @@ def _load_all_mvts_routines() -> tuple[
 
     # Acquire lock — first worker transpiles, others wait and reuse
     with FileLock(lock_path, timeout=300):
+        manifest_valid = False
         if os.path.exists(manifest_path):
-            # Another worker (or previous run) already transpiled — reuse
             with open(manifest_path) as f:
                 manifest = json.load(f)
-            transpile_errors = manifest.get("errors", {})
-        else:
-            # First worker: transpile all routines and write manifest
+            # Reuse only if the codegen hasn't changed since last transpile
+            if manifest.get("codegen_hash") == codegen_hash:
+                manifest_valid = True
+                transpile_errors = manifest.get("errors", {})
+
+        if not manifest_valid:
+            # (Re-)transpile all routines — first worker or stale cache
             for source_path in all_routine_files:
                 filename_stem = source_path.stem
                 module_name = filename_to_module_name(filename_stem)
@@ -257,7 +279,7 @@ def _load_all_mvts_routines() -> tuple[
 
             # Write manifest so other workers know transpilation is done
             with open(manifest_path, "w") as f:
-                json.dump({"errors": transpile_errors}, f)
+                json.dump({"errors": transpile_errors, "codegen_hash": codegen_hash}, f)
 
     # Load modules from disk (each worker does this independently since
     # module objects aren't shared across processes)
