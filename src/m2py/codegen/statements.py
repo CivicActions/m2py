@@ -1397,7 +1397,7 @@ def _generate_single_assignment(
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
             if var_name in ctx.array_vars:
                 # Array vars use .value for scalar SET to preserve MArray type.
-                # This prevents pyright type-narrowing issues: state.X = 0 would
+                # This prevents type-narrowing issues: state.X = 0 would
                 # narrow the type to int, breaking later state.X[sub] access.
                 target_name = f"state.{target_name}.value"
             else:
@@ -1646,7 +1646,7 @@ def _generate_lhs_piece(assignment: MAssignment, ctx: "GeneratorContext") -> Non
     # Must be converted to int since MUMPS expressions return strings
     if len(args) >= 4:
         arg3 = args[3]
-        assert arg3 is not None  # Type narrowing for pyright
+        assert arg3 is not None  # Type narrowing for type checker
         piece_to_expr = f"int(m_num({generate_expr(arg3, ctx)}))"
     else:
         piece_to_expr = "None"
@@ -1729,7 +1729,7 @@ def _generate_lhs_extract(assignment: MAssignment, ctx: "GeneratorContext") -> N
     else:
         from_pos_expr = generate_expr(args[1], ctx)
         arg2 = args[2]
-        assert arg2 is not None  # Type narrowing for pyright
+        assert arg2 is not None  # Type narrowing for type checker
         to_pos_expr = generate_expr(arg2, ctx)
 
     # Generate value expression
@@ -4681,8 +4681,8 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 )
             # Pass _rt and _scope for cross-routine variable visibility
             # Wrap in run_with_goto_support to handle GotoExternal from subroutine
-            # Use getattr() instead of direct attribute access so pyright doesn't
-            # flag cross-module label references that may not be statically visible.
+            # Use getattr() instead of direct attribute access so the type checker
+            # doesn't flag cross-module label references that may not be statically visible.
             args = _generate_call_arguments(target.arguments, ctx)
             if args:
                 ctx.emitter.line(

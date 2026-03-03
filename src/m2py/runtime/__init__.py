@@ -520,6 +520,7 @@ def _evaluate_subscript(
             if isinstance(next_raw, MArray):
                 if subs:
                     evaluated_subs = _evaluate_subscripts(subs, _scope)
+                    assert evaluated_subs is not None
                     raw_value = next_raw.get(*evaluated_subs)
                 else:
                     raw_value = next_raw.value
@@ -533,6 +534,7 @@ def _evaluate_subscript(
             if isinstance(final_raw, MArray):
                 if subs:
                     evaluated_subs = _evaluate_subscripts(subs, _scope)
+                    assert evaluated_subs is not None
                     return final_raw.get(*evaluated_subs)
                 return final_raw.value
             return final_raw
@@ -7727,7 +7729,7 @@ class MUMPSRuntime:
 
         # Handle MArray objects (from TRAMPOLINE scope sync)
         if hasattr(mumps_code, "value"):
-            mumps_code = str(mumps_code.value or "")  # type: ignore[union-attr]
+            mumps_code = str(mumps_code.value or "")
 
         # Ensure mumps_code is a string
         mumps_code = str(mumps_code)

@@ -753,7 +753,7 @@ class MJobTarget:
     Note: This is a sub-component of MJobStatement, not a standalone ASG node.
     """
 
-    call: "MCall" = field(default_factory=lambda: None)  # type: ignore
+    call: "MCall" = field(default_factory=lambda: None)
     processparameters: List["MExpr"] = field(default_factory=list)
     timeout: Optional["MExpr"] = None
 

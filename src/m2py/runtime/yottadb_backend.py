@@ -12,9 +12,8 @@ Features:
     - Tracks known globals for reliable kill_all()
 """
 
-# pyright: reportOptionalMemberAccess=false
 # All methods call _ensure_connected() which guarantees self._ydb is set,
-# but pyright cannot track this narrowing across method boundaries.
+# but type checkers cannot track this narrowing across method boundaries.
 
 import os
 import threading

@@ -14,7 +14,6 @@ Reference: spec 023-cli-codegen-quality, US3, US4
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import subprocess
@@ -27,166 +26,6 @@ import pytest
 from m2py.codegen import generate_python
 from m2py.cli.transpile import transpile_sources
 from m2py.core.names import NameTranslator
-
-
-@pytest.mark.codegen
-@pytest.mark.skipif(
-    subprocess.run(
-        [sys.executable, "-m", "pyright", "--version"],
-        capture_output=True,
-    ).returncode
-    != 0,
-    reason="pyright not available via python -m pyright",
-)
-class TestPyrightBasicValidation:
-    """Transpiled code passes pyright basic with zero errors."""
-
-    @pytest.fixture
-    def pyright_dir(self, tmp_path: Path) -> Path:
-        """Create a temp directory with pyrightconfig.json for basic mode."""
-        config = {
-            "include": ["."],
-            "typeCheckingMode": "basic",
-            "pythonVersion": "3.10",
-            "pythonPlatform": "Linux",
-            "reportMissingTypeStubs": False,
-            "reportMissingImports": False,
-            "reportMissingModuleSource": False,
-        }
-        config_path = tmp_path / "pyrightconfig.json"
-        config_path.write_text(json.dumps(config))
-        return tmp_path
-
-    def _transpile_and_check(
-        self, pyright_dir: Path, name: str, mumps_source: str
-    ) -> None:
-        """Transpile MUMPS source and run pyright basic on it.
-
-        Args:
-            pyright_dir: Directory with pyrightconfig.json
-            name: Output filename (without .py)
-            mumps_source: MUMPS source code
-        """
-        code = generate_python(mumps_source)
-        (pyright_dir / f"{name}.py").write_text(code)
-
-        result = subprocess.run(
-            [sys.executable, "-m", "pyright", "--project", str(pyright_dir)],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, (
-            f"pyright basic failed on {name}.py:\n{result.stdout}\n{result.stderr}"
-        )
-
-    def test_arithmetic_operations(self, pyright_dir: Path) -> None:
-        """Integer division and exponentiation use type-safe helpers."""
-        source = textwrap.dedent("""\
-            arith
-             N X,Y,Z
-             S X=10,Y=3
-             S Z=X\\Y
-             W Z,!
-             S Z=X**Y
-             W Z,!
-             S Z=X#Y
-             W Z,!
-             S Z=X/Y
-             W Z,!
-             S Z=X+Y*2
-             W Z,!
-             Q
-        """).strip()
-        self._transpile_and_check(pyright_dir, "arith", source)
-
-    def test_string_operations(self, pyright_dir: Path) -> None:
-        """String concatenation, comparison, and intrinsic functions."""
-        source = textwrap.dedent("""\
-            strops
-             N S,T,R
-             S S="Hello"
-             S T="World"
-             S R=S_", "_T
-             W R,!
-             W $L(R),!
-             W $E(R,1,5),!
-             W S]T,!
-             Q
-        """).strip()
-        self._transpile_and_check(pyright_dir, "strops", source)
-
-    def test_functions_with_return_types(self, pyright_dir: Path) -> None:
-        """Functions get return type annotations from QUIT expression types."""
-        source = textwrap.dedent("""\
-            funcs
-             W $$ADD(3,4),!
-             W $$GREET("World"),!
-             W $$ISPOS(5),!
-             Q
-            ADD(a,b)
-             Q a+b
-            GREET(name)
-             Q "Hello, "_name
-            ISPOS(x)
-             Q x>0
-        """).strip()
-        self._transpile_and_check(pyright_dir, "funcs", source)
-
-    def test_control_flow(self, pyright_dir: Path) -> None:
-        """IF/ELSE, FOR loops, and conditional QUIT pass type checking."""
-        source = textwrap.dedent("""\
-            flow
-             N I,X
-             S X=0
-             F I=1:1:10 D
-             . S X=X+I
-             W X,!
-             I X>50 W "big",!
-             E  W "small",!
-             Q
-        """).strip()
-        self._transpile_and_check(pyright_dir, "flow", source)
-
-    def test_all_representative_files(self, pyright_dir: Path) -> None:
-        """Combined test: transpile multiple routines, run pyright once."""
-        sources = {
-            "arith": textwrap.dedent("""\
-                arith
-                 N A,B,C
-                 S A=10,B=3
-                 S C=A\\B W C,!
-                 S C=A**B W C,!
-                 S C=A#B W C,!
-                 Q
-            """).strip(),
-            "strings": textwrap.dedent("""\
-                strings
-                 N S
-                 S S="ABC"_"DEF"
-                 W $L(S),!
-                 W $E(S,2,4),!
-                 Q
-            """).strip(),
-            "funcs": textwrap.dedent("""\
-                funcs
-                 W $$SQ(5),!
-                 Q
-                SQ(n)
-                 Q n*n
-            """).strip(),
-        }
-        for name, src in sources.items():
-            code = generate_python(src)
-            (pyright_dir / f"{name}.py").write_text(code)
-
-        result = subprocess.run(
-            [sys.executable, "-m", "pyright", "--project", str(pyright_dir)],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, (
-            f"pyright basic failed:\n{result.stdout}\n{result.stderr}"
-        )
 
 
 @pytest.mark.codegen
@@ -400,6 +239,7 @@ class TestTyAllFunctionalFiles:
                 "check",
                 "--python-version",
                 "3.10",
+                "--error-on-warning",
                 "--python",
                 str(Path(sys.executable).parent.parent),
                 "--extra-search-path",
@@ -759,7 +599,7 @@ class TestFormatValidation:
         assert len(code) > 0, "generate_python should produce non-empty code"
 
         # Verify it contains expected Python constructs (shows it's valid Python)
-        assert "def " in code or "# pyright:" in code
+        assert "def " in code or "import " in code
 
     def test_no_format_flag_produces_unformatted_output(self, tmp_path: Path) -> None:
         """T031: verify --no-format flag skips formatting.

@@ -1,7 +1,7 @@
 # CI — lint + test matrix (backend × split)
 #
 # Runs 14 parallel jobs:
-#   - lint: ruff + pyright
+#   - lint: ruff + ty
 #   - test: 3 backends × 5 splits - 2 exclusions = 13 test jobs
 #
 # Backends: inmemory (parallel via xdist), yottadb (Docker), iris (Docker service)
@@ -43,8 +43,16 @@ jobs:
       - name: Ruff format check
         run: uv run ruff format --check src/ tests/
 
-      - name: Pyright type check
-        run: uv run pyright
+      - name: ty type check
+        # Exclude backend files with lazy-loaded SDK imports (iris/yottadb)
+        # that produce unresolvable unresolved-attribute errors.
+        # Everything else is checked at maximum strictness.
+        run: >-
+          uv run ty check --python-version 3.10
+          --error-on-warning
+          --exclude 'src/m2py/runtime/yottadb_backend.py'
+          --exclude 'src/m2py/runtime/iris_backend.py'
+          src/
 
   # -----------------------------------------------------------------------
   # Tests — backend × split matrix

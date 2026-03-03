@@ -34,7 +34,7 @@ def _get_backend(backend_name: str):  # noqa: ANN202
     return InMemoryGlobalStorage()
 
 
-@globals_group.command("import")  # type: ignore[attr-defined]
+@globals_group.command("import")
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
 @click.option(
     "--backend",
@@ -56,7 +56,7 @@ def globals_import(file: Path, backend: str) -> None:
     click.echo(f"Imported {count} nodes from {file}", err=True)
 
 
-@globals_group.command("export")  # type: ignore[attr-defined]
+@globals_group.command("export")
 @click.argument("file", type=click.Path(path_type=Path))
 @click.option(
     "--globals",

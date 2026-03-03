@@ -13,12 +13,12 @@ Features:
     - Namespace support for extended global references
 """
 
-# pyright: reportOptionalMemberAccess=false
 # All methods call _ensure_connected() which guarantees self._iris is set,
-# but pyright cannot track this narrowing across method boundaries.
+# but type checkers cannot track this narrowing across method boundaries.
 
 from __future__ import annotations
 
+import builtins
 import os
 import threading
 from pathlib import Path
@@ -45,7 +45,7 @@ class IRISGlobalStorage:
     """
 
     # Class-level tracking of all live instances for cleanup in test fixtures.
-    _all_instances: set["IRISGlobalStorage"] = set()
+    _all_instances: builtins.set[IRISGlobalStorage] = set()
 
     def __init__(self) -> None:
         """Initialize IRIS backend (lazy — no connection yet)."""
@@ -75,7 +75,7 @@ class IRISGlobalStorage:
     # Class-level set tracking all global names written by ANY instance.
     # IRIS shares a single database so kill_all() on any instance must
     # be able to clean up globals created by other instances.
-    _all_known_globals: set[str] = set()
+    _all_known_globals: builtins.set[str] = set()
 
     @property
     def _naked_indicator(self) -> tuple[str, tuple[str, ...]] | None:

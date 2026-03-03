@@ -1313,7 +1313,7 @@ class TestDoExternalRoutineEntryFunction:
     def test_d_label_routine_does_not_use_entry_function(self, generate_python):
         """D LABEL^EXTRTN still uses named label, not _entry_function."""
         code = generate_python("TEST D LABEL^EXTRTN Q")
-        # Uses getattr() for pyright-safe cross-module label access
+        # Uses getattr() for type-safe cross-module label access
         assert "getattr(EXTRTN, 'LABEL')" in code
         # The DO call should reference the label directly, not _entry_function
         # (Note: _entry_function is always declared at module level, so just

@@ -28,7 +28,7 @@ def cli(ctx: click.Context) -> None:
         click.echo(ctx.get_help(), err=True)
 
 
-@cli.command()  # type: ignore[attr-defined]
+@cli.command()
 @click.argument("paths", nargs=-1, required=True, type=click.Path(exists=False))
 @click.option(
     "-o",
@@ -85,7 +85,7 @@ def transpile(
         sys.exit(1)
 
 
-cli.add_command(globals_group, name="globals")  # type: ignore[attr-defined]
+cli.add_command(globals_group, name="globals")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -101,7 +101,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         0 on success, non-zero on failure.
     """
     try:
-        cli(args=list(argv) if argv is not None else None, standalone_mode=False)  # type: ignore[call-arg]
+        cli(args=list(argv) if argv is not None else None, standalone_mode=False)
     except SystemExit as e:
         return e.code if isinstance(e.code, int) else 1
     except click.exceptions.UsageError:

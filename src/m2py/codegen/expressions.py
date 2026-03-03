@@ -7,7 +7,7 @@ extrinsic functions, and intrinsic function dispatch ($LENGTH, $PIECE, etc.).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Dict, List
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, cast
 
 from m2py.asg.enums import LiteralType, PassingMode
 from m2py.asg.expressions import (
@@ -220,9 +220,9 @@ def generate_expr(
         # Defensive handlers for textX parser nodes that should have been
         # unwrapped by the semantic analyzer but survived into codegen.
         # These are dynamically-typed textX classes, not MExpr subclasses,
-        # so we cast to Any to access their attributes without type errors.
+        # so we use cast(Any, ...) to break type narrowing for attribute access.
         expr_type = type(expr).__name__
-        textx_node: Any = expr  # type: ignore[assignment]
+        textx_node: Any = cast(Any, expr)
         if expr_type == "ParenExpr":
             # ParenExpr wraps (expr) — unwrap and recurse
             return generate_expr(

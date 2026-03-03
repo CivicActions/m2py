@@ -435,10 +435,6 @@ class RoutineGenerator:
             ctx: Generator context
         """
         # Imports
-        # Suppress "too complex" warnings from pyright for large generated functions.
-        # Transpiled MUMPS code can produce deeply nested conditional paths that
-        # exceed pyright's analysis complexity threshold.
-        ctx.emitter.line("# pyright: reportGeneralTypeIssues=false")
         ctx.emitter.line("import re")
         ctx.emitter.line("import time")
         ctx.emitter.line("from decimal import Decimal")
@@ -1022,7 +1018,7 @@ class RoutineGenerator:
         # internal indirection that may resolve to offset calls at runtime.
         # Always emitted to ensure _line_map is defined even when
         # has_offset_calls is False (indirection can generate offset
-        # references that pyright needs to see defined).
+        # references that type checkers need to see defined).
         line_map = generate_line_map(self._routine)
         if line_map:
             generate_line_map_code(line_map, ctx.emitter)

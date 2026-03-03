@@ -166,7 +166,7 @@ def _analyze_fors_in_scope(
                         # MExpr case (e.g., indirection) - assume modified for safety
                         stmt.loop_var_modified_in_body = True
                         loop_var_name = None
-                        loop_var_for_check = None  # type: ignore[assignment]
+                        loop_var_for_check = None
 
                     if loop_var_name and loop_var_for_check is not None:
                         # Check for SET, READ, KILL modifications
