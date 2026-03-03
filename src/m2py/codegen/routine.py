@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 # via $ETRAP error handling paths and fall-through code paths.
 _RESULT_TYPE_TO_HINT: Dict[ExprResultType, str] = {
     ExprResultType.STRING: "str | None",
-    ExprResultType.NUMERIC: "int | Decimal | None",
+    ExprResultType.NUMERIC: "int | float | Decimal | None",
     ExprResultType.BOOLEAN_INT: "int | None",
     ExprResultType.NUMERIC_STRING: "str | None",
 }

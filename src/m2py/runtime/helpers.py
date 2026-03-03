@@ -324,8 +324,8 @@ def m_set_piece(
 def m_set_extract(
     var_getter: Callable[[], str],
     var_setter: Callable[[str], None],
-    from_pos: int,
-    to_pos: int | None,
+    from_pos: int | Decimal,
+    to_pos: int | Decimal | None,
     value: str,
 ) -> None:
     """Set character(s) of a string variable (LHS $EXTRACT).
@@ -357,9 +357,14 @@ def m_set_extract(
     # Get current value (empty string if undefined/None)
     current = var_getter() or ""
 
+    # Coerce positions to int (may arrive as Decimal from MUMPS arithmetic)
+    from_pos = int(from_pos)
+
     # Normalize to_pos: if None, single position
     if to_pos is None:
         to_pos = from_pos
+    else:
+        to_pos = int(to_pos)
 
     # Per YDB behavior: if from_pos <= 0 AND to_pos <= 0, no modification
     # If from_pos <= 0 but to_pos > 0, treat from_pos as 1
@@ -2111,7 +2116,7 @@ _YDB_ERROR_MESSAGES: dict[int, str] = {
 }
 
 
-def m_zmessage(code: int | str) -> str:
+def m_zmessage(code: int | float | Decimal | str) -> str:
     """Return error message text for a YDB error code.
 
     Lookup table of common YDB error codes.

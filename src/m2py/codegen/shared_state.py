@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Set
 
+from m2py.core.names import translate_name
+
 if TYPE_CHECKING:
     from m2py.asg.elements import MRoutine
 
@@ -124,12 +126,12 @@ class RoutineState:
     # Add simple variable fields (Any type, default None)
     for var in sorted(simple_vars):
         # Translate variable name to valid Python identifier
-        py_name = _translate_var_name(var)
+        py_name = translate_name(var)
         lines.append(f"    {py_name}: Any = None")
 
     # Add array variable fields (MArray type, default_factory=MArray)
     for var in sorted(array_state_vars):
-        py_name = _translate_var_name(var)
+        py_name = translate_name(var)
         lines.append(f"    {py_name}: MArray = field(default_factory=MArray)")
 
     return "\n".join(lines) + "\n"
@@ -175,24 +177,6 @@ def generate_state_initialization(routine: "MRoutine") -> str:
         state = RoutineState()
     """
     return "state = RoutineState()\n"
-
-
-def _translate_var_name(name: str) -> str:
-    """Translate MUMPS variable name to valid Python identifier.
-
-    Args:
-        name: MUMPS variable name
-
-    Returns:
-        Valid Python identifier
-
-    Note:
-        MUMPS allows % prefix, which is not valid in Python.
-        We translate % to _pct_.
-    """
-    if name.startswith("%"):
-        return "_pct_" + name[1:]
-    return name
 
 
 __all__ = [

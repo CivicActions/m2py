@@ -30,7 +30,7 @@ class TestRoutineHeadCodegen:
         """
         code = generate_python("ADD(A,B) Q A+B\n")
         assert (
-            "def ADD(_rt, A=None, B=None, _scope=None, _start_offset=0) -> int | Decimal | None:"
+            "def ADD(_rt, A=None, B=None, _scope=None, _start_offset=0) -> int | float | Decimal | None:"
             in code
         )
 
@@ -266,7 +266,7 @@ class TestScopeStrategyGeneration:
         """
         code = generate_python("ADD(A,B) Q A+B\n")
         assert (
-            "def ADD(_rt, A=None, B=None, _scope=None, _start_offset=0) -> int | Decimal | None:"
+            "def ADD(_rt, A=None, B=None, _scope=None, _start_offset=0) -> int | float | Decimal | None:"
             in code
         )
         # Should have return with expression (m_num(A) + m_num(B))
