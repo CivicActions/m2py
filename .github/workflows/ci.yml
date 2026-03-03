@@ -1,11 +1,11 @@
 # CI — lint + test matrix (backend × split)
 #
-# Runs 13 parallel jobs:
+# Runs 14 parallel jobs:
 #   - lint: ruff + pyright
-#   - test: 3 backends × 4 splits = 12 test jobs
+#   - test: 3 backends × 5 splits - 2 exclusions = 13 test jobs
 #
 # Backends: inmemory (parallel via xdist), yottadb (Docker), iris (Docker service)
-# Splits:   unit, functional-mvts, functional-other, slow
+# Splits:   unit, functional-mvts, functional-other, slow, pyright-bulk (inmemory only)
 
 name: CI
 
@@ -52,12 +52,18 @@ jobs:
   test:
     name: test (${{ matrix.backend }}, ${{ matrix.split }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: ${{ matrix.split == 'pyright-bulk' && 15 || 20 }}
     strategy:
       fail-fast: false
       matrix:
         backend: [inmemory, yottadb, iris]
-        split: [unit, functional-mvts, functional-other, slow]
+        split: [unit, functional-mvts, functional-other, slow, pyright-bulk]
+        exclude:
+          # pyright-bulk only needs inmemory — skip yottadb/iris
+          - backend: yottadb
+            split: pyright-bulk
+          - backend: iris
+            split: pyright-bulk
 
     env:
       # IRIS connection defaults (used only when backend=iris)
@@ -146,7 +152,10 @@ jobs:
               TARGETS="tests/functional/ --ignore=tests/functional/test_mvts.py"
               ;;
             slow)
-              TARGETS="-m slow"
+              TARGETS="-m 'slow and not pyright_bulk'"
+              ;;
+            pyright-bulk)
+              TARGETS="-m pyright_bulk"
               ;;
           esac
 

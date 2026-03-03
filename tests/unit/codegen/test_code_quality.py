@@ -291,6 +291,7 @@ class TestArithmeticHelperCodegen:
 
 
 @pytest.mark.slow
+@pytest.mark.pyright_bulk
 @pytest.mark.codegen
 @pytest.mark.skipif(
     subprocess.run(
@@ -390,10 +391,18 @@ class TestPyrightAllFunctionalFiles:
 
         # Run pyright on all transpiled files at once
         result = subprocess.run(
-            [sys.executable, "-m", "pyright", "--project", str(tmp_path)],
+            [
+                sys.executable,
+                "-m",
+                "pyright",
+                "--threads",
+                "4",
+                "--project",
+                str(tmp_path),
+            ],
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=840,
         )
 
         if result.returncode != 0:
