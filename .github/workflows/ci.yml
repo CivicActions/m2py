@@ -140,32 +140,32 @@ jobs:
         env:
           M2PY_GLOBAL_BACKEND: ${{ matrix.backend }}
         run: |
-          # Map split name → pytest target paths / flags
+          # Build pytest args as a bash array to handle quoting correctly
+          ARGS=()
           case "${{ matrix.split }}" in
             unit)
-              TARGETS="tests/unit/ tests/integration/ tests/runtime/"
+              ARGS+=(tests/unit/ tests/integration/ tests/runtime/)
               ;;
             functional-mvts)
-              TARGETS="tests/functional/test_mvts.py"
+              ARGS+=(tests/functional/test_mvts.py)
               ;;
             functional-other)
-              TARGETS="tests/functional/ --ignore=tests/functional/test_mvts.py"
+              ARGS+=(tests/functional/ --ignore=tests/functional/test_mvts.py)
               ;;
             slow)
-              TARGETS="-m 'slow and not pyright_bulk'"
+              ARGS+=(-m "slow and not pyright_bulk")
               ;;
             pyright-bulk)
-              TARGETS="-m pyright_bulk"
+              ARGS+=(-m pyright_bulk)
               ;;
           esac
-
-          COMMON="--ignore=tmp --ignore=vista-test --tb=short -q"
+          ARGS+=(--ignore=tmp --ignore=vista-test --tb=short -q)
 
           if [ "${{ matrix.backend }}" = "yottadb" ]; then
             docker run --rm -v "$PWD:/workspace" m2py-ydb \
-              uv run pytest $TARGETS $COMMON
+              uv run pytest "${ARGS[@]}"
           else
-            uv run pytest $TARGETS $COMMON
+            uv run pytest "${ARGS[@]}"
           fi
 
       # ── Cleanup ───────────────────────────────────────────────────
