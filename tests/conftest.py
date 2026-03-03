@@ -71,7 +71,8 @@ def pytest_configure(config):
     )
     config.addinivalue_line("markers", "slow: Long-running test, skipped by default")
     config.addinivalue_line(
-        "markers", "pyright_bulk: pyright bulk validation (separate CI job)"
+        "markers",
+        "quality: Backend-independent quality/perf tests (separate CI job)",
     )
     config.addinivalue_line("markers", "pre1995: Tests pre-1995 MUMPS syntax")
     config.addinivalue_line("markers", "ydb: YottaDB-specific extension test")

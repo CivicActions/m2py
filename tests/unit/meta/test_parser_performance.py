@@ -12,6 +12,7 @@ import pytest
 from m2py.parser import MUMPSParser
 
 
+@pytest.mark.quality
 class TestParserPerformance:
     """Test parser performance characteristics."""
 

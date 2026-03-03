@@ -5,7 +5,7 @@
 #   - test: 3 backends × 5 splits - 2 exclusions = 13 test jobs
 #
 # Backends: inmemory (parallel via xdist), yottadb (Docker), iris (Docker service)
-# Splits:   unit, functional-mvts, functional-other, slow, pyright-bulk (inmemory only)
+# Splits:   unit, functional-mvts, functional-other, slow, quality (inmemory only)
 
 name: CI
 
@@ -51,19 +51,19 @@ jobs:
   # -----------------------------------------------------------------------
   test:
     name: test (${{ matrix.backend }}, ${{ matrix.split }})
-    runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.split == 'pyright-bulk' && 15 || 20 }}
+    runs-on: ${{ (matrix.split == 'slow' || matrix.split == 'quality') && 'ubicloud-standard-2' || 'ubuntu-latest' }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         backend: [inmemory, yottadb, iris]
-        split: [unit, functional-mvts, functional-other, slow, pyright-bulk]
+        split: [unit, functional-mvts, functional-other, slow, quality]
         exclude:
-          # pyright-bulk only needs inmemory — skip yottadb/iris
+          # quality tests are backend-independent — skip yottadb/iris
           - backend: yottadb
-            split: pyright-bulk
+            split: quality
           - backend: iris
-            split: pyright-bulk
+            split: quality
 
     env:
       # IRIS connection defaults (used only when backend=iris)
@@ -153,10 +153,10 @@ jobs:
               ARGS+=(tests/functional/ --ignore=tests/functional/test_mvts.py)
               ;;
             slow)
-              ARGS+=(-m "slow and not pyright_bulk")
+              ARGS+=(-m "slow and not quality")
               ;;
-            pyright-bulk)
-              ARGS+=(-m pyright_bulk)
+            quality)
+              ARGS+=(-m quality)
               ;;
           esac
           ARGS+=(--ignore=tmp --ignore=vista-test --tb=short -q)

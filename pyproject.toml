@@ -66,7 +66,7 @@ markers = [
     "backend_inmemory: marks tests requiring inmemory backend",
     "backend_yottadb: marks tests requiring yottadb backend",
     "backend_iris: marks tests requiring iris backend",
-    "pyright_bulk: marks the pyright bulk validation test (separate CI job)",
+    "quality: marks backend-independent quality/perf tests (separate CI job)",
 ]
 filterwarnings = [
     "error",

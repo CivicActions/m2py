@@ -291,7 +291,7 @@ class TestArithmeticHelperCodegen:
 
 
 @pytest.mark.slow
-@pytest.mark.pyright_bulk
+@pytest.mark.quality
 @pytest.mark.codegen
 @pytest.mark.skipif(
     subprocess.run(
@@ -579,6 +579,7 @@ class TestRuffLintValidation:
 
 
 @pytest.mark.slow
+@pytest.mark.quality
 @pytest.mark.codegen
 class TestRuffAllFunctionalFiles:
     """ALL transpiled MUMPS functional test files pass ruff check (T029).
@@ -903,6 +904,7 @@ class TestFormatValidation:
 
 
 @pytest.mark.slow
+@pytest.mark.quality
 @pytest.mark.codegen
 class TestFormatAllFunctionalFiles:
     """ALL transpiled functional test files are pre-formatted (T032 comprehensive).
