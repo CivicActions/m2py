@@ -2,10 +2,10 @@
 #
 # Runs 17 parallel jobs:
 #   - lint: ruff + ty
-#   - test: 3 backends × 6 splits - 4 exclusions = 14 test jobs + lint = 15
+#   - test: 3 backends × 6 splits - 2 exclusions = 16 test jobs
 #
 # Backends: inmemory (parallel via xdist), yottadb (Docker), iris (Docker service)
-# Splits:   unit, functional-mvts, functional-other, slow, quality, munit (inmemory only)
+# Splits:   unit, functional-mvts, functional-other, slow, quality (inmemory only), munit
 
 name: CI
 
@@ -60,7 +60,7 @@ jobs:
   test:
     name: test (${{ matrix.backend }}, ${{ matrix.split }})
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ (matrix.split == 'slow' || matrix.split == 'quality') && 40 || 20 }}
+    timeout-minutes: ${{ (matrix.split == 'slow' || matrix.split == 'quality' || matrix.split == 'munit') && 40 || 20 }}
     strategy:
       fail-fast: false
       matrix:
@@ -72,11 +72,6 @@ jobs:
             split: quality
           - backend: iris
             split: quality
-          # munit tests are inmemory-only (no backend needed)
-          - backend: yottadb
-            split: munit
-          - backend: iris
-            split: munit
 
     env:
       # IRIS connection defaults (used only when backend=iris)
@@ -114,7 +109,7 @@ jobs:
 
       - name: Download VistA dependencies
         if: matrix.split == 'munit'
-        run: uv run python tests/functional/munit/setup_deps.py
+        run: python3 tests/functional/munit/setup_deps.py
 
       - name: Install dependencies (IRIS backend)
         if: matrix.backend == 'iris'
