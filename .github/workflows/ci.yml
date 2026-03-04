@@ -187,7 +187,7 @@ jobs:
               ARGS+=(tests/functional/munit/ -m munit)
               ;;
           esac
-          ARGS+=(--ignore=tmp --ignore=vista-test --tb=short -q)
+          ARGS+=(--ignore=tmp --tb=short -q)
 
           if [ "${{ matrix.backend }}" = "yottadb" ]; then
             docker run --rm -v "$PWD:/workspace" m2py-ydb \
