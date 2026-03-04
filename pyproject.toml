@@ -43,7 +43,7 @@ yottadb = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "pre1995: marks tests for pre-1995 MUMPS syntax backward compatibility",
@@ -66,6 +66,7 @@ markers = [
     "backend_yottadb: marks tests requiring yottadb backend",
     "backend_iris: marks tests requiring iris backend",
     "quality: marks backend-independent quality/perf tests (separate CI job)",
+    "munit: marks M-Unit VistA integration tests (require VistA deps)",
 ]
 filterwarnings = [
     "error",

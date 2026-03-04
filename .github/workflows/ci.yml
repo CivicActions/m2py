@@ -1,11 +1,11 @@
 # CI — lint + test matrix (backend × split)
 #
-# Runs 14 parallel jobs:
+# Runs 17 parallel jobs:
 #   - lint: ruff + ty
-#   - test: 3 backends × 5 splits - 2 exclusions = 13 test jobs
+#   - test: 3 backends × 6 splits - 4 exclusions = 14 test jobs + lint = 15
 #
 # Backends: inmemory (parallel via xdist), yottadb (Docker), iris (Docker service)
-# Splits:   unit, functional-mvts, functional-other, slow, quality (inmemory only)
+# Splits:   unit, functional-mvts, functional-other, slow, quality, munit (inmemory only)
 
 name: CI
 
@@ -65,13 +65,18 @@ jobs:
       fail-fast: false
       matrix:
         backend: [inmemory, yottadb, iris]
-        split: [unit, functional-mvts, functional-other, slow, quality]
+        split: [unit, functional-mvts, functional-other, slow, quality, munit]
         exclude:
           # quality tests are backend-independent — skip yottadb/iris
           - backend: yottadb
             split: quality
           - backend: iris
             split: quality
+          # munit tests are inmemory-only (no backend needed)
+          - backend: yottadb
+            split: munit
+          - backend: iris
+            split: munit
 
     env:
       # IRIS connection defaults (used only when backend=iris)
@@ -98,6 +103,18 @@ jobs:
       - name: Install dependencies
         if: matrix.backend == 'inmemory'
         run: uv sync
+
+      # ── VistA deps for munit split ────────────────────────────────
+      - name: Cache VistA dependencies
+        if: matrix.split == 'munit'
+        uses: actions/cache@v4
+        with:
+          path: .vista-deps
+          key: vista-deps-${{ hashFiles('tests/functional/munit/vista_versions.json') }}
+
+      - name: Download VistA dependencies
+        if: matrix.split == 'munit'
+        run: uv run python tests/functional/munit/setup_deps.py
 
       - name: Install dependencies (IRIS backend)
         if: matrix.backend == 'iris'
@@ -158,13 +175,16 @@ jobs:
               ARGS+=(tests/functional/test_mvts.py)
               ;;
             functional-other)
-              ARGS+=(tests/functional/ --ignore=tests/functional/test_mvts.py)
+              ARGS+=(tests/functional/ --ignore=tests/functional/test_mvts.py --ignore=tests/functional/munit/)
               ;;
             slow)
               ARGS+=(-m "slow and not quality")
               ;;
             quality)
               ARGS+=(-m quality)
+              ;;
+            munit)
+              ARGS+=(tests/functional/munit/ -m munit)
               ;;
           esac
           ARGS+=(--ignore=tmp --ignore=vista-test --tb=short -q)

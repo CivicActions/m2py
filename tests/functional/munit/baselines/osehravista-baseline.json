@@ -1,0 +1,722 @@
+{
+  "version": "1.0",
+  "captured_at": "2026-02-20T03:06:56.959713+00:00",
+  "docker_image": "worldvista/osehravista:latest",
+  "packages": {
+    "MASH Utilities": {
+      "package_name": "MASH Utilities",
+      "test_list_path": "",
+      "routines": {
+        "%utt1": {
+          "routine": "%utt1",
+          "package": "MASH Utilities",
+          "total_tests": 109,
+          "failures": 7,
+          "errors": 1,
+          "entry_tags": 37,
+          "routines_ran": 6,
+          "status": "fail",
+          "failure_details": [
+            {
+              "entry_tag": "T5",
+              "routine": "%utt1",
+              "test_name": "Error count check",
+              "message": "This is an intentional failure",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            },
+            {
+              "entry_tag": "T5",
+              "routine": "%utt1",
+              "test_name": "Error count check",
+              "message": "Intentionally throwing a failure",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            },
+            {
+              "entry_tag": "BADCHKEQ",
+              "routine": "%utt5",
+              "test_name": "CHKEQ should fail on unequal value",
+              "message": "SET UNEQUAL ON PURPOSE - SHOULD FAIL",
+              "kind": "failure",
+              "expected": "4",
+              "actual": "3"
+            },
+            {
+              "entry_tag": "BADCHKTF",
+              "routine": "%utt5",
+              "test_name": "CHKTF should fail on false value",
+              "message": "SET FALSE (0) ON PURPOSE - SHOULD FAIL",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            },
+            {
+              "entry_tag": "BADERROR",
+              "routine": "%utt5",
+              "test_name": "throws an error on purpose",
+              "message": "150372778,BADERROR+6^%utt5,%YDB-E-EXPR, Expression expected but not found",
+              "kind": "error",
+              "expected": null,
+              "actual": null
+            },
+            {
+              "entry_tag": "CALLFAIL",
+              "routine": "%utt5",
+              "test_name": "called FAIL to test it",
+              "message": "Called FAIL to test it",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            },
+            {
+              "entry_tag": "LEAKSBAD",
+              "routine": "%utt5",
+              "test_name": "check leaks with leak",
+              "message": "LEAKSBAD TEST - X NOT SPECIFIED VARIABLE LEAK: X",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            },
+            {
+              "entry_tag": "NVLDARG1",
+              "routine": "%utt5",
+              "test_name": "check invalid arg in CHKEQ",
+              "message": "NO VALUES INPUT TO CHKEQ^%ut - no evaluation possible",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            }
+          ],
+          "raw_output": "D\b$<2> \b$<2>E\b$<2>N\b$<2>^\b$<2>%\b$<2>u\b$<2>t\b$<2>(\b$<2>\"\b$<2>%\b$<2>u\b$<2>t\b$<2>t\b$<2>1\b$<2>\"\b$<2>)\b$<2>\u001b>\n....\nT5^%utt1 - Error count check - This is an intentional failure\n.\nT5^%utt1 - Error count check - Intentionally throwing a failure\n......%utt3 ...........\nBADCHKEQ^%utt5 -  CHKEQ should fail on unequal value - <4> vs <3> - SET UNEQUAL ON PURPOSE - SHOULD FAIL\n\nBADCHKTF^%utt5 -  CHKTF should fail on false value - SET FALSE (0) ON PURPOSE - SHOULD FAIL\n\nBADERROR^%utt5 -  throws an error on purpose - Error: 150372778,BADERROR+6^%utt5,%YDB-E-EXPR, Expression expected but not found\n\nCALLFAIL^%utt5 -  called FAIL to test it - Called FAIL to test it\n\nLEAKSBAD^%utt5 - check leaks with leak - LEAKSBAD TEST - X NOT SPECIFIED VARIABLE LEAK: X\n\nNVLDARG1^%utt5 - check invalid arg in CHKEQ - NO VALUES INPUT TO CHKEQ^%ut - no evaluation possible\n................................................................................\n\nRan 6 Routines, 37 Entry Tags\nChecked 109 tests, with 7 failures and encountered 1 error.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.101,
+          "error_message": null
+        },
+        "%utt2": {
+          "routine": "%utt2",
+          "package": "MASH Utilities",
+          "total_tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 2,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>E\b$<2>N\b$<2>^\b$<2>%\b$<2>u\b$<2>t\b$<2>(\b$<2>\"\b$<2>%\b$<2>u\b$<2>t\b$<2>t\b$<2>2\b$<2>\"\b$<2>)\b$<2>\u001b>\n..\n\nRan 1 Routine, 2 Entry Tags\nChecked 2 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.102,
+          "error_message": null
+        },
+        "%utt3": {
+          "routine": "%utt3",
+          "package": "MASH Utilities",
+          "total_tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 2,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>E\b$<2>N\b$<2>^\b$<2>%\b$<2>u\b$<2>t\b$<2>(\b$<2>\"\b$<2>%\b$<2>u\b$<2>t\b$<2>t\b$<2>3\b$<2>\"\b$<2>)\b$<2>\u001b>\n..\n\nRan 1 Routine, 2 Entry Tags\nChecked 2 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.106,
+          "error_message": null
+        },
+        "%utt4": {
+          "routine": "%utt4",
+          "package": "MASH Utilities",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 1,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>E\b$<2>N\b$<2>^\b$<2>%\b$<2>u\b$<2>t\b$<2>(\b$<2>\"\b$<2>%\b$<2>u\b$<2>t\b$<2>t\b$<2>4\b$<2>\"\b$<2>)\b$<2>\u001b>\n\n\nRan 1 Routine, 1 Entry Tag\nChecked 0 test, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.102,
+          "error_message": null
+        },
+        "%utt5": {
+          "routine": "%utt5",
+          "package": "MASH Utilities",
+          "total_tests": 10,
+          "failures": 5,
+          "errors": 1,
+          "entry_tags": 11,
+          "routines_ran": 1,
+          "status": "fail",
+          "failure_details": [
+            {
+              "entry_tag": "BADCHKEQ",
+              "routine": "%utt5",
+              "test_name": "CHKEQ should fail on unequal value",
+              "message": "SET UNEQUAL ON PURPOSE - SHOULD FAIL",
+              "kind": "failure",
+              "expected": "4",
+              "actual": "3"
+            },
+            {
+              "entry_tag": "BADCHKTF",
+              "routine": "%utt5",
+              "test_name": "CHKTF should fail on false value",
+              "message": "SET FALSE (0) ON PURPOSE - SHOULD FAIL",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            },
+            {
+              "entry_tag": "BADERROR",
+              "routine": "%utt5",
+              "test_name": "throws an error on purpose",
+              "message": "150372778,BADERROR+6^%utt5,%YDB-E-EXPR, Expression expected but not found",
+              "kind": "error",
+              "expected": null,
+              "actual": null
+            },
+            {
+              "entry_tag": "CALLFAIL",
+              "routine": "%utt5",
+              "test_name": "called FAIL to test it",
+              "message": "Called FAIL to test it",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            },
+            {
+              "entry_tag": "LEAKSBAD",
+              "routine": "%utt5",
+              "test_name": "check leaks with leak",
+              "message": "LEAKSBAD TEST - X NOT SPECIFIED VARIABLE LEAK: X",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            },
+            {
+              "entry_tag": "NVLDARG1",
+              "routine": "%utt5",
+              "test_name": "check invalid arg in CHKEQ",
+              "message": "NO VALUES INPUT TO CHKEQ^%ut - no evaluation possible",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            }
+          ],
+          "raw_output": "D\b$<2> \b$<2>E\b$<2>N\b$<2>^\b$<2>%\b$<2>u\b$<2>t\b$<2>(\b$<2>\"\b$<2>%\b$<2>u\b$<2>t\b$<2>t\b$<2>5\b$<2>\"\b$<2>)\b$<2>\u001b>\n....\nBADCHKEQ^%utt5 -  CHKEQ should fail on unequal value - <4> vs <3> - SET UNEQUAL ON PURPOSE - SHOULD FAIL\n\nBADCHKTF^%utt5 -  CHKTF should fail on false value - SET FALSE (0) ON PURPOSE - SHOULD FAIL\n\nBADERROR^%utt5 -  throws an error on purpose - Error: 150372778,BADERROR+6^%utt5,%YDB-E-EXPR, Expression expected but not found\n\nCALLFAIL^%utt5 -  called FAIL to test it - Called FAIL to test it\n\nLEAKSBAD^%utt5 - check leaks with leak - LEAKSBAD TEST - X NOT SPECIFIED VARIABLE LEAK: X\n\nNVLDARG1^%utt5 - check invalid arg in CHKEQ - NO VALUES INPUT TO CHKEQ^%ut - no evaluation possible\n.\n\nRan 1 Routine, 11 Entry Tags\nChecked 10 tests, with 5 failures and encountered 1 error.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.107,
+          "error_message": null
+        },
+        "%utt6": {
+          "routine": "%utt6",
+          "package": "MASH Utilities",
+          "total_tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 5,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>E\b$<2>N\b$<2>^\b$<2>%\b$<2>u\b$<2>t\b$<2>(\b$<2>\"\b$<2>%\b$<2>u\b$<2>t\b$<2>t\b$<2>6\b$<2>\"\b$<2>)\b$<2>\u001b>\n.........\n\nRan 1 Routine, 5 Entry Tags\nChecked 9 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.106,
+          "error_message": null
+        },
+        "%utt7": {
+          "routine": "%utt7",
+          "package": "MASH Utilities",
+          "total_tests": 5,
+          "failures": 2,
+          "errors": 0,
+          "entry_tags": 2,
+          "routines_ran": 7,
+          "status": "fail",
+          "failure_details": [
+            {
+              "entry_tag": "T5",
+              "routine": "%utt7",
+              "test_name": "- ditto",
+              "message": "This is an intentional failure",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            },
+            {
+              "entry_tag": "T5",
+              "routine": "%utt7",
+              "test_name": "- ditto",
+              "message": "Intentionally throwing a failure",
+              "kind": "failure",
+              "expected": null,
+              "actual": null
+            }
+          ],
+          "raw_output": "D\b$<2> \b$<2>E\b$<2>N\b$<2>^\b$<2>%\b$<2>u\b$<2>t\b$<2>(\b$<2>\"\b$<2>%\b$<2>u\b$<2>t\b$<2>t\b$<2>7\b$<2>\"\b$<2>)\b$<2>\u001b>\n.\nT5^%utt7 - - ditto - This is an intentional failure\n.\nT5^%utt7 - - ditto - Intentionally throwing a failure\n.\n\nRan 7 Routines, 2 Entry Tags\nChecked 5 tests, with 2 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.106,
+          "error_message": null
+        },
+        "%uttcovr": {
+          "routine": "%uttcovr",
+          "package": "MASH Utilities",
+          "total_tests": 70,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 9,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>E\b$<2>N\b$<2>^\b$<2>%\b$<2>u\b$<2>t\b$<2>(\b$<2>\"\b$<2>%\b$<2>u\b$<2>t\b$<2>t\b$<2>c\b$<2>o\b$<2>v\b$<2>r\b$<2>\"\b$<2>)\b$<2>\u001b>\n......................................................................\n\nRan 1 Routine, 9 Entry Tags\nChecked 70 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.106,
+          "error_message": null
+        }
+      }
+    },
+    "M XML Parser": {
+      "package_name": "M XML Parser",
+      "test_list_path": "",
+      "routines": {
+        "MXMLBLD": {
+          "routine": "MXMLBLD",
+          "package": "M XML Parser",
+          "total_tests": 13,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 3,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>T\b$<2>E\b$<2>S\b$<2>T\b$<2>^\b$<2>M\b$<2>X\b$<2>M\b$<2>L\b$<2>B\b$<2>L\b$<2>D\b$<2>\u001b>\n\n\n ------------------------------------------------------------------------------------------------------------------------- MXMLBLD -------------------------------------------------------------------------------------------------------------------------\nTESTPUT - - Test PUT..--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTMK - - Test MKTAG......---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTBLD - - Test Wally's XML Builder.....-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\n\nRan 1 Routine, 3 Entry Tags\nChecked 13 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.106,
+          "error_message": null
+        },
+        "MXMLTMPT": {
+          "routine": "MXMLTMPT",
+          "package": "M XML Parser",
+          "total_tests": 49,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 25,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>T\b$<2>E\b$<2>S\b$<2>T\b$<2>^\b$<2>M\b$<2>X\b$<2>M\b$<2>L\b$<2>T\b$<2>M\b$<2>P\b$<2>T\b$<2>\u001b>\n\n\n ------------------------------------------------------------------------------------------------------------------------- MXMLTMPT -------------------------------------------------------------------------------------------------------------------------\nPUSH - - Test PUSH..----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nPUSHPOP - - Test PUSH and POP......-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nMKMDX - - Test MKMDX.---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nXNAME - - Test XNAME...-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nXVARS - - Test XVARS.---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nINDEX - - Test INDEX......----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nINDEX2 - - Test INDEX ; again......-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nMISSING - - Test MISSING (@@element@@ that need to be filled out)..-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nMAP - - Test MAP. Maps values to missing elements..---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nMAP2 - - Test MAP for multiple values..---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nQUEUE - - Test QUEUE - Adds entries to build list.----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nQUERY - - Test XPATH-like QUERY.----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nBUILD - - Test Build return off QUEUE[d] lists...-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nCP - - Copy Arrays.-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nQOPEN - - Create build list to copy all lines except last..-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nQOPEN2 - - Create partial build list to copy XPATH contents.------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nQCLOSE - - Create build list to copy last line.-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nQCLOSE2 - - Create build list to copy last line based off XPATH...------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nINSERT - - Test insertion of XML at end of XPATH.-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nREPLACE - - Test REPLACE of XML.----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nINSINNER - - Test Insert Inner source XML into end of dest XML XPATH.---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nINSINNE2 - - Test Insert Inner source XML into end of dest XML.---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nPUSHA - - Push All..----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nH2ARY - - Convert a Hash to a return array (return(n)=\"key^value\")..----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTRIM - - Trim an XML array.MXMLARR0(0)=5\nMXMLARR0(1)=\"<Books>\"\nMXMLARR0(2)=\"<Book>\"\nMXMLARR0(3)=\"<Title>Pride and Prejudice</Title>\"\nMXMLARR0(4)=\"</Book>\"\nMXMLARR0(5)=\"</Books>\"\n------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\n\nRan 1 Routine, 25 Entry Tags\nChecked 49 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.203,
+          "error_message": null
+        },
+        "MXMLPATT": {
+          "routine": "MXMLPATT",
+          "package": "M XML Parser",
+          "total_tests": 25,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 25,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>T\b$<2>E\b$<2>S\b$<2>T\b$<2>^\b$<2>M\b$<2>X\b$<2>M\b$<2>L\b$<2>P\b$<2>A\b$<2>T\b$<2>T\b$<2>\u001b>\n\n\n ------------------------------------------------------------------------------------------------------------------------- MXMLPATT -------------------------------------------------------------------------------------------------------------------------\nTESTS1 - - Test /PEPSResponse/Body/drugCheck/drugDrugChecks/drugDrugCheck/source [extant].------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTS2 - - Test /PEPSResponse/drugCheck/drugDrugChecks/drugDrugCheck/source [n/a].--------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTS3 - - Test a multiple /PEPSResponse/.../reference [extant].--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTSS1 - - Test //reference [extant].----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTSS2 - - Test //referenceblah [n/a].---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTSS3 - - Test //interactedDrugList/drug [extant].--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTSS4 - - Test //interactedDrugList/drum [n/a].-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTREL1 - - Test Relative paths (//Header, then MUser) [extant].-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTREL2 - - Test Relative paths (//Header, then interactedDrugList/drug) [n/a].----------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTATT1 - - Test Attribute //@orderNumber [extant].--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTATT2 - - Test Attribute //drug/@vuid [extant].----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTATT3 - - Test Attribute //drug/dada [n/a].--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTATT4 - - Test relative attribute //Header, MServer, @stationNumber [extant].----------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFIL1 - - Test ordinal filter expressions //references/reference[3] [extant].----------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFIL2 - - Test ordinal filter expressions //references/reference[11] [n/a].------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFIL3 - - Test ordinal filter expression //reference[position(3)] [extant].------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFIL4 - - Test last() filter expression //reference[last()] [extant].------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFIL5 - - Test @attribute as //drug[@vuid] [extant].-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFIL6 - - Test @attribute as //drug[@vuib] [n/a].--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFIL7 - - Test node as //professionalMonograph[monographTitle] [extant].---------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFIL8 - - Test node as //professionalMonograph[monographTible] [n/a].------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFIL9 - - Test attribute=\"value\" as //drug[@ien=\"113\"] [extant].-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFI10 - - Test attribute=\"value\" as //drug[@ien=\"999\"] [n/a].--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFI11 - - Test node=\"value\" as //drugDrugCheck[id=\"283\"] [extant].---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nTESTFI12 - - Test node=\"value\" as //drugDrugCheck[id=\"999\"] [n/a].------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\n\nRan 1 Routine, 25 Entry Tags\nChecked 25 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.101,
+          "error_message": null
+        },
+        "MXMLDOMT": {
+          "routine": "MXMLDOMT",
+          "package": "M XML Parser",
+          "total_tests": 9,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 8,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>M\b$<2>X\b$<2>M\b$<2>L\b$<2>D\b$<2>O\b$<2>M\b$<2>T\b$<2>\u001b>\n\n\n ------------------------------------------------------------------------------------------------------------------------- MXMLDOMT -------------------------------------------------------------------------------------------------------------------------\nXML1 - - Parse a regular XML Document--sanity test\n  1:<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\n  2:<!-- Edited by XMLSpy -->\n\n  3:<note>\n\n  4:<to>Tove</to>\n\n  5:<from>Jani</from>\n\n  6:<heading>Reminder</heading>\n\n  7:<body>Don't forget me this weekend!</body>\n\n  8:</note>\n.-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nXML2 - - Parse an XML doc on one line\n  1:<?xml version=\"1.0\" encoding=\"utf-8\"?><!-- Edited by XMLSpy --><note><to>Tove</to><from>Jani</from><heading>Reminder</heading><body>Don't forget me this weekend!</body></note>\n.-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nXML3 - - Parse an XML doc broken on several lines\n  1:<?xml version=\"1.0\" \n\n  2:encoding=\"utf-8\"?>\n\n  3:<!-- Edited b\n\n  4:y XMLSpy -->\n\n  5:<not\n\n  6:e>\n\n  7:<to>Tove<\n\n  8:/to>\n\n  9:<from>Jani</from>\n\n 10:<heading>Reminder</heading>\n\n 11:<body>Don't forget me this weekend!</\n\n 12:body>\n\n 13:</note>\n.-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nXML4 - - Parse an XML doc with Character ref attr\n  1:<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\n  2:<!-- Edited by XMLSpy -->\n\n  3:<note>\n\n  4:<to lastname=\"M&#xfc;ller\">Tove</to>\n\n  5:<from>Jani</from>\n\n  6:<heading>Reminder</heading>\n\n  7:<body>Don't forget me this weekend!</body>\n\n  8:</note>\n.-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nXML5 - - Parse an XML doc with Chracter ref attr broken over 2 lines (Sergey's bug)\n  1:<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\n  2:<!-- Edited by XMLSpy -->\n\n  3:<note>\n\n  4:<!-- Overflow the main buffer -->\n\n  5:<subject>AAAAAAAAAAAAAAAAAAAAAAAAAAAA</subject><to lastnameAAAAAAAAAAAAAAAAA=\"M&#\n\n  6:xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#x\n\n  7:fc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#\n\n  8:xfc;ller\">Tove</to>\n\n  9:<from>Jani</from>\n\n 10:<heading>Reminder</heading>\n\n 11:<body>Don't forget me this weekend!</body>\n\n 12:</note>\n.-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nXML6 - - Parse an XML doc with Chracter ref text broken over 2 lines (George's bug)\n  1:<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\n  2:<!-- Edited by XMLSpy -->\n\n  3:<note>\n\n  4:<!-- Overflow the main buffer -->\n\n  5:<subject>AAAAAAAAAAAAAAAAAAAAAAAAAAAA</subject>\n\n  6:<to>Tove&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#\n\n  7:xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&\n\n  8:#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xf\n\n  9:c;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;&#xfc;</to>\n\n 10:<from>Jani</from>\n\n 11:<heading>Reminder</heading>\n\n 12:<body>Don't forget me this weekend!</body>\n\n 13:</note>\n.-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  [OK]\nXMLFILE - - Parse an XML document loacated on the File system (Sam's bug)\n  1:<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\n  2:<!-- Edited by XMLSpy -->\n\n  3:<note>\n\n  4:<to>Tove</to>\n\n  5:<from>Jani</from>\n\n  6:<heading>Reminder</heading>\n\n  7:<body>Don't forget me this weekend!</body>\n\n  8:</note>\n.\n  1:<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\n  2:<!-- Edited by XMLSpy -->\n\n  3:<note>\n\n  4:<to>Tove</to>\n\n  5:<from>Jani</from>\n\n  6:<heading>Reminder</heading>\n\n  7:<body>Don't forget me this weekend!</body>\n\n  8:</note>\n.----------------------------------------------------------------------  [OK]\nXML136 - - VA Patch 136 - Long comments are not read properly.---------  [OK]\n\nRan 1 Routine, 8 Entry Tags\nChecked 9 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.103,
+          "error_message": null
+        }
+      }
+    },
+    "VA FileMan": {
+      "package_name": "VA FileMan",
+      "test_list_path": "",
+      "routines": {
+        "ZZUTDIDT": {
+          "routine": "ZZUTDIDT",
+          "package": "VA FileMan",
+          "total_tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 1,
+          "routines_ran": 2,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>U\b$<2>T\b$<2>D\b$<2>I\b$<2>D\b$<2>T\b$<2>\u001b>\n..\n\nRan 2 Routines, 1 Entry Tag\nChecked 2 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.103,
+          "error_message": null
+        },
+        "DMUDIC00": {
+          "routine": "DMUDIC00",
+          "package": "VA FileMan",
+          "total_tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 7,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>D\b$<2>M\b$<2>U\b$<2>D\b$<2>I\b$<2>C\b$<2>0\b$<2>0\b$<2>\u001b>\n\nThis version (#0.1) of 'DMUFINIT' was created on 10-JAN-2013\n         (at V22P2.FILEMAN.MUMPS.ORG, by VA FILEMAN 22.2T1)\n\nI AM GOING TO SET UP THE FOLLOWING FILES:\n\n   1009.801  BROKEN FILE  (including data)\n\u0007I will OVERWRITE your data with mine.\n\n   1009.802  SHADOW STATE  (including data)\n\u0007I will OVERWRITE your data with mine.\n...HMMM, LET ME PUT YOU ON 'HOLD' FOR A SECOND...............................\n\u0007OK, I'M DONE.\nNOTE THAT FILE SECURITY-CODE PROTECTION HAS BEEN MADE\n\n ---------------------------------- DMUDIC00 ----------------------------------\nFINDC - - FIND^DIC with computed fields in return field list...--------  [OK]\nFINDE - - Find with \"E\" flag to return all results in spite of errors... [OK]\nLISTC - - LIST^DIC with computed fields in the field list..------------  [OK]\nLISTE - - LIST^DIC with \"E\" flag to return all results in spite of errors.\n ----------------------------------------------------------------------  [OK]\nLISTX1 - - LIST^DIC with the new X flag -- Sort by Unindexed field..----------------------------------------------------------------------  [OK]\nLISTX2 - - LIST^DIC with the new X flag -- Sort by Computed Expression..----------------------------------------------------------------------  [OK]\nLISTX3 - - LIST^DIC with the new X flag -- Sort by Sort Template....---------------------------------------------------------------------  [OK]\n\nRan 1 Routine, 7 Entry Tags\nChecked 14 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 2.368,
+          "error_message": null
+        },
+        "DMUDT000": {
+          "routine": "DMUDT000",
+          "package": "VA FileMan",
+          "total_tests": 61,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 12,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>D\b$<2>M\b$<2>U\b$<2>D\b$<2>T\b$<2>0\b$<2>0\b$<2>0\b$<2>\u001b>\n\n\n ---------------------------------- DMUDT000 ----------------------------------\n%DTFUT - - %DT Future Assumed Flag.....--------------------------------  [OK]\n%DTPAST - - %DT=\"P\" - Past assumed flag....----------------------------  [OK]\n%DTI - - Internationl Dates......--------------------------------------  [OK]\n%DTINT - - Interactive dates; %DT(\"AE\") - Ask and Echo.......----------  [OK]\n%DTM - - %DT=\"M\" only month and year input is allowed....--------------  [OK]\n%DTN - - %DT=\"N\" - Pure Numeric Input is not allowed...----------------  [OK]\n%DTR - - %DT=\"R\" - Requires Time Input....-----------------------------  [OK]\n%DTT - - %DT=\"T\" - Allows Time Input.......----------------------------  [OK]\n%DTS - - %DT=\"TS\" or \"RS\" - Return Seconds...--------------------------  [OK]\n%DTX - - %DT=\"X\" - Exact (month and day) input is required...----------  [OK]\n%DT0 - - %DT(0) - Limit dates to or from %DT(0)......------------------  [OK]\nDDUPDT - - Internal Format to External Format - DD^%DT.........--------  [OK]\n\nRan 1 Routine, 12 Entry Tags\nChecked 61 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.105,
+          "error_message": null
+        },
+        "DMUDTC00": {
+          "routine": "DMUDTC00",
+          "package": "VA FileMan",
+          "total_tests": 92,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 10,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>D\b$<2>M\b$<2>U\b$<2>D\b$<2>T\b$<2>C\b$<2>0\b$<2>0\b$<2>\u001b>\n\n\n ---------------------------------- DMUDTC00 ----------------------------------\n%DTC - - %DTC - Returns the number of days between two dates........---  [OK]\nC - - C^%DTC - Adds and subtracts dates......--------------------------  [OK]\nCOMMA - - COMMA^%DTC - Format the number with a comma............------  [OK]\nDW - - DW^%DTC - Return the day of week................----------------  [OK]\nH - - H^%DTC - Convert an FM Date to a $H format date/time............-  [OK]\nHELP - - Exercise Help, no checks.\n\n%DT: A\n     Examples of Valid Dates:\n       JAN 20 1957 or 20 JAN 57 or 1/20/57 or 012057\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  JAN, 1957\n\n%DT: E\n     Examples of Valid Dates:\n       JAN 20 1957 or 20 JAN 57 or 1/20/57 or 012057\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  JAN, 1957\n\n%DT: F\n     Examples of Valid Dates:\n       JAN 20 1957 or 20 JAN 57 or 1/20/57 or 012057\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer assumes a date in the FUTURE.\n     You may omit the precise day, as:  JAN, 1957\n\n%DT: I\n     Examples of Valid Dates:\n       20.1.1957 or 20/1/57 or 200157\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  1 1957\n\n%DT: M\n     Examples of Valid Dates:\n       JAN 1957 or JAN 57 or 0157\n       T    (for this month)\n       T+3M (for 3 months in the future)\n       T-3M (for 3 months ago)\n     Only month and year are accepted. You must omit the precise day.\n\n%DT: N\n     Examples of Valid Dates:\n       JAN 20 1957 or 20 JAN 57 or 1/20/57\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  JAN, 1957\n\n%DT: P\n     Examples of Valid Dates:\n       JAN 20 1957 or 20 JAN 57 or 1/20/57 or 012057\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer assumes a date in the PAST.\n     You may omit the precise day, as:  JAN, 1957\n\n%DT: R\n     Examples of Valid Dates:\n       JAN 20 1957 or 20 JAN 57 or 1/20/57 or 012057\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  JAN, 1957\n     If only the time is entered, the current date is assumed.\n     Follow the date with a time, such as JAN 20@10, T@10AM, 10:30, etc.\n     You may enter a time, such as NOON, MIDNIGHT or NOW.\n     You may enter   NOW+3'  (for current date and time Plus 3 minutes\n       *Note--the Apostrophe following the number of minutes)\n     Time is REQUIRED in this response.\n\n%DT: SR\n     Examples of Valid Dates:\n       JAN 20 1957 or 20 JAN 57 or 1/20/57 or 012057\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  JAN, 1957\n     If only the time is entered, the current date is assumed.\n     Follow the date with a time, such as JAN 20@10, T@10AM, 10:30, etc.\n     You may enter a time, such as NOON, MIDNIGHT or NOW.\n     You may enter   NOW+3'  (for current date and time Plus 3 minutes\n       *Note--the Apostrophe following the number of minutes)\n     Seconds may be entered as 10:30:30 or 103030AM.\n     Time is REQUIRED in this response.\n\n%DT: ST\n     Examples of Valid Dates:\n       JAN 20 1957 or 20 JAN 57 or 1/20/57 or 012057\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  JAN, 1957\n     If only the time is entered, the current date is assumed.\n     Follow the date with a time, such as JAN 20@10, T@10AM, 10:30, etc.\n     You may enter a time, such as NOON, MIDNIGHT or NOW.\n     You may enter   NOW+3'  (for current date and time Plus 3 minutes\n       *Note--the Apostrophe following the number of minutes)\n     Seconds may be entered as 10:30:30 or 103030AM.\n\n%DT: T\n     Examples of Valid Dates:\n       JAN 20 1957 or 20 JAN 57 or 1/20/57 or 012057\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  JAN, 1957\n     If only the time is entered, the current date is assumed.\n     Follow the date with a time, such as JAN 20@10, T@10AM, 10:30, etc.\n     You may enter a time, such as NOON, MIDNIGHT or NOW.\n     You may enter   NOW+3'  (for current date and time Plus 3 minutes\n       *Note--the Apostrophe following the number of minutes)\n\n%DT: X\n     Examples of Valid Dates:\n       JAN 20 1957 or 20 JAN 57 or 1/20/57 or 012057\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n\n%DT: \n     Examples of Valid Dates:\n       JAN 20 1957 or 20 JAN 57 or 1/20/57 or 012057\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  JAN, 1957\n\n%DT(0): -3101231\n     Examples of Valid Dates:\n       20.1.1957 or 20/1/57 or 200157\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  1 1957\n      \n     Enter a date which is less than or equal to 31 DEC 2010.\n\n%DT(0): +3101231\n     Examples of Valid Dates:\n       20.1.1957 or 20/1/57 or 200157\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  1 1957\n      \n     Enter a date which is greater than or equal to 23 JAN 1731.\n\n%DT(0): -T+30\n     Examples of Valid Dates:\n       20.1.1957 or 20/1/57 or 200157\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  1 1957\n      \n     Enter a date which is less than or equal to T+30.\n\n%DT(0): +T+30\n     Examples of Valid Dates:\n       20.1.1957 or 20/1/57 or 200157\n       T   (for TODAY),  T+1 (for TOMORROW),  T+2,  T+7,  etc.\n       T-1 (for YESTERDAY),  T-3W (for 3 WEEKS AGO), etc.\n     If the year is omitted, the computer uses CURRENT YEAR.  Two digit year\n       assumes no more than 20 years in the future, or 80 years in the past.\n     You may omit the precise day, as:  1 1957\n      \n     Enter a date which is greater than or equal to +T+30.-------------  [OK]\nNOW - - Tests NOW^%DTC......-------------------------------------------  [OK]\nS - - Test S^%DTC.....-------------------------------------------------  [OK]\nYMD - - Test YMD^%DTC............--------------------------------------  [OK]\nYX - - Test YX^%DTC...............-------------------------------------  [OK]\n\nRan 1 Routine, 10 Entry Tags\nChecked 92 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.101,
+          "error_message": null
+        },
+        "DMUDIQ00": {
+          "routine": "DMUDIQ00",
+          "package": "VA FileMan",
+          "total_tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 7,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>D\b$<2>M\b$<2>U\b$<2>D\b$<2>I\b$<2>Q\b$<2>0\b$<2>0\b$<2>\u001b>\n\n\n ---------------------------------- DMUDIQ00 ----------------------------------\nTGET1DIQ - - $$GET1^DIQ Single Data Retriever.-------------------------  [OK]\nTDDIQ - - D^DIQ Conversion of Internal to External date.---------------  [OK]\nTDTDIQ - - DT^DIQ Convert and Display Date.----------------------------  [OK]\nTENDIQ - - EN^DIQ Display a Range of Data Elements.--------------------  [OK]\nTGETS - - GETS^DIQ Data Retriever.-------------------------------------  [OK]\nTYDIQ - - Y^DIQ Convert Internal Form of any Data Element to External Form.\n ----------------------------------------------------------------------  [OK]\nTENDIQ1 - - EN^DIQ1 Retrieve Data from a File for a Particular Entry.--  [OK]\n\nRan 1 Routine, 7 Entry Tags\nChecked 7 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 1.351,
+          "error_message": null
+        }
+      }
+    },
+    "Problem List": {
+      "package_name": "Problem List",
+      "test_list_path": "",
+      "routines": {
+        "ZZRGUT": {
+          "routine": "ZZRGUT",
+          "package": "Problem List",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>T\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.102,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUT1": {
+          "routine": "ZZRGUT1",
+          "package": "Problem List",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>T\b$<2>1\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.106,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUT2": {
+          "routine": "ZZRGUT2",
+          "package": "Problem List",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>T\b$<2>2\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.102,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUT3": {
+          "routine": "ZZRGUT3",
+          "package": "Problem List",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>T\b$<2>3\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.104,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUT4": {
+          "routine": "ZZRGUT4",
+          "package": "Problem List",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>T\b$<2>4\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.103,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUT5": {
+          "routine": "ZZRGUT5",
+          "package": "Problem List",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>T\b$<2>5\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.105,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUTRB": {
+          "routine": "ZZRGUTRB",
+          "package": "Problem List",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>T\b$<2>R\b$<2>B\b$<2>\u001b>YDB-MUMPS[711]: %YDB-E-TRESTNOT, Cannot TRESTART, transaction is not restartable -- generated from 0x00007FFFFDEB53C4.\nYDB-MUMPS[711]: %YDB-E-TRESTLOC, Transaction start: ZZRGUTRB+2^ZZRGUTRB, Transaction failure: GETTMP+7^DIKC1 -- generated from 0x00007FFFFDEB53C4.\n\n%YDB-E-TRESTNOT, Cannot TRESTART, transaction is not restartable\n%YDB-E-TRESTLOC, Transaction start: ZZRGUTRB+2^ZZRGUTRB, Transaction failure: GETTMP+7^DIKC1\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.103,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUTEX": {
+          "routine": "ZZRGUTEX",
+          "package": "Problem List",
+          "total_tests": 28,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 8,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>T\b$<2>E\b$<2>X\b$<2>\u001b>\n............................\n\nRan 1 Routine, 8 Entry Tags\nChecked 28 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.203,
+          "error_message": null
+        }
+      }
+    },
+    "Scheduling": {
+      "package_name": "Scheduling",
+      "test_list_path": "",
+      "routines": {
+        "ZZUTGETAPPT": {
+          "routine": "ZZUTGETAPPT",
+          "package": "Scheduling",
+          "total_tests": 37,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 2,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>U\b$<2>T\b$<2>G\b$<2>E\b$<2>T\b$<2>A\b$<2>P\b$<2>P\b$<2>T\b$<2>\u001b>\n.....................................\n\nRan 1 Routine, 2 Entry Tags\nChecked 37 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.105,
+          "error_message": null
+        },
+        "ZZUTNEXTAPPT": {
+          "routine": "ZZUTNEXTAPPT",
+          "package": "Scheduling",
+          "total_tests": 32,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 2,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>U\b$<2>T\b$<2>N\b$<2>E\b$<2>X\b$<2>T\b$<2>A\b$<2>P\b$<2>P\b$<2>T\b$<2>\u001b>\n................................\n\nRan 1 Routine, 2 Entry Tags\nChecked 32 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.106,
+          "error_message": null
+        },
+        "ZZUTSDAPI": {
+          "routine": "ZZUTSDAPI",
+          "package": "Scheduling",
+          "total_tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 2,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>U\b$<2>T\b$<2>S\b$<2>D\b$<2>A\b$<2>P\b$<2>I\b$<2>\u001b>\n......\n\nRan 1 Routine, 2 Entry Tags\nChecked 6 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.106,
+          "error_message": null
+        },
+        "ZZUTSDIMO": {
+          "routine": "ZZUTSDIMO",
+          "package": "Scheduling",
+          "total_tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 1,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>U\b$<2>T\b$<2>S\b$<2>D\b$<2>I\b$<2>M\b$<2>O\b$<2>\u001b>\n....\n\nRan 1 Routine, 1 Entry Tag\nChecked 4 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.105,
+          "error_message": null
+        },
+        "ZZUTGETPLIST": {
+          "routine": "ZZUTGETPLIST",
+          "package": "Scheduling",
+          "total_tests": 37,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 2,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>U\b$<2>T\b$<2>G\b$<2>E\b$<2>T\b$<2>P\b$<2>L\b$<2>I\b$<2>S\b$<2>T\b$<2>\u001b>\n.....................................\n\nRan 1 Routine, 2 Entry Tags\nChecked 37 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.101,
+          "error_message": null
+        },
+        "ZZUTPATAPPT": {
+          "routine": "ZZUTPATAPPT",
+          "package": "Scheduling",
+          "total_tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 1,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>U\b$<2>T\b$<2>P\b$<2>A\b$<2>T\b$<2>A\b$<2>P\b$<2>P\b$<2>T\b$<2>\u001b>\n.......\n\nRan 1 Routine, 1 Entry Tag\nChecked 7 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.102,
+          "error_message": null
+        },
+        "ZZRGUSD1": {
+          "routine": "ZZRGUSD1",
+          "package": "Scheduling",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>S\b$<2>D\b$<2>1\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.102,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUSD2": {
+          "routine": "ZZRGUSD2",
+          "package": "Scheduling",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>S\b$<2>D\b$<2>2\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.106,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUSD3": {
+          "routine": "ZZRGUSD3",
+          "package": "Scheduling",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>S\b$<2>D\b$<2>3\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.102,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUSD4": {
+          "routine": "ZZRGUSD4",
+          "package": "Scheduling",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>S\b$<2>D\b$<2>4\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.101,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUSD5": {
+          "routine": "ZZRGUSD5",
+          "package": "Scheduling",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>S\b$<2>D\b$<2>5\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.102,
+          "error_message": "No summary line found in output"
+        },
+        "ZZRGUSD6": {
+          "routine": "ZZRGUSD6",
+          "package": "Scheduling",
+          "total_tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 0,
+          "routines_ran": 0,
+          "status": "error",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>R\b$<2>G\b$<2>U\b$<2>S\b$<2>D\b$<2>6\b$<2>\u001b>\n\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.105,
+          "error_message": "No summary line found in output"
+        }
+      }
+    },
+    "Registration": {
+      "package_name": "Registration",
+      "test_list_path": "",
+      "routines": {
+        "ZZDGPTCO1": {
+          "routine": "ZZDGPTCO1",
+          "package": "Registration",
+          "total_tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "entry_tags": 5,
+          "routines_ran": 1,
+          "status": "pass",
+          "failure_details": [],
+          "raw_output": "D\b$<2> \b$<2>^\b$<2>Z\b$<2>Z\b$<2>D\b$<2>G\b$<2>P\b$<2>T\b$<2>C\b$<2>O\b$<2>1\b$<2>\u001b>\n\n.\n----------------------------------------------\n3070930\n23\n.3010720\n1\n-------------------------------------------\n.\n----------------------------------------------\n3070931\n23\n.3010720\n1\n-------------------------------------------\n\n\n \nProblem with PTF CENSUS DATE File (#45.86).\n \nPlease notify your Supervisor !!..\n----------------------------------------------\n3070931\n23\n.3010714\n1\n-------------------------------------------\n.\n----------------------------------------------\n3101231\n23\n.3010714\n1\n-------------------------------------------\n.\n----------------------------------------------\n3101232\n23\n.3010714\n1\n-------------------------------------------\n\n \nProblem with PTF CENSUS DATE File (#45.86).\n \nPlease notify your Supervisor !!.\n\nRan 1 Routine, 5 Entry Tags\nChecked 10 tests, with 0 failures and encountered 0 errors.\n\nOSEHRA>\u001b=",
+          "duration_seconds": 0.105,
+          "error_message": null
+        }
+      }
+    }
+  }
+}
