@@ -1,0 +1,18 @@
+; iris-merge.cpf — CPF merge file for m2py IRIS testing
+;
+; Applied at image build time via `iris merge IRIS /tmp/iris-merge.cpf`.
+; Based on settings from WorldVistA docker-vista iris.cpf:
+;   https://github.com/WorldVistA/docker-vista/blob/master/IRIS/iris.cpf
+;
+; Only includes settings needed for m2py VistA MUMPS compatibility.
+; The community image already has reasonable defaults for everything else.
+
+[Miscellaneous]
+; VistA MUMPS code uses empty-string subscripts, e.g.:
+;   ^TMP("MXMLPRSE",$J,"ELE","")
+NullSubscripts=1
+
+[Startup]
+; Allow Callin API (used by IRIS Python SDK)
+CallinStart=1
+CallinHalt=1

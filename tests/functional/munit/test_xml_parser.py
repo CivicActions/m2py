@@ -106,7 +106,8 @@ class TestMXMLParser:
 
         # --- Crash: no summary line parsed ---
         assert result.status != "error", (
-            f"{routine_name} crashed: {result.error_message}"
+            f"{routine_name} crashed: {result.error_message}\n"
+            f"--- raw output ---\n{result.raw_output}"
         )
 
         # --- Must have run some tests ---
@@ -116,5 +117,6 @@ class TestMXMLParser:
         assert result.failures == 0 and result.errors == 0, (
             f"{routine_name}: "
             f"{result.failures} failures, {result.errors} errors "
-            f"(tests={result.total_tests})"
+            f"(tests={result.total_tests})\n"
+            f"--- raw output ---\n{result.raw_output}"
         )

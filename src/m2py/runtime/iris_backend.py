@@ -200,6 +200,226 @@ class IRISGlobalStorage:
             return err
 
     # =========================================================================
+    # Null Subscript Support (IRIS SDK workaround)
+    # =========================================================================
+    # The IRIS Python SDK raises <SUBSCRIPT> for empty-string subscripts,
+    # even when the IRIS server allows them (Config.Miscellaneous.NullSubscripts=1).
+    # VistA MUMPS code uses empty-string subscripts (e.g., ^TMP("MXMLPRSE",$J,"ELE","")).
+    #
+    # Workaround: detect empty-string subscripts and delegate those operations
+    # to a server-side ObjectScript class (M2PY.Helper) which uses indirection
+    # to handle null subscripts natively.
+
+    _helper_class_installed: bool = False
+
+    @staticmethod
+    def _has_null_subscript(subscripts: tuple[str, ...]) -> bool:
+        """Check if any subscript is an empty string (null subscript)."""
+        return any(s == "" for s in subscripts)
+
+    def _build_gref(self, name: str, subscripts: tuple[str, ...]) -> str:
+        """Build MUMPS global reference string for use with indirection.
+
+        Examples:
+            _build_gref("TMP", ("a", "", "c")) -> '^TMP("a","","c")'
+        """
+        gname = self._make_global_name(name)
+        if not subscripts:
+            return gname
+        parts = []
+        for s in subscripts:
+            escaped = str(s).replace('"', '""')
+            parts.append(f'"{escaped}"')
+        return f"{gname}({','.join(parts)})"
+
+    @staticmethod
+    def _parse_gref(ref: str) -> tuple[str, tuple[str, ...]] | None:
+        """Parse a MUMPS global reference string into (name, subscripts).
+
+        Handles quoted strings with doubled internal quotes.
+
+        Examples:
+            _parse_gref('^TMP("a","","c")') -> ("TMP", ("a", "", "c"))
+            _parse_gref('^X') -> ("X", ())
+            _parse_gref('') -> None
+        """
+        if not ref:
+            return None
+        if ref.startswith("^"):
+            ref = ref[1:]
+        paren = ref.find("(")
+        if paren == -1:
+            return (ref, ())
+        name = ref[:paren]
+        inner = ref[paren + 1 : -1]  # Remove outer parens
+        subs: list[str] = []
+        i = 0
+        while i < len(inner):
+            if inner[i] == '"':
+                # Quoted string subscript
+                i += 1
+                chars: list[str] = []
+                while i < len(inner):
+                    if inner[i] == '"':
+                        if i + 1 < len(inner) and inner[i + 1] == '"':
+                            chars.append('"')
+                            i += 2
+                        else:
+                            i += 1  # closing quote
+                            break
+                    else:
+                        chars.append(inner[i])
+                        i += 1
+                subs.append("".join(chars))
+            elif inner[i] == ",":
+                i += 1
+            else:
+                # Unquoted (numeric) subscript
+                j = i
+                while j < len(inner) and inner[j] != ",":
+                    j += 1
+                subs.append(inner[i:j])
+                i = j
+        return (name, tuple(subs))
+
+    def _ensure_helper_class(self) -> None:
+        """Install the M2PY.Helper class in IRIS if not already present.
+
+        Creates an ObjectScript class with class methods that use indirection
+        to perform global operations, bypassing the SDK's null subscript
+        restriction. The class is compiled once and persists in the IRIS
+        database for the lifetime of the container.
+        """
+        if IRISGlobalStorage._helper_class_installed:
+            return
+
+        assert self._iris is not None
+
+        try:
+            exists = self._iris.classMethodValue(
+                "%Dictionary.ClassDefinition", "%ExistsId", "M2PY.Helper"
+            )
+            if exists:
+                IRISGlobalStorage._helper_class_installed = True
+                return
+        except Exception:
+            pass
+
+        # Create the helper class via the SDK object API
+        cls = self._iris.classMethodObject(
+            "%Dictionary.ClassDefinition", "%New", "M2PY.Helper"
+        )
+        cls.set("Super", "%RegisteredObject")
+
+        # Define all helper methods
+        _methods = {
+            "GGet": {
+                "spec": "gref:%String",
+                "ret": "%String",
+                "code": " Quit $Get(@gref)",
+            },
+            "GSet": {
+                "spec": "val:%String,gref:%String",
+                "ret": "%Integer",
+                "code": " Set @gref=val Quit 1",
+            },
+            "GKill": {
+                "spec": "gref:%String",
+                "ret": "%Integer",
+                "code": " Kill @gref Quit 1",
+            },
+            "GData": {
+                "spec": "gref:%String",
+                "ret": "%Integer",
+                "code": " Quit $Data(@gref)",
+            },
+            "GOrder": {
+                "spec": "gref:%String,dir:%Integer=1",
+                "ret": "%String",
+                "code": " Quit $Order(@gref,dir)",
+            },
+            "GQuery": {
+                "spec": "gref:%String",
+                "ret": "%String",
+                "code": " Quit $Query(@gref)",
+            },
+        }
+
+        for mname, info in _methods.items():
+            m = self._iris.classMethodObject("%Dictionary.MethodDefinition", "%New")
+            m.set("Name", mname)
+            m.set("ClassMethod", True)
+            m.set("FormalSpec", info["spec"])
+            m.set("ReturnType", info["ret"])
+            impl = m.getObject("Implementation")
+            impl.invokeVoid("WriteLine", info["code"])
+            m.set("parent", cls)
+
+        cls.invoke("%Save")
+        self._iris.classMethodValue("%SYSTEM.OBJ", "Compile", "M2PY.Helper", "ck")
+        IRISGlobalStorage._helper_class_installed = True
+
+    def _helper_get(self, name: str, subscripts: tuple[str, ...]) -> str | None:
+        """Get global value via M2PY.Helper (null subscript safe)."""
+        self._ensure_helper_class()
+        assert self._iris is not None
+        gref = self._build_gref(name, subscripts)
+        # $DATA check needed because $GET returns "" for both undefined
+        # and empty-string values
+        d = int(self._iris.classMethodValue("M2PY.Helper", "GData", gref))
+        if d in (0, 10):
+            return None
+        result = self._iris.classMethodString("M2PY.Helper", "GGet", gref)
+        return str(result) if result is not None else None
+
+    def _helper_set(self, name: str, subscripts: tuple[str, ...], value: str) -> None:
+        """Set global value via M2PY.Helper (null subscript safe)."""
+        self._ensure_helper_class()
+        assert self._iris is not None
+        gref = self._build_gref(name, subscripts)
+        self._iris.classMethodValue("M2PY.Helper", "GSet", str(value), gref)
+
+    def _helper_kill(self, name: str, subscripts: tuple[str, ...]) -> None:
+        """Kill global node via M2PY.Helper (null subscript safe)."""
+        self._ensure_helper_class()
+        assert self._iris is not None
+        gref = self._build_gref(name, subscripts)
+        self._iris.classMethodValue("M2PY.Helper", "GKill", gref)
+
+    def _helper_data(self, name: str, subscripts: tuple[str, ...]) -> int:
+        """$DATA via M2PY.Helper (null subscript safe)."""
+        self._ensure_helper_class()
+        assert self._iris is not None
+        gref = self._build_gref(name, subscripts)
+        return int(self._iris.classMethodValue("M2PY.Helper", "GData", gref))
+
+    def _helper_order(
+        self, name: str, subscripts: tuple[str, ...], direction: int = 1
+    ) -> str:
+        """$ORDER via M2PY.Helper (null subscript safe)."""
+        self._ensure_helper_class()
+        assert self._iris is not None
+        gref = self._build_gref(name, subscripts)
+        result = self._iris.classMethodString("M2PY.Helper", "GOrder", gref, direction)
+        if result is None:
+            return ""
+        return m_format_output(str(result))
+
+    def _helper_query(self, name: str, subscripts: tuple[str, ...]) -> str:
+        """$QUERY via M2PY.Helper (null subscript safe).
+
+        Returns the full global reference of the next node with data,
+        using the server-side $QUERY function directly.
+        """
+        self._ensure_helper_class()
+        assert self._iris is not None
+        gref = self._build_gref(name, subscripts)
+        result = self._iris.classMethodString("M2PY.Helper", "GQuery", gref)
+        if result is None or result == "":
+            return ""
+        return str(result)
+
+    # =========================================================================
     # Basic CRUD Operations
     # =========================================================================
 
@@ -215,6 +435,10 @@ class IRISGlobalStorage:
         with self._lock:
             self._ensure_connected()
             try:
+                # Use helper for null subscript workaround
+                if subscripts and self._has_null_subscript(subscripts):
+                    return self._helper_get(name, subscripts)
+
                 gname = self._make_global_name(name)
                 if subscripts:
                     val = self._iris.get(gname, *subscripts)
@@ -222,6 +446,23 @@ class IRISGlobalStorage:
                     val = self._iris.get(gname)
                 if val is None:
                     return None
+                # IRIS SDK may return int/float Python types.
+                # Canonicalize numeric values so str(5.0) becomes "5"
+                # (MUMPS canonical) rather than "5.0".
+                if isinstance(val, float):
+                    if val == int(val):
+                        return str(int(val))
+                    # Remove trailing zeros, no leading zero before decimal
+                    s = f"{val:.15g}"
+                    if "." in s:
+                        s = s.rstrip("0").rstrip(".")
+                    if s.startswith("0."):
+                        s = s[1:]
+                    elif s.startswith("-0."):
+                        s = "-" + s[2:]
+                    return s
+                if isinstance(val, int):
+                    return str(val)
                 return str(val)
             except Exception as e:
                 # IRIS raises exception for <UNDEFINED>
@@ -242,6 +483,11 @@ class IRISGlobalStorage:
         with self._lock:
             self._ensure_connected()
             try:
+                # Use helper for null subscript workaround
+                if subscripts and self._has_null_subscript(subscripts):
+                    self._helper_set(name, subscripts, value)
+                    return
+
                 gname = self._make_global_name(name)
                 if subscripts:
                     self._iris.set(value, gname, *subscripts)
@@ -259,6 +505,11 @@ class IRISGlobalStorage:
         with self._lock:
             self._ensure_connected()
             try:
+                # Use helper for null subscript workaround
+                if subscripts and self._has_null_subscript(subscripts):
+                    self._helper_kill(name, subscripts)
+                    return
+
                 gname = self._make_global_name(name)
                 if subscripts:
                     self._iris.kill(gname, *subscripts)
@@ -332,6 +583,10 @@ class IRISGlobalStorage:
         with self._lock:
             self._ensure_connected()
             try:
+                # Use helper for null subscript workaround
+                if subscripts and self._has_null_subscript(subscripts):
+                    return self._helper_data(name, subscripts)
+
                 gname = self._make_global_name(name)
                 if subscripts:
                     return self._iris.isDefined(gname, *subscripts)
@@ -397,6 +652,13 @@ class IRISGlobalStorage:
         with self._lock:
             self._ensure_connected()
             try:
+                # Use helper for null subscript workaround
+                # Check parent subscripts (not the last one, which is the
+                # $ORDER start position — "" is valid there as "from beginning")
+                parent_subs = subscripts[:-1]
+                if parent_subs and self._has_null_subscript(parent_subs):
+                    return self._helper_order(name, subscripts, direction)
+
                 gname = self._make_global_name(name)
                 parent_subs = subscripts[:-1]
                 start_sub = subscripts[-1]
@@ -422,8 +684,9 @@ class IRISGlobalStorage:
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
         """Return full reference of next node with data ($QUERY).
 
-        Uses manual tree traversal since IRIS Native API doesn't expose
-        $QUERY directly via the Python SDK.
+        Uses the M2PY.Helper class for server-side $QUERY when null subscripts
+        are involved (IRIS SDK workaround), otherwise falls back to manual
+        tree traversal since IRIS Native API doesn't expose $QUERY.
         """
         name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
@@ -432,6 +695,17 @@ class IRISGlobalStorage:
         with self._lock:
             self._ensure_connected()
             try:
+                # Use server-side $QUERY via helper when null subscripts
+                # could be encountered in the tree
+                if subscripts and self._has_null_subscript(subscripts):
+                    ref = self._helper_query(name, subscripts)
+                    if ref:
+                        parsed = self._parse_gref(ref)
+                        if parsed:
+                            _, result_subs = parsed
+                            self._update_naked_indicator(name, result_subs)
+                    return ref
+
                 result = self._query_next(name, subscripts)
                 if result is None:
                     return ""
@@ -446,7 +720,19 @@ class IRISGlobalStorage:
                 return ref
             except Exception as e:
                 msg = str(e)
-                if "UNDEFINED" in msg:
+                if "UNDEFINED" in msg or "SUBSCRIPT" in msg:
+                    # Fall back to helper on SUBSCRIPT errors (null subscripts
+                    # encountered during tree traversal)
+                    try:
+                        ref = self._helper_query(name, subscripts)
+                        if ref:
+                            parsed = self._parse_gref(ref)
+                            if parsed:
+                                _, result_subs = parsed
+                                self._update_naked_indicator(name, result_subs)
+                        return ref
+                    except Exception:
+                        pass
                     return ""
                 raise self._translate_exception(e)
 
@@ -1246,8 +1532,11 @@ class IRISGlobalStorage:
             gname = f"^{bare_name}"
             self._known_globals.add(bare_name)
             IRISGlobalStorage._all_known_globals.add(bare_name)
-            if subs:
-                iris_obj.set(value, gname, *subs)
+            # Canonicalize subscripts before storing — the high-level
+            # self.set() does this, but this fast-path bypasses it.
+            canon_subs = [self._canonicalize_subscript(s) for s in subs]
+            if canon_subs:
+                iris_obj.set(value, gname, *canon_subs)
             else:
                 iris_obj.set(value, gname)
             count += 1

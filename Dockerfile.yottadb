@@ -21,6 +21,14 @@ ENV UV_LINK_MODE=copy
 # Set backend
 ENV M2PY_GLOBAL_BACKEND=yottadb
 
+# Enable null (empty-string) subscripts — required by VistA MUMPS code.
+# The M XML Parser and other VistA routines use empty-string subscripts
+# (e.g., ^TMP("MXMLPRSE",$J,"ELE","")) which are valid per MUMPS standard
+# but disabled by default in YottaDB.
+RUN bash -c 'source /opt/yottadb/current/ydb_env_set && \
+    echo "change -region DEFAULT -null_subscripts=always" | yottadb -run GDE && \
+    mupip set -null_subscripts=always -region DEFAULT'
+
 # Source YDB env on every bash invocation
 RUN echo 'source /opt/yottadb/current/ydb_env_set' >> /root/.bashrc
 

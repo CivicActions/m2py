@@ -471,6 +471,12 @@ def transpile_and_execute(
     # Clear output buffer and execute
     runtime.clear()
 
+    # Release any locks left over from a previous test (real backends only).
+    # InMemory locks always succeed; on YDB/IRIS stale locks from crashed
+    # tests can block subsequent LOCK attempts (e.g., L +^TMP("MXMLDOM",$J):5
+    # in EN^MXMLDOM) causing cascading failures.
+    runtime.globals.unlock_all()
+
     # Reset I/O state: close any file devices left open by previous tests
     # and switch back to $PRINCIPAL.  Without this, a test that OPENs a file
     # device (or changes $IO) can pollute the runtime for subsequent tests.

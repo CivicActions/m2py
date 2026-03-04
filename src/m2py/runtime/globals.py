@@ -828,6 +828,13 @@ class InMemoryGlobalStorage:
         if result is None:
             return ""
 
+        # Update naked indicator with RESULT subscripts (not just INPUT).
+        # Per MUMPS standard §8.2.19, $QUERY updates the naked indicator
+        # to reflect the result node, matching YDB and IRIS behavior.
+        result_subs = tuple(str(s) for s in result)
+        if result_subs:
+            self._update_naked_indicator(name, result_subs)
+
         # Format as global reference: "^G(1,2,3)" with proper quoting
         from m2py.runtime.helpers import _format_subscript
 

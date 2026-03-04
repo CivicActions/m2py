@@ -688,3 +688,32 @@ def pytest_collect_file(parent, file_path):
         baseline=None,  # Will be patched in by the fixture if available
         runtime=None,  # Will be patched in by the fixture if available
     )
+
+
+# ---------------------------------------------------------------------------
+# Override parent conftest's per-test global cleanup
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clean_backend_globals():
+    """Override parent conftest's _clean_backend_globals for M-Unit tests.
+
+    The parent conftest (tests/conftest.py) calls kill_all() before every
+    test to guarantee a clean slate.  This is correct for unit tests where
+    each test creates its own data, but it's destructive for M-Unit
+    functional tests because:
+
+    - Session-scoped fixtures pre-load reference data (^DI(.84) Dialog
+      entries, ^DD data dictionaries, ^DIC file lists) into the shared
+      backend *once*.
+    - kill_all() before each test wipes this reference data.
+    - On InMemory backends, kill_all() operates on a separate storage
+      instance so it's harmless.  On YDB/IRIS, it wipes the shared
+      database, breaking routines that depend on the reference data
+      (e.g., BLD^DIALOG needs ^DI(.84) for error severity classification).
+
+    M-Unit tests manage their own isolation via the M-Unit framework and
+    the transpile_and_execute adapter (output clear, unlock_all, I/O reset).
+    """
+    yield
