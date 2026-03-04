@@ -6087,8 +6087,16 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
     stmt_lock_type = stmt.lock_type
 
     # For exclusive lock (no + or -), we first release all locks
-    # This happens BEFORE any locks are acquired
-    if stmt_lock_type == "":
+    # This happens BEFORE any locks are acquired.
+    #
+    # HOWEVER: when ALL targets are indirected, we must defer the unlock_all()
+    # to runtime because the indirection may evaluate to an incremental lock.
+    # Example: LOCK @("+"_REF_":DILOCKTM") in DILF evaluates to
+    # LOCK +^DMU(subs):1 — the "+" makes it incremental, not exclusive.
+    # The runtime lock_indirected() handles this correctly by parsing the
+    # lock operation prefix from the resolved string.
+    all_indirect = all(t.is_indirect for t in stmt.targets)
+    if stmt_lock_type == "" and not all_indirect:
         ctx.emitter.line("_rt.globals.unlock_all()")
 
     # Process each target (now MLockTarget instances instead of dicts)
@@ -6098,8 +6106,13 @@ def _generate_lock(stmt: MLockStatement, ctx: "GeneratorContext") -> None:
         # Use target lockop if present, otherwise use stmt-level
         lock_type = target_lockop if target_lockop else stmt_lock_type
         # For exclusive lock, use "+" since we already released all above
+        # (unless deferred to runtime for all-indirect statements)
         if lock_type == "":
-            effective_lockop = "+"
+            if all_indirect:
+                # Defer exclusive semantics to lock_indirected() at runtime
+                effective_lockop = ""
+            else:
+                effective_lockop = "+"
         else:
             effective_lockop = lock_type
 

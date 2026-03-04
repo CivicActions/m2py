@@ -180,13 +180,30 @@ class TestLockIndirectionStmtLevelPattern:
         """Helper to transpile MUMPS code and return Python."""
         return generate_python(mumps_code)
 
-    def test_exclusive_lock_indirection_releases_first(self):
-        """L @X (exclusive) should emit unlock_all() before lock."""
+    def test_exclusive_lock_indirection_defers_unlock(self):
+        """L @X (exclusive) should defer unlock_all() to lock_indirected().
+
+        When ALL targets are indirected, the codegen cannot know at compile
+        time whether the indirection will evaluate to an exclusive or
+        incremental lock (e.g., LOCK @("+"_REF_":timeout") evaluates to
+        LOCK +ref:timeout — incremental, not exclusive).  So unlock_all()
+        must be deferred to the runtime lock_indirected() method which
+        parses the resolved string and decides.
+        """
         code = self._run_codegen_for_lock('TEST S X="^GLO" L @X Q')
 
-        # Exclusive lock without + releases all first
-        assert "unlock_all" in code
+        # Should NOT emit unlock_all() at codegen level — deferred to runtime
+        lines = code.split("\n")
+        unlock_lines = [line for line in lines if "unlock_all" in line]
+        assert len(unlock_lines) == 0, (
+            "Expected no unlock_all in codegen for all-indirect exclusive LOCK; "
+            "unlock_all should be deferred to lock_indirected() at runtime"
+        )
+
+        # Should pass lockop="" to lock_indirected so it can handle
+        # exclusive semantics at runtime
         assert "lock_indirected" in code
+        assert 'lockop=""' in code
 
     def test_incremental_lock_no_release(self):
         """L +@X (incremental) should NOT emit unlock_all()."""

@@ -715,5 +715,23 @@ def _clean_backend_globals():
 
     M-Unit tests manage their own isolation via the M-Unit framework and
     the transpile_and_execute adapter (output clear, unlock_all, I/O reset).
+
+    We release all locks after each test as a safety net for test isolation.
+    Routines like DMUFINIT acquire hundreds of incremental locks during
+    execution and release them via argumentless LOCK at the end.  This
+    teardown ensures clean isolation if a routine crashes before reaching
+    its own lock-release code.
     """
     yield
+    # Release any locks accumulated during this test.  Global data is
+    # preserved (no kill_all), but stale locks must not carry over.
+    import os
+
+    backend_name = os.environ.get("M2PY_GLOBAL_BACKEND", "inmemory")
+    if backend_name in ("yottadb", "iris"):
+        from m2py.runtime import get_global_storage
+
+        try:
+            get_global_storage(backend_name).unlock_all()
+        except Exception:
+            pass

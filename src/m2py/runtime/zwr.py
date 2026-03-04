@@ -22,6 +22,7 @@ Subscripts:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -520,10 +521,6 @@ def export_zwr(
 #   "LOAD TOTAL              Key Cnt: 2  Max Subsc Len: 9  Max Data Len: 5"
 _MUPIP_KEY_CNT_RE = re.compile(r"Key Cnt:\s*(\d+)")
 
-# ZWR header that MUPIP LOAD requires.  The first line must contain
-# "UTF-8" when ydb_chset=UTF-8, and the second line must say "ZWR".
-_ZWR_MUPIP_HEADER = "YottaDB MUPIP EXTRACT UTF-8\nZWR\n"
-
 
 def _is_ydb_environment() -> bool:
     """Detect whether we are running inside a YottaDB environment."""
@@ -564,21 +561,26 @@ def import_zwr_ydb_native(source: Path) -> int:
     if not _mupip_available():
         raise RuntimeError("mupip not found on PATH — are you inside a YDB container?")
 
-    # Build a subprocess that reads our synthesised ZWR header + the
-    # original file content from stdin.
-    cmd = ["mupip", "load", "-format=zwr", "-stdin", "-ignorechset"]
+    # Build a subprocess that reads the file via stdin.
+    cmd = ["mupip", "load", "-format=zwr", "-stdin"]
+
+    # Force M mode for MUPIP LOAD — VistA ZWR data contains non-UTF8
+    # bytes (e.g. $ZCHAR(167)) that cause %YDB-E-BADCHAR in UTF-8 mode,
+    # aborting the load after only ~17K of ~765K nodes.  The globals are
+    # stored as byte sequences regardless of chset, so reads in UTF-8
+    # mode still work fine after an M-mode load.
+    env = {**os.environ, "ydb_chset": "M"}
 
     try:
         with open(source, "rb") as f:
-            file_data = f.read()
-
-        stdin_data = _ZWR_MUPIP_HEADER.encode("utf-8") + file_data
+            stdin_data = f.read()
 
         result = subprocess.run(
             cmd,
             input=stdin_data,
             capture_output=True,
             timeout=600,  # 10 min ceiling
+            env=env,
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"mupip load timed out after 600s for {source}") from exc
@@ -587,12 +589,17 @@ def import_zwr_ydb_native(source: Path) -> int:
         "utf-8", errors="replace"
     )
 
-    if result.returncode != 0:
+    count = _parse_mupip_key_count(combined)
+
+    # MUPIP returns nonzero when some records fail (e.g. non-global header
+    # lines like "OSEHRA ZGO Export: ^DD").  This is expected — tolerate
+    # FAILEDRECCOUNT as long as data was actually loaded.
+    if result.returncode != 0 and count == 0:
         raise RuntimeError(
             f"mupip load failed (rc={result.returncode}) for {source}:\n{combined}"
         )
 
-    return _parse_mupip_key_count(combined)
+    return count
 
 
 def _parse_mupip_key_count(output: str) -> int:

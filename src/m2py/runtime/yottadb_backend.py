@@ -639,11 +639,9 @@ class YottaDBGlobalStorage:
         # and fail immediately).  MUMPS untimed LOCK waits indefinitely, so we
         # must pass a real timeout.  For an explicit `timeout` we convert to
         # nanoseconds; for `timeout is None` (indefinite) we retry in a loop
-        # with 10-second per-attempt timeouts up to a 300-second safety limit.
-        import time as _time
-
-        _PER_ATTEMPT_NS = 10_000_000_000  # 10 seconds
-        _MAX_INDEFINITE = 300  # 5-minute safety limit
+        # with per-attempt timeouts (matching MUMPS semantics where untimed
+        # LOCK waits until the lock is available).
+        _PER_ATTEMPT_NS = 10_000_000_000  # 10 seconds per attempt
 
         with self._lock:
             self._ensure_initialized()
@@ -665,18 +663,15 @@ class YottaDBGlobalStorage:
                         return False
                     raise self._translate_exception(e)
             else:
-                # Indefinite wait — retry with per-attempt timeouts
-                deadline = _time.monotonic() + _MAX_INDEFINITE
+                # Indefinite wait — retry with per-attempt timeouts.
+                # Per MUMPS spec, untimed LOCK waits until the lock is
+                # available. We approximate this by retrying in a loop.
                 while True:
-                    remaining = deadline - _time.monotonic()
-                    if remaining <= 0:
-                        return False
-                    attempt_ns = min(_PER_ATTEMPT_NS, int(remaining * 1_000_000_000))
                     try:
                         ydb.lock_incr(
                             f"^{name}",
                             list(subscripts),
-                            timeout_nsec=attempt_ns,
+                            timeout_nsec=_PER_ATTEMPT_NS,
                         )
                         self._lock_table[lock_key] = (
                             self._lock_table.get(lock_key, 0) + 1
@@ -684,7 +679,7 @@ class YottaDBGlobalStorage:
                         return True
                     except Exception as e:
                         if self._is_lock_timeout(e):
-                            continue  # retry until deadline
+                            continue  # retry indefinitely
                         raise self._translate_exception(e)
 
     def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
