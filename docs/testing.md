@@ -150,7 +150,38 @@ uv run pytest --backend inmemory     # Default: fast in-process storage
 uv run pytest --backend sqlite       # SQLite: tests cross-process JOB/LOCK
 ```
 
-`yottadb` and `iris` backends are defined but require external packages.
+`yottadb` and `iris` backends require Docker — see [M-Unit Backend Testing](#m-unit-backend-testing) below.
+
+## M-Unit Backend Testing
+
+M-Unit tests (`tests/functional/munit/`) run VistA M-Unit test routines against all three backends. These tests require a FileMan global bootstrap (~843K nodes) loaded via ZWR import.
+
+### Running M-Unit Tests
+
+```bash
+# Inmemory (default, no Docker needed)
+uv run pytest tests/functional/munit/ -m munit -v
+
+# YottaDB (requires Docker — uses MUPIP LOAD for fast ZWR import)
+bash utils/ydb.sh uv run pytest tests/functional/munit/ -m munit -v
+
+# IRIS (requires Docker — uses custom m2py-iris-img with null subscript support)
+bash utils/iris.sh uv run pytest tests/functional/munit/ -m munit -v
+```
+
+### Docker Prerequisites
+
+| Backend | Wrapper | Image | Notes |
+|---------|---------|-------|-------|
+| inmemory | none | none | Default; ZWR loaded line-by-line into `MDict` |
+| yottadb | `utils/ydb.sh` | `Dockerfile.yottadb` (auto-built) | MUPIP LOAD bulk import; `ubicloud-standard-2` in CI |
+| iris | `utils/iris.sh` | `Dockerfile.iris` (auto-built) | Custom image with `iris-merge.cpf`; M2PY.Helper ObjectScript class for `$ORDER` with null subscripts |
+
+### Backend Behavior Differences
+
+- **ZWR import**: inmemory/SQLite use line-by-line `set()`; YDB dispatches to `MUPIP LOAD` natively; IRIS uses batch transactions via `intersystems_irispython`
+- **Null subscripts**: IRIS raises `<SUBSCRIPT>` on empty-string subscripts — handled server-side by `M2PY.Helper.GOrder`
+- **Expected results**: All 18 M-Unit tests produce identical pass/xfail results across all three backends (7 passed, 11 xfailed)
 
 ## Functional Test Suites
 

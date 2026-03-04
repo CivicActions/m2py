@@ -4,7 +4,7 @@
 #   - lint: ruff + ty
 #   - test: 3 backends × 6 splits - 2 exclusions = 16 test jobs
 #
-# Backends: inmemory (parallel via xdist), yottadb (Docker), iris (Docker service)
+# Backends: inmemory (parallel via xdist), yottadb (Docker), iris (Docker, custom image)
 # Splits:   unit, functional-mvts, functional-other, slow, quality (inmemory only), munit
 
 name: CI
@@ -59,7 +59,7 @@ jobs:
   # -----------------------------------------------------------------------
   test:
     name: test (${{ matrix.backend }}, ${{ matrix.split }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
     timeout-minutes: ${{ (matrix.split == 'slow' || matrix.split == 'quality' || matrix.split == 'munit') && 40 || 20 }}
     strategy:
       fail-fast: false
@@ -72,6 +72,11 @@ jobs:
             split: quality
           - backend: iris
             split: quality
+        include:
+          # YDB munit tests need more resources
+          - backend: yottadb
+            split: munit
+            runner: ubicloud-standard-2
 
     env:
       # IRIS connection defaults (used only when backend=iris)
@@ -130,14 +135,28 @@ jobs:
           cache-from: type=gha,scope=ydb-build
           cache-to: type=gha,mode=max,scope=ydb-build
 
-      # ── IRIS: start container ─────────────────────────────────────
+      # ── IRIS: build custom image + start container ────────────────
+      - uses: docker/setup-buildx-action@v3
+        if: matrix.backend == 'iris'
+
+      - name: Build IRIS Docker image
+        if: matrix.backend == 'iris'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.iris
+          load: true
+          tags: m2py-iris-img
+          cache-from: type=gha,scope=iris-build
+          cache-to: type=gha,mode=max,scope=iris-build
+
       - name: Start IRIS container
         if: matrix.backend == 'iris'
         run: |
           docker run -d \
             --name m2py-iris \
             -p 1972:1972 \
-            intersystemsdc/iris-community:latest \
+            m2py-iris-img \
             --check-caps false
 
           # Wait for IRIS to be ready (up to 120s)
@@ -150,10 +169,6 @@ jobs:
             echo -n "."
             sleep 2
           done
-
-          # Fix expired default password on fresh community images
-          echo -e 'set p("Password")="SYS"\nset p("PasswordNeverExpires")=1\nset sc=##class(Security.Users).Modify("_SYSTEM",.p)\nhalt' \
-            | docker exec -i m2py-iris iris session IRIS -U "%SYS" >/dev/null 2>&1 || true
 
       # ── Run tests ─────────────────────────────────────────────────
       - name: Run tests

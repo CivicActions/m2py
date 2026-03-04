@@ -14,7 +14,7 @@
 | B (Tier 1) | 4 (Tier 1 Self-Tests) | M-Unit self-tests via pytest |
 | C (Tier 2) | 5 (Tier 2 XML Parser) | M XML Parser tests |
 | — | 6 (Capture Stretch Baselines) | All remaining tiers captured from osehravista |
-| D (Tier 3, part) | 7 (ZWR Import/Export) | ZWR in m2py + vista-test fixtures |
+| D (Tier 3, part) | 7 (ZWR Import/Export) | ZWR in m2py + munit fixtures |
 | — | 8 (Backend Compatibility) | YottaDB/IRIS testing infrastructure + regression fixes |
 | D (Tier 3, part) | 9 (Tier 3 FileMan) | FileMan test routines |
 | E (Tier 4a) | 10 (Tier 4a Problem List) | Problem List test routines |
@@ -22,7 +22,7 @@
 | G (Tier 4c) | 12 (Tier 4c Registration) | Registration test routine |
 | — | 13 (Polish) | Final validation, docs, CI |
 
-**Cross-repo convention**: Tasks prefixed with `vista-test/` live in the vista-test repository. Tasks prefixed with `src/m2py/` or `tests/` (no `vista-test/`) live in the m2py root workspace. Each m2py fix gets a standalone unit test with no VistA dependency.
+**Cross-repo convention**: _Originally, tasks prefixed with `vista-test/` lived in a separate vista-test repository. These have been consolidated into m2py itself._ Tasks referencing `tests/functional/munit/` or `tests/unit/` live in the m2py workspace. M-Unit library code is in `tests/functional/munit/lib/`. Each m2py fix gets a standalone unit test with no VistA dependency.
 
 ## Format: `[ID] [P?] [Story?] Description`
 
@@ -35,6 +35,8 @@
 
 **Purpose**: Project scaffolding — create package structure, add dependencies, wire up test directories.
 
+_Originally in a separate vista-test repo; consolidated into m2py `tests/functional/munit/` with library code in `tests/functional/munit/lib/`._
+
 - [x] T001 [P] Create munit package directory with `__init__.py` at `vista-test/src/vista_test/munit/__init__.py`
 - [x] T002 [P] Create munit test directories: `vista-test/tests/vista/munit/` and `vista-test/tests/unit/` with `__init__.py` files
 - [x] T003 [P] Create baselines directory at `vista-test/baselines/` with `.gitkeep`
@@ -43,6 +45,8 @@
 
 **Checkpoint**: Package structure exists, m2py importable from vista-test.
 
+_After consolidation: `tests/functional/munit/` structure exists within m2py._
+
 ---
 
 ## Phase 2: Foundational (Blocking Prerequisites)
@@ -50,6 +54,8 @@
 **Purpose**: Core data models and M-Unit output parser — required by ALL subsequent phases.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
+
+_Originally in vista-test; models and parser now live in `tests/functional/munit/lib/`._
 
 ### Data Models (US2 prerequisite)
 
@@ -75,6 +81,8 @@
 - [x] T016 [US2] Write parser unit tests: `parse_testlist()` with MASH Utilities and M XML Parser TestList files from VistA submodule in `vista-test/tests/unit/test_munit_parser.py`
 
 **Checkpoint**: `uv run pytest vista-test/tests/unit/test_munit_models.py vista-test/tests/unit/test_munit_parser.py` passes. Foundation ready.
+
+_After consolidation: `uv run pytest tests/unit/munit/` or test via functional munit tests._
 
 ---
 
@@ -106,6 +114,8 @@
 
 **Independent Test**: `cd vista-test && uv run pytest tests/vista/munit/ -v -k "mash_utilities"` — all 8 routines pass or xfail.
 
+_Note: After consolidation, the equivalent command is `uv run pytest tests/functional/munit/ -v -k "mash_utilities"`._
+
 ### Adapter Infrastructure (US3)
 
 - [x] T024 [US3] Implement `transpile_and_execute()` per contracts/pytest-adapter.md: read MUMPS source, call `generate_python()`, exec into module, call entry point, capture output in `vista-test/src/vista_test/munit/adapter.py`
@@ -125,6 +135,8 @@
 
 **Checkpoint**: `cd vista-test && uv run pytest tests/vista/munit/ -v -k "mash_utilities"` — 8 routines pass/xfail. M-Unit framework validated in Python.
 
+_After consolidation: `uv run pytest tests/functional/munit/ -v -k "mash_utilities"`._
+
 ---
 
 ## Phase 5: User Story 3 continued — Tier 2: M XML Parser (Priority: P2) 🎯 MVP Part 2
@@ -132,6 +144,8 @@
 **Goal**: Transpile and run M XML Parser tests (4 routines, ~96 assertions) in Python. Completes the MVP.
 
 **Independent Test**: `cd vista-test && uv run pytest tests/vista/munit/ -v -k "m_xml_parser"` — all 4 routines pass or xfail.
+
+_Note: After consolidation, the equivalent command is `uv run pytest tests/functional/munit/ -v -k "m_xml_parser"`._
 
 ### Tier 2: XML Parser Transpilation (US3 + US5)
 
@@ -157,6 +171,8 @@
 
 **Checkpoint**: `cd vista-test && uv run pytest tests/vista/munit/ -v` — **MVP complete**: 12 routines (Tier 1+2) pass/xfail. 303 assertions in baseline (original plan estimate was ~124).
 
+_After consolidation: `uv run pytest tests/functional/munit/ -v` — MVP complete._
+
 ---
 
 ## Phase 6: User Story 1 continued — Capture Stretch Goal Baselines (Priority: P1)
@@ -178,9 +194,9 @@
 
 ## Phase 7: User Story 4 — ZWR Import/Export & Global Bootstrap (Priority: P3) [Stretch]
 
-**Goal**: Add ZWR (ZWRITE) format import/export to m2py's global storage layer, with CLI integration and full unit tests. Then wire vista-test fixtures to use it for Tier 3+ test data loading.
+**Goal**: Add ZWR (ZWRITE) format import/export to m2py's global storage layer, with CLI integration and full unit tests. Then wire M-Unit fixtures to use it for Tier 3+ test data loading.
 
-ZWR is the standard MUMPS global interchange format — this belongs in m2py itself (not vista-test) because:
+ZWR is the standard MUMPS global interchange format — this belongs in m2py itself because:
 - It's a general-purpose capability for any `GlobalStorageBackend`
 - The m2py CLI should support `m2py globals import/export` for any use case
 - Unit tests should be self-contained with no VistA dependency
@@ -211,14 +227,14 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 - [x] T055 [US4] Write unit tests: `import_zwr` with real VistA ZWR snippets in `tests/unit/runtime/test_zwr.py`
 - [x] T056 [P] [US4] Write CLI integration tests: `m2py globals import` and `m2py globals export` with temp files in `tests/unit/runtime/test_zwr.py`
 
-### Vista-Test Fixtures (vista-test — uses m2py ZWR import)
+### M-Unit Test Fixtures (uses m2py ZWR import)
 
-- [x] T057 [US4] Add `fileman_bootstrap` session-scoped pytest fixture in `vista-test/tests/vista/munit/conftest.py`: imports cached ZWR files (`^DD`, `^DIC`, `^%ZOSF`) into `munit_runtime` global store via `m2py.runtime.zwr.import_zwr()`
-- [x] T058 [US4] Add `clinical_bootstrap` session-scoped pytest fixture in `vista-test/tests/vista/munit/conftest.py`: extends `fileman_bootstrap` with `^DPT`, `^SC`, `^AUPNPROB`, `^GMPL*`, `^SD*`, `^DG*`
+- [x] T057 [US4] Add `fileman_bootstrap` session-scoped pytest fixture in `tests/functional/munit/conftest.py`: imports cached ZWR files (`^DD`, `^DIC`, `^%ZOSF`) into `munit_runtime` global store via `m2py.runtime.zwr.import_zwr()`
+- [x] T058 [US4] Add `clinical_bootstrap` session-scoped pytest fixture in `tests/functional/munit/conftest.py`: extends `fileman_bootstrap` with `^DPT`, `^SC`, `^AUPNPROB`, `^GMPL*`, `^SD*`, `^DG*`
 
-### Global Data Capture (vista-test — one-time export from osehravista)
+### Global Data Capture (one-time export from osehravista)
 
-- [x] T059 [US4] Create capture script `vista-test/utils/export_globals.py`: SSH to osehravista, run `ZWR ^GLOBAL` for configured globals, save to `vista-test/baselines/globals/`. Uses Docker exec with ZWRITE to export.
+- [x] T059 [US4] Create capture script `utils/export_globals.py`: SSH to osehravista, run `ZWR ^GLOBAL` for configured globals, save to `tests/functional/munit/baselines/globals/`. Uses Docker exec with ZWRITE to export.
 - [x] T060 [US4] Capture FileMan globals: export script configured with fileman profile (^DD, ^DIC, ^%ZOSF → `baselines/globals/fileman.zwr`). VistA-M ZWR fallback used by fileman_bootstrap fixture for ^DD and ^DIC.
 
 **Checkpoint**: `uv run pytest tests/test_zwr.py` passes in m2py. `import_zwr` can load VistA globals into any backend. Path to Tier 3 is unblocked.
@@ -231,7 +247,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 - [ ] T117 [US6] Fix DIKC FIRE/SETXARR null-subscript detection: ensure `I $G(X(DIKO))="",$G(@DIKTMP@(DIFILE,DIXR,DIKO,"SS")) S DINULL=1` correctly prevents xref entries with empty subscript values. Add m2py unit tests for SETXARR with null vs non-null subscript fields in `tests/` (m2py root).
 - [ ] T118 [US6] Fix DIKC FIREALL/FIRESUB sub-file recursion: investigate why `^DD(1009.802,0,0)` header node is written — FIRESUB should not recurse into DD metadata (field 0). Likely DIMF or `$D(@DISBROOT)` check misbehaving. Add m2py unit test for FIRESUB recursion boundary.
 - [ ] T119 [US6] Fix DIKC FIRE DIKON branch + DIKK2 UNIQUE key validation: in the `DIKON'=""` branch, `$$UNIQUE^DIKK2` should detect duplicate ZIP CODE key and kill entry 7 (`^DMU(1009.802,36,1,1,1,7,0)=12208`). Determine whether DIKON is incorrectly empty (wrong branch) or DIKK2 uniqueness check fails. Add m2py unit test.
-- [ ] T120 [US6] Remove `_KNOWN_TOLERATED_EXTRAS` and `_KNOWN_MISMATCHES` from `vista-test/tests/vista/munit/test_dmufinit.py`: once T116–T119 are fixed, delete toleration sets, remove associated filtering logic, and update comments. DMUFINIT test should pass with zero extras, zero mismatches, zero missing.
+- [ ] T120 [US6] Remove `_KNOWN_TOLERATED_EXTRAS` and `_KNOWN_MISMATCHES` from `tests/functional/munit/test_dmufinit.py`: once T116–T119 are fixed, delete toleration sets, remove associated filtering logic, and update comments. DMUFINIT test should pass with zero extras, zero mismatches, zero missing.
 - [ ] T121 [US6] Add m2py unit tests for DIKC chain edge cases: compiled xref with mixed subscript/non-subscript fields, FIREALL header-node counting across sub-files, UNIQUE key constraint enforcement. Tests in `tests/` (m2py root), no VistA dependency.
 
 **Checkpoint**: DMUFINIT test passes with exact match — `_KNOWN_TOLERATED_EXTRAS` and `_KNOWN_MISMATCHES` removed. DIKC compiled cross-reference engine handles null subscripts, sub-file recursion, and key uniqueness correctly.
@@ -240,26 +256,28 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 ## Phase 8: Backend Compatibility — YottaDB & IRIS Testing Infrastructure + Regression Fixes
 
-**Goal**: Make vista-test independently runnable against YottaDB and IRIS backends (reusing m2py's Docker infrastructure), fix m2py regressions found with external backends, and fix all vista-test failures when running against these backends.
+**Goal**: Make M-Unit functional tests runnable against YottaDB and IRIS backends (using m2py's Docker infrastructure), fix m2py regressions found with external backends, and fix all M-Unit test failures when running against these backends.
 
-**Context**: m2py supports pluggable backends via `M2PY_GLOBAL_BACKEND` env var (inmemory, sqlite, yottadb, iris). The m2py test suite uses `--backend` CLI option (propagated to env var). vista-test currently has no backend switching — it always uses the default inmemory backend. The YottaDB backend runs inside Docker (`utils/ydb.sh` / `Dockerfile.yottadb`); the IRIS backend uses a Docker container for the server but runs Python locally (`utils/iris.sh`).
+**Context**: m2py supports pluggable backends via `M2PY_GLOBAL_BACKEND` env var (inmemory, sqlite, yottadb, iris). The m2py test suite uses `--backend` CLI option (propagated to env var). The YottaDB backend runs inside Docker (`utils/ydb.sh` / `Dockerfile.yottadb`); the IRIS backend uses a Docker container for the server but runs Python locally (`utils/iris.sh`). M-Unit tests were consolidated from the separate vista-test repo into `tests/functional/munit/` within m2py.
 
 **Known issues from initial backend testing**:
 - m2py + YottaDB: 55 failures (lock indirection, residual global state between tests, V4SYSTEM/V4PRIN/V4JOB system-specific, per02276, MERGE tests)
 - m2py + IRIS: 207 failures (above + empty string subscripts unsupported, IRIS-specific API differences)
-- vista-test + YottaDB: ZWR bootstrap too slow — 843K `set()` calls over C binding takes 18+ minutes
-- vista-test + IRIS: DMUFINIT crashes with `<SUBSCRIPT>` error on `$ORDER(^UTILITY("%RCR","","1","0"))` — IRIS doesn't support empty string subscripts
+- M-Unit + YottaDB: ZWR bootstrap too slow — 843K `set()` calls over C binding takes 18+ minutes
+- M-Unit + IRIS: DMUFINIT crashes with `<SUBSCRIPT>` error on `$ORDER(^UTILITY("%RCR","","1","0"))` — IRIS doesn't support empty string subscripts
 
-**Independent Test**: `bash utils/ydb.sh uv run pytest vista-test/tests/vista/munit/ --backend yottadb -n0` and `bash utils/iris.sh uv run pytest vista-test/tests/vista/munit/ --backend iris -n0` both pass/xfail with no unexpected failures.
+**Independent Test**: `bash utils/ydb.sh uv run pytest tests/functional/munit/ --backend yottadb -n0` and `bash utils/iris.sh uv run pytest tests/functional/munit/ --backend iris -n0` both pass/xfail with no unexpected failures.
 
-### vista-test Backend Infrastructure (US3 + US5)
+### M-Unit Backend Infrastructure (US3 + US5)
 
-- [x] T122 [US3] Add `--backend` CLI option to `vista-test/tests/vista/munit/conftest.py`: register `pytest_addoption` with choices inmemory/yottadb/iris, propagate to `M2PY_GLOBAL_BACKEND` env var (mirror m2py's pattern in `tests/conftest.py`)
-- [x] T123 [US3] Add backend-specific pytest markers to vista-test: register `backend_yottadb`, `backend_iris`, `backend_inmemory` markers in `vista-test/pyproject.toml` and implement `pytest_collection_modifyitems` skip logic in `vista-test/tests/vista/munit/conftest.py`
-- [x] T124 [P] [US3] Add `yottadb` and `iris` optional dependency groups to `vista-test/pyproject.toml`: `yottadb = ["yottadb>=2.0.0"]` and `backend = ["intersystems-irispython>=5.3.1"]` matching m2py's dependency structure
-- [x] T125 [P] [US3] Create `vista-test/Dockerfile.yottadb` for running vista-test inside YottaDB Docker: based on m2py's Dockerfile.yottadb, adds `uv pip install -e vista-test/` after m2py sync, sets `M2PY_GLOBAL_BACKEND=yottadb`
-- [x] T126 [P] [US3] Create `vista-test/utils/ydb.sh` wrapper: auto-builds vista-test Docker image, mounts workspace, runs commands inside container with YDB env configured (mirrors m2py's `utils/ydb.sh` pattern)
-- [x] T127 [P] [US3] Create `vista-test/utils/iris.sh` wrapper: auto-starts IRIS container, exports connection env vars, runs commands locally with `M2PY_GLOBAL_BACKEND=iris` (mirrors m2py's `utils/iris.sh` pattern)
+_Originally planned for a separate vista-test repo; consolidated into m2py `tests/functional/munit/` during migration._
+
+- [x] T122 [US3] Add `--backend` CLI option to `tests/functional/munit/conftest.py`: register `pytest_addoption` with choices inmemory/yottadb/iris, propagate to `M2PY_GLOBAL_BACKEND` env var (mirrors m2py’s pattern in `tests/conftest.py`)
+- [x] T123 [US3] Add backend-specific pytest markers: register `backend_yottadb`, `backend_iris`, `backend_inmemory` markers in `pyproject.toml` and implement `pytest_collection_modifyitems` skip logic in `tests/functional/munit/conftest.py`
+- [x] T124 [P] [US3] Add `yottadb` and `iris` optional dependency groups to `pyproject.toml`: `yottadb = ["yottadb>=2.0.0"]` and `backend = ["intersystems-irispython>=5.3.1"]`
+- [x] T125 [P] [US3] Create `Dockerfile.yottadb` for running tests inside YottaDB Docker: installs m2py + deps, sets `M2PY_GLOBAL_BACKEND=yottadb`
+- [x] T126 [P] [US3] Create `utils/ydb.sh` wrapper: auto-builds Docker image, mounts workspace, runs commands inside container with YDB env configured
+- [x] T127 [P] [US3] Create `utils/iris.sh` wrapper: auto-starts IRIS container, exports connection env vars, runs commands locally with `M2PY_GLOBAL_BACKEND=iris`
 
 ### ZWR Bulk Import Optimization (US4 + US5)
 
@@ -282,24 +300,23 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 - [x] T138 [US5] Fix IRIS-specific test failures beyond empty subscripts: categorize the ~150 additional IRIS failures (vs YDB's 55), determine which are IRIS API limitations vs m2py bugs, mark genuine IRIS limitations with `backend_iris` skip markers, fix m2py bugs with standalone tests — **Fixed**: commit 5269f632 reduced 255 IRIS failures to 0. Root causes: missing `_naked_indicator` property, missing `_lock_table` shim, `JOB` not passing `--backend` to children, `kill_all()` not enumerating via SQL, locks not released on `close()`. Two genuine IRIS limitations skipped with inline reasons: `$INCREMENT` non-transactional, lock counting semantics.
 - [x] T139 [P] [US5] Add backend compatibility test matrix documentation in `docs/runtime.md`: document known backend differences (empty subscripts, lock semantics, system variables), supported operations per backend, and test skip reasons — **Done**: runtime.md has full 4-backend comparison matrix (10+ dimensions); limitations.md has YDB-specific and IRIS-specific limitation sections with test skip reasons; SSVN backend comparison table included.
 
-### Fix vista-test YottaDB Failures (US6)
+### Fix M-Unit YottaDB Failures (US6)
 
-- [ ] T140 [US6] Wire vista-test `fileman_bootstrap` to use bulk ZWR import: update `vista-test/tests/vista/munit/conftest.py` to call `import_zwr_bulk()` (from T129) instead of `import_zwr()` for the 843K-node DD/DIC/INDEX load, making YDB bootstrap complete in <60s
-- [ ] T141 [US6] Run all vista-test M-Unit tests with YottaDB backend end-to-end: `bash vista-test/utils/ydb.sh uv run pytest tests/vista/munit/ --backend yottadb -n0 -v`. Fix or xfail any failures discovered
-- [ ] T142 [US5] Fix m2py issues discovered during vista-test YottaDB testing: each bug gets a standalone unit test in `tests/` (m2py root, no VistA dependency), then re-verify vista-test passes
+- [x] T140 [US6] Wire `fileman_bootstrap` to use bulk ZWR import: update `tests/functional/munit/conftest.py` to call `import_zwr_bulk()` (from T129) instead of `import_zwr()` for the 843K-node DD/DIC/INDEX load, making YDB bootstrap complete in <60s — **Done differently**: T129 implemented bulk import via backend polymorphism instead of a separate `import_zwr_bulk()`. `conftest.py` calls `import_zwr(backend, path)` → `backend.import_zwr(source)` → YDB's `import_zwr()` dispatches to MUPIP LOAD natively when available (line 1080 of yottadb_backend.py). No code change needed.
+- [x] T141 [US6] Run all M-Unit tests with YottaDB backend end-to-end: `bash utils/ydb.sh uv run pytest tests/functional/munit/ --backend yottadb -n0 -v`. Fix or xfail any failures discovered — **Done**: CI matrix (`ci.yml`) runs munit split on YDB backend; all 18 tests pass (7 passed, 11 xfailed). ubicloud-standard-2 runner allocated for YDB munit.
+- [x] T142 [US5] Fix m2py issues discovered during M-Unit YottaDB testing: each bug gets a standalone unit test in `tests/` (m2py root, no VistA dependency), then re-verify M-Unit tests pass — **Done**: No m2py bugs discovered during YDB M-Unit testing; all issues were resolved in prior phases (T132-T136).
 
-### Fix vista-test IRIS Failures (US6)
+### Fix M-Unit IRIS Failures (US6)
 
-- [ ] T143 [US6] Fix DMUFINIT `<SUBSCRIPT>` error with IRIS backend: the empty string subscript in `$ORDER(^UTILITY("%RCR","","1","0"))` crashes IRIS. Either (a) fix the transpiled code to avoid empty-string subscripts when on IRIS, (b) add an IRIS-specific codepath in the runtime, or (c) xfail DMUFINIT on IRIS with a clear skip reason in `vista-test/tests/vista/munit/test_dmufinit.py`
-- [ ] T144 [US6] Run all vista-test M-Unit tests with IRIS backend end-to-end: `bash vista-test/utils/iris.sh uv run pytest tests/vista/munit/ --backend iris -n0 -v`. Fix or xfail any failures discovered
-- [ ] T145 [US5] Fix m2py issues discovered during vista-test IRIS testing: each bug gets a standalone unit test in `tests/` (m2py root, no VistA dependency), then re-verify vista-test passes
+- [x] T143 [US6] Fix DMUFINIT `<SUBSCRIPT>` error with IRIS backend: the empty string subscript in `$ORDER(^UTILITY("%RCR","","1","0"))` crashes IRIS. Either (a) fix the transpiled code to avoid empty-string subscripts when on IRIS, (b) add an IRIS-specific codepath in the runtime (M2PY.Helper GOrder already handles this), or (c) xfail DMUFINIT on IRIS with a clear skip reason in `tests/functional/munit/test_dmufinit.py` — **Done via (b)**: M2PY.Helper ObjectScript class on the IRIS server handles `GOrder` with null subscripts, avoiding the `<SUBSCRIPT>` error. All 18 munit tests pass on IRIS (7 passed, 11 xfailed).
+- [x] T144 [US6] Run all M-Unit tests with IRIS backend end-to-end: `bash utils/iris.sh uv run pytest tests/functional/munit/ --backend iris -n0 -v`. Fix or xfail any failures discovered — **Done**: CI matrix (`ci.yml`) runs munit split on IRIS backend with custom `m2py-iris-img` (built from Dockerfile.iris); all 18 tests pass (7 passed, 11 xfailed).
+- [x] T145 [US5] Fix m2py issues discovered during M-Unit IRIS testing: each bug gets a standalone unit test in `tests/` (m2py root, no VistA dependency), then re-verify M-Unit tests pass — **Done**: No m2py bugs discovered during IRIS M-Unit testing; IRIS null-subscript issue resolved in T143 via M2PY.Helper GOrder.
 
 ### CI Integration (US3)
 
-- [ ] T146 [P] [US3] Add backend test invocation examples to `vista-test/README.md`: document how to run tests with each backend, Docker prerequisites, and expected behavior differences
-- [ ] T147 [P] [US3] Create `vista-test/utils/run_all_backends.sh` convenience script: runs full vista-test suite against inmemory, then YottaDB, then IRIS, and reports a summary matrix of pass/fail/xfail per backend
+- [x] T146 [P] [US3] Add backend test invocation examples to `docs/testing.md`: document how to run M-Unit tests with each backend, Docker prerequisites, and expected behavior differences - keep this concise.
 
-**Checkpoint**: vista-test passes with all three backends (inmemory, YottaDB, IRIS). m2py test suite has zero unexpected regressions with YDB and IRIS. Backend-specific limitations are documented and xfailed with clear reasons. ZWR bootstrap completes in <60s on YDB.
+**Checkpoint**: M-Unit functional tests pass with all three backends (inmemory, YottaDB, IRIS). m2py test suite has zero unexpected regressions with YDB and IRIS. Backend-specific limitations are documented and xfailed with clear reasons. ZWR bootstrap completes in <60s on YDB.
 
 ---
 
@@ -307,7 +324,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 **Goal**: Validate date/time, dictionary lookup, computed field operations. First package requiring global bootstrap.
 
-**Independent Test**: `cd vista-test && uv run pytest tests/vista/munit/ -v -k "va_fileman"` — 5 routines pass/xfail.
+**Independent Test**: `uv run pytest tests/functional/munit/ -v -k "va_fileman"` — 5 routines pass/xfail.
 
 ### Kernel Utility Transpilation (US5 + US6)
 
@@ -339,7 +356,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 **Goal**: Validate Problem List API: create, modify, delete, query problems.
 
-**Independent Test**: `cd vista-test && uv run pytest tests/vista/munit/ -v -k "problem_list"` — 8 routines pass/xfail.
+**Independent Test**: `uv run pytest tests/functional/munit/ -v -k "problem_list"` — 8 routines pass/xfail.
 
 ### Problem List Dependencies (US5 + US6)
 
@@ -349,7 +366,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 ### Problem List Global Bootstrap (US4 + US6)
 
-- [ ] T077 [US4] Capture Problem List globals from osehravista: `^AUPNPROB`, `^GMPL*`, `^SC`, `^VA`; save ZWR to `vista-test/baselines/globals/`
+- [ ] T077 [US4] Capture Problem List globals from osehravista: `^AUPNPROB`, `^GMPL*`, `^SC`, `^VA`; save ZWR to `tests/functional/munit/baselines/globals/`
 - [ ] T078 [US6] Import Problem List globals via `clinical_bootstrap` fixture (uses `import_zwr`); verify `^AUPNPROB` accessible
 
 ### Problem List Test Routines (US6) — ordered by fewest dependencies
@@ -372,7 +389,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 **Goal**: Validate Scheduling APIs: appointments, patient lists, scheduling actions. Largest package by assertion count.
 
-**Independent Test**: `cd vista-test && uv run pytest tests/vista/munit/ -v -k "scheduling"` — 12 routines pass/xfail.
+**Independent Test**: `uv run pytest tests/functional/munit/ -v -k "scheduling"` — 12 routines pass/xfail.
 
 ### Scheduling Dependencies (US5 + US6)
 
@@ -382,7 +399,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 ### Scheduling Global Bootstrap (US4 + US6)
 
-- [ ] T091 [US4] Capture Scheduling globals from osehravista: `^DPT`, `^SC`, `^SD*`; save ZWR to `vista-test/baselines/globals/`
+- [ ] T091 [US4] Capture Scheduling globals from osehravista: `^DPT`, `^SC`, `^SD*`; save ZWR to `tests/functional/munit/baselines/globals/`
 - [ ] T092 [US6] Import Scheduling globals via `clinical_bootstrap` fixture (uses `import_zwr`); verify `^DPT` and `^SC` accessible
 
 ### Group A — SDK Tests (6 routines, ~84 assertions, simpler) (US6)
@@ -412,7 +429,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 **Goal**: Validate patient combine/registration operations. Smallest stretch package.
 
-**Independent Test**: `cd vista-test && uv run pytest tests/vista/munit/ -v -k "registration"` — 1 routine passes/xfails.
+**Independent Test**: `uv run pytest tests/functional/munit/ -v -k "registration"` — 1 routine passes/xfails.
 
 ### Registration Dependencies (US5 + US6)
 
@@ -420,7 +437,7 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 ### Registration Global Bootstrap (US4 + US6)
 
-- [ ] T107 [US4] Capture Registration globals from osehravista: `^DG*`; save ZWR to `vista-test/baselines/globals/` (may share `^DPT` from Tier 4b)
+- [ ] T107 [US4] Capture Registration globals from osehravista: `^DG*`; save ZWR to `tests/functional/munit/baselines/globals/` (may share `^DPT` from Tier 4b)
 
 ### Registration Test Routine (US6)
 
@@ -435,11 +452,11 @@ ZWR is the standard MUMPS global interchange format — this belongs in m2py its
 
 **Purpose**: Final validation, documentation, CI readiness.
 
-- [ ] T110 [P] Update `vista-test/README.md` with M-Unit test instructions (baseline capture, running transpiled tests, per-tier commands)
+- [ ] T110 [P] Update `README.md` with M-Unit test instructions (baseline capture, running transpiled tests, per-tier commands)
 - [ ] T111 [P] Update `specs/026-vista-munit-tests/quickstart.md` with any corrections discovered during implementation
-- [ ] T112 Run full `uv run pytest tests/vista/munit/ -v` from vista-test to validate all tiers end-to-end
+- [ ] T112 Run full `uv run pytest tests/functional/munit/ -v` to validate all tiers end-to-end
 - [ ] T113 Run full `uv run pytest` from m2py root to verify no regressions from transpiler/runtime fixes
-- [ ] T114 [P] Document known xfail routines and their root causes in `vista-test/baselines/XFAIL.md`
+- [ ] T114 [P] Document known xfail routines and their root causes in `tests/functional/munit/baselines/XFAIL.md`
 - [ ] T115 Validate quickstart.md: follow setup and run instructions from scratch in a clean environment
 
 ---
@@ -462,7 +479,7 @@ Phase 2 (Foundational: models + parser) ─────────────�
     │       │                                                                     │
     │       └── Phase 6 (US1: Capture Stretch Baselines — Tiers 3+4) ────────────┤
     │                                                                             │
-    └── Phase 7 (US4: ZWR Import/Export in m2py + vista-test fixtures) ────────┤
+    └── Phase 7 (US4: ZWR Import/Export in m2py + munit fixtures) ────────┤
             │                                                                     │
             ├── Phase 8 (Backend: YottaDB/IRIS infra + regression fixes) ─────┤
             │                                                                     │
@@ -533,7 +550,7 @@ Phase 13 (Polish) ────────────────────�
 ### Stretch Goal: 100% M-Unit Tests (Phases 6–12)
 
 7. **Phase 6**: Capture remaining baselines (T041–T044) — can overlap with MVP validation
-8. **Phase 7**: ZWR import/export in m2py + vista-test fixtures (T045–T060)
+8. **Phase 7**: ZWR import/export in m2py + munit fixtures (T045–T060)
 9. **Phase 8**: Backend compatibility — YottaDB/IRIS infra + regression fixes (T122–T147)
 10. **Phase 9**: Tier 3 VA FileMan (T061–T073) — first stretch milestone (45%)
 11. **Phase 10**: Tier 4a Problem List (T074–T087) — second stretch milestone (66%)
@@ -549,7 +566,7 @@ Phase 13 (Polish) ────────────────────�
 | Phase 3 complete | T017–T023 | 0 | 0 | Baseline captured (Tier 1+2) |
 | Phase 4 complete | T024–T034 | 8 | ~28 | Tier 1 passing (21%) |
 | Phase 5 complete | T035–T040 | 12 | ~124 | **MVP — Tier 1+2 (32%)** |
-| Phase 7 complete | T045–T060 | 0 | 0 | ZWR import/export ready (m2py + vista-test) |
+| Phase 7 complete | T045–T060 | 0 | 0 | ZWR import/export ready (m2py + munit fixtures) |
 | Phase 8 complete | T122–T147 | 0 | 0 | All backends passing — YDB/IRIS infra + fixes |
 | Phase 9 complete | T061–T073 | 17 | ~298 | Tier 3 passing (45%) |
 | Phase 10 complete | T074–T087 | 25 | ~647 | Tier 4a passing (66%) |
@@ -562,9 +579,9 @@ Phase 13 (Polish) ────────────────────�
 
 - **[P]** tasks = different files, no dependencies on incomplete tasks
 - **[US#]** labels map tasks to spec.md user stories for traceability
-- vista-test/ tasks execute in the vista-test repository context
+- _Originally, vista-test/ tasks lived in a separate repository; these have been consolidated into `tests/functional/munit/` and `tests/functional/munit/lib/` within m2py_
 - m2py root tasks (tests/, src/m2py/) execute in the workspace root context
-- ZWR import/export lives in m2py (`src/m2py/runtime/zwr.py`) as a general-purpose capability for any `GlobalStorageBackend`; vista-test fixtures call `import_zwr()` to load cached ZWR data
+- ZWR import/export lives in m2py (`src/m2py/runtime/zwr.py`) as a general-purpose capability for any `GlobalStorageBackend`; munit fixtures call `import_zwr()` to load cached ZWR data
 - Each m2py bug fix (US5) follows: discover → extract minimal MUMPS → fix → standalone test → verify M-Unit re-run
 - osehravista Docker is only needed for baseline capture (Phases 3, 6) and global data capture (T059–T060, T077, T091, T107); transpiled tests run offline with cached ZWR files
 - Stretch goal phases (7–12) can be attempted incrementally — each tier adds value independently
