@@ -1532,10 +1532,16 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
                 sub_exprs = [generate_expr(sub, ctx) for sub in inner_subscripts]
                 if len(sub_exprs) == 1:
                     full_name_expr = (
-                        "'" + base_name + "(' + str(" + sub_exprs[0] + ") + ')'"
+                        "'"
+                        + base_name
+                        + "(' + _format_subscript("
+                        + sub_exprs[0]
+                        + ") + ')'"
                     )
                 else:
-                    subs_parts = " + ',' + ".join("str(" + s + ")" for s in sub_exprs)
+                    subs_parts = " + ',' + ".join(
+                        "_format_subscript(" + s + ")" for s in sub_exprs
+                    )
                     full_name_expr = "'" + base_name + "(' + " + subs_parts + " + ')'"
             else:
                 full_name_expr = f'"{base_name}"'

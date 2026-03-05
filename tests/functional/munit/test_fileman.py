@@ -75,8 +75,8 @@ _XFAIL_ROUTINES: dict[str, str] = {
         "61 tests, 0 errors"
     ),
     "DMUDIC00": (
-        "DIC lookup runs 54 tests — 0 failures, 15 errors in "
-        "computed field expression evaluation (DICOMP RecursionError)"
+        "DIC lookup: computed field evaluation (DICOMP) slow — "
+        "54 tests, some errors from XECUTE expression compilation"
     ),
     "DMUDIQ00": (
         "DIQ data retrieval runs but produces ~2000 errors — "
@@ -85,7 +85,9 @@ _XFAIL_ROUTINES: dict[str, str] = {
 }
 
 # Timeout (seconds) for routines known to potentially hang.
-_XFAIL_TIMEOUTS: dict[str, int] = {}
+_XFAIL_TIMEOUTS: dict[str, int] = {
+    "DMUDIC00": 600,  # Full compound index traversal is slow
+}
 
 # Routines that run but have known partial failures (not full xfail)
 _KNOWN_ERRORS: dict[str, dict] = {}

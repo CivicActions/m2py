@@ -589,10 +589,17 @@ class InMemoryGlobalStorage:
         callers passing numeric intermediates (e.g. MArray int values)
         are normalised before storage.
         """
-        from m2py.runtime import MArray
-
         value = str(value)  # MUMPS canonical: all values are strings
         subscripts = self._canonicalize_subscripts(subscripts)
+        self._set_raw(name, subscripts, value)
+
+    def _set_raw(self, name: str, subscripts: tuple[str, ...], value: str) -> None:
+        """Set value at ^NAME(subscripts) without canonicalizing.
+
+        Used by import_zwr where subscripts are already canonical.
+        """
+        from m2py.runtime import MArray
+
         self._update_naked_indicator(name, subscripts)
 
         # Auto-vivify global if not exists
@@ -1349,7 +1356,9 @@ class InMemoryGlobalStorage:
             nonlocal count
             for name, subs, value in parse_zwr_stream(stream):
                 bare_name = name[1:] if name.startswith("^") else name
-                self.set(bare_name, tuple(subs), value)
+                # ZWR subscripts are already in canonical form — skip
+                # expensive canonicalization that set() normally does.
+                self._set_raw(bare_name, tuple(subs), str(value))
                 count += 1
             return count
 

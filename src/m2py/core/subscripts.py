@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 import re
 from decimal import Decimal
+from functools import lru_cache
 from typing import Any, Union
 
 
@@ -67,15 +68,21 @@ class SubscriptCanonicalizer:
 
         # String types: only canonicalize if already in canonical form
         if isinstance(value, str):
-            # Check if it's a canonical numeric string
-            if SubscriptCanonicalizer.is_canonical_numeric_string(value):
-                # It's already canonical, return as-is
-                return value
-            # Non-canonical or non-numeric strings are preserved
-            return value
+            return SubscriptCanonicalizer._canonicalize_string_cached(value)
 
         # Fall back to string conversion for other types
         return str(value)
+
+    @staticmethod
+    @lru_cache(maxsize=8192)
+    def _canonicalize_string_cached(value: str) -> str:
+        """Cached canonicalization for string subscripts."""
+        # Check if it's a canonical numeric string
+        if SubscriptCanonicalizer.is_canonical_numeric_string(value):
+            # It's already canonical, return as-is
+            return value
+        # Non-canonical or non-numeric strings are preserved
+        return value
 
     @staticmethod
     def canonicalize_numeric(n: Union[int, float, Decimal]) -> str:
@@ -195,6 +202,19 @@ class SubscriptCanonicalizer:
             False
         """
         if not s:
+            return False
+
+        # Fast-path: if the first char can't start a canonical number, skip
+        # Canonical numbers start with: digit, '-', or '.' (for .5 etc.)
+        first = s[0]
+        if first not in "-0123456789.":
+            return False
+
+        # Quick rejection for strings that look non-numeric without
+        # expensive Decimal parsing (avoid try/except overhead)
+        # Canonical forms: "0", "123", "-1", ".5", "-.5", "1.5", "-1.5"
+        # Only digits, minus, and dot are allowed
+        if not all(c in "0123456789.-" for c in s):
             return False
 
         # Try to parse as number using Decimal for precision
