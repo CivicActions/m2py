@@ -5873,19 +5873,32 @@ def _generate_read_target(target: MReadTarget, ctx: "GeneratorContext") -> None:
 
     if isinstance(target.variable, MVariable):
         var_name = translate_name(target.variable.name)
-        # Determine how to store the variable based on strategy
+        has_subscripts = bool(target.variable.subscripts)
+
+        # Determine the base expression for the MArray container
         if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            # Store in _scope dictionary like SET does
-            storage_target = f"_scope.setdefault({var_name!r}, MArray()).value"
+            base_expr = f"_scope.setdefault({var_name!r}, MArray())"
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
-            # Dynamic locals for argumentless KILL/NEW support
-            storage_target = f"state._locals.setdefault({var_name!r}, MArray()).value"
+            base_expr = f"state._locals.setdefault({var_name!r}, MArray())"
         elif ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-            storage_target = f"state.{var_name}"
+            base_expr = f"state.{var_name}"
         else:
-            # TRAMPOLINE var not in state_vars — store in _scope for
-            # cross-routine visibility and to avoid F841 bare-local lint
-            storage_target = f"_scope.setdefault({var_name!r}, MArray()).value"
+            base_expr = f"_scope.setdefault({var_name!r}, MArray())"
+
+        if has_subscripts:
+            # Subscripted local: R ARR(I):0 → _scope['ARR'][sub] = _read_val
+            # Pre-evaluate subscripts to avoid duplicate side effects
+            sub_exprs: list[str] = []
+            for i, sub in enumerate(target.variable.subscripts):
+                sub_code = generate_expr(sub, ctx, subscript_context=True)
+                sub_exprs.append(sub_code)
+            if len(sub_exprs) == 1:
+                storage_target = f"{base_expr}[{sub_exprs[0]}]"
+            else:
+                storage_target = f"{base_expr}[{', '.join(sub_exprs)}]"
+        else:
+            # Non-subscripted: R X → _scope['X'].value = _read_val
+            storage_target = f"{base_expr}.value"
     elif is_global_target:
         # Global variable target (e.g., R ^TMP($J,$I(^TMP($J)))):
         # Pre-evaluate subscripts into temp vars, then use _rt.globals.set()

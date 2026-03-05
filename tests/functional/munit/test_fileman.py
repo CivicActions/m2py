@@ -12,11 +12,11 @@ Test routines and their status:
 - **DMUDTC00** (92 assertions baseline): date/time calculations via ``%DTC``
   — PASS (92 tests, 0 failures, 0 errors)
 - **DMUDT000** (61 assertions): date/time validation via ``%DT``
-  — xfail: 4 failures (interactive prompt echo, German locale), 0 errors
+  — PASS (61 tests, 0 failures, 0 errors)
 - **DMUDIC00** (54 tests): dictionary lookup via ``DIC``
   — xfail: 0 failures, 15 errors in computed field expression evaluation
-- **DMUDIQ00** (7 assertions baseline): data retrieval via ``DIQ``
-  — xfail: 2 failures, ~2000 errors (^DD traversal issues)
+- **DMUDIQ00** (8 assertions): data retrieval via ``DIQ``
+  — xfail: 0 failures, 1 error (EN^DIQ runtime error in TENDIQ)
 
 Dependencies are auto-loaded from VistA-M via the
 ``MumpsAutoImporter`` and ``fileman_library`` session fixture in conftest.py.
@@ -70,17 +70,13 @@ _INVOCATIONS = {
 
 # Routines expected to xfail with reason
 _XFAIL_ROUTINES: dict[str, str] = {
-    "DMUDT000": (
-        "%DT date parsing: 4 failures (interactive prompt echo, German locale) — "
-        "61 tests, 0 errors"
-    ),
     "DMUDIC00": (
         "DIC lookup: computed field evaluation (DICOMP) slow — "
         "54 tests, some errors from XECUTE expression compilation"
     ),
     "DMUDIQ00": (
-        "DIQ data retrieval runs but produces ~2000 errors — "
-        "^DD traversal and computed field evaluation issues"
+        "DIQ data retrieval: 1 error in TENDIQ (EN^DIQ runtime error) — "
+        "8 tests, 0 failures"
     ),
 }
 

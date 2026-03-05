@@ -443,6 +443,14 @@ def fileman_bootstrap(munit_runtime):
         total += count
         logger.info('Loaded %d nodes from 0.11+INDEX.zwr (^DD("IX",...))', count)
 
+    # ^DI(.85) — Language file.  Provides locale-specific date/time
+    # formatting code used by DD^%DT when DUZ("LANG")>1 (e.g. German).
+    lang_zwr = _VISTA_M_FILEMAN_GLOBALS_DIR / "0.85+LANGUAGE.zwr"
+    if lang_zwr.exists():
+        count = import_zwr(munit_runtime.globals, lang_zwr)
+        total += count
+        logger.info("Loaded %d nodes from 0.85+LANGUAGE.zwr (^DI(.85,...))", count)
+
     logger.info("FileMan bootstrap complete: %d total global nodes", total)
 
     # Ensure Package file (9.4) has VA FileMan entry so $$VERSION^XPDUTL("DI")
