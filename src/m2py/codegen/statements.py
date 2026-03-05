@@ -4923,10 +4923,13 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 py_name = translate_name(var_name)
                 emit_state_var_to_scope(ctx, var_name, py_name)
 
+        # Use _globals[] lookup to avoid formal parameters shadowing
+        # module-level label functions (e.g., EXPR(FILE,DICOMP,...) where
+        # parameter DICOMP shadows the DICOMP label function).
         if byref_args:
-            call_expr = f"{label_name}(_rt, {byref_args}, _scope=_scope)"
+            call_expr = f"_globals[{label_name!r}](_rt, {byref_args}, _scope=_scope)"
         else:
-            call_expr = f"{label_name}(_rt, _scope=_scope)"
+            call_expr = f"_globals[{label_name!r}](_rt, _scope=_scope)"
         ctx.emitter.line(call_expr)
 
         # Sync _scope → state._locals after return so caller sees variables
@@ -4962,19 +4965,13 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
                 with ctx.emitter.indented():
                     ctx.emitter.line("del _scope[_k]")
             ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
-        # Use globals() lookup for SIMPLE_FUNCTIONS to avoid parameter
-        # shadowing label names (e.g., A(A,B) where param A shadows label A)
-        if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
-            if args:
-                ctx.emitter.line(
-                    f"_globals[{label_name!r}](_rt, {args}, _scope=_scope)"
-                )
-            else:
-                ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
-        elif args:
-            ctx.emitter.line(f"{label_name}(_rt, {args}, _scope=_scope)")
+        # Use _globals[] lookup for all strategies to avoid parameter
+        # shadowing label names (e.g., EXPR(DICOMP,...) where param DICOMP
+        # shadows the DICOMP label function in TRAMPOLINE mode).
+        if args:
+            ctx.emitter.line(f"_globals[{label_name!r}](_rt, {args}, _scope=_scope)")
         else:
-            ctx.emitter.line(f"{label_name}(_rt, _scope=_scope)")
+            ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
         # Sync _scope back to state after call
         if (
             ctx.strategy == GotoStrategy.TRAMPOLINE

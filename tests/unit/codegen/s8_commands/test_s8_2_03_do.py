@@ -1620,3 +1620,162 @@ class TestQuitStackNestedExtrinsic:
             "TEST\n W $$CALC(10,20)\n Q\nCALC(A,B)\n N SUM\n D\n . S SUM=A+B\n Q SUM\n"
         )
         assert result.output == "30"
+
+
+# =============================================================================
+# TRAMPOLINE parameter shadowing fix
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestTrampolineParamShadowingCodegen:
+    """Codegen tests: TRAMPOLINE DO calls use _globals[] to avoid shadowing.
+
+    Fix: In TRAMPOLINE mode, DO calls used bare function names like
+    ``DICOMP(_rt, ...)`` which breaks when a formal parameter is also named
+    DICOMP — the local variable shadows the module-level function.
+
+    Solution: All DO calls (both byref and non-byref) now use
+    ``_globals['LABEL'](_rt, ...)`` which bypasses local variable lookup.
+    """
+
+    def test_trampoline_non_byref_uses_globals_lookup(self, generate_python):
+        """TRAMPOLINE DO with args uses _globals['SUB'] not bare SUB.
+
+        GOTO triggers TRAMPOLINE strategy; D SUB(1) must use _globals.
+        """
+        code = generate_python("TEST\n G MAIN\nMAIN\n D SUB(1)\n Q\nSUB(A)\n W A\n Q\n")
+        assert "_globals['SUB']" in code
+
+    def test_trampoline_no_args_uses_globals_lookup(self, generate_python):
+        """TRAMPOLINE DO without args uses _globals['SUB'] not bare SUB.
+
+        Even argumentless DO calls in TRAMPOLINE mode must use _globals.
+        """
+        code = generate_python("TEST\n G MAIN\nMAIN\n D SUB\n Q\nSUB\n W 1\n Q\n")
+        assert "_globals['SUB']" in code
+
+    def test_trampoline_byref_uses_globals_lookup(self, generate_python):
+        """TRAMPOLINE DO with by-ref arg uses _globals['SUB'] not bare SUB.
+
+        By-ref path (D SUB(.X)) in TRAMPOLINE must also use _globals.
+        """
+        code = generate_python(
+            "TEST\n G MAIN\nMAIN\n S X=1 D SUB(.X)\n Q\nSUB(N)\n S N=N+1\n Q\n"
+        )
+        assert "_globals['SUB']" in code
+
+    def test_no_bare_label_call_in_do_site(self, generate_python):
+        """DO call site uses _globals['WORKER'], not bare WORKER(_rt, ...).
+
+        The internal trampoline wrapper (_WORKER) is fine — only the
+        DO call site must use _globals[] to avoid parameter shadowing.
+        Note: _WORKER (with underscore) is the trampoline wrapper and
+        is intentionally called bare from the trampoline dispatch loop.
+        """
+        code = generate_python(
+            "TEST\n G MAIN\nMAIN\n D WORKER(1,2)\n Q\nWORKER(A,B)\n W A+B\n Q\n"
+        )
+        # The DO call site must use _globals lookup
+        assert "_globals['WORKER'](_rt" in code
+
+
+@pytest.mark.codegen
+class TestTrampolineParamShadowingRuntime:
+    """Runtime tests: param names shadowing label names in TRAMPOLINE mode.
+
+    These tests exercise the actual fix for the DICOMP bug where
+    EXPR(FILE,DICOMP,I,SUBS) had parameter DICOMP shadowing the DICOMP
+    label function, causing 'str' object is not callable errors.
+    """
+
+    def test_param_shadows_label_with_goto(self, execute_mumps):
+        """Param name = label name works in TRAMPOLINE mode (non-byref).
+
+        GOTO forces TRAMPOLINE. SUB(SUB,B) has param SUB shadowing label SUB.
+        D SUB(10,20) from MAIN must resolve to the label, not the param.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\nMAIN\n D SUB(10,20)\n Q\nSUB(SUB,B)\n W SUB+B\n Q\n"
+        )
+        assert result.output == "30"
+
+    def test_param_shadows_different_label_with_goto(self, execute_mumps):
+        """Param name matches a *different* label (not the one being defined).
+
+        CALLER(WORKER,...) where param WORKER shadows label WORKER.
+        CALLER calls D WORKER(...) — must resolve to the label function.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n D CALLER(5)\n Q\n"
+            "CALLER(WORKER)\n D WORKER(WORKER)\n Q\n"
+            "WORKER(X)\n W X*2\n Q\n"
+        )
+        assert result.output == "10"
+
+    def test_multiple_params_shadow_multiple_labels(self, execute_mumps):
+        """Multiple params each shadow a different label.
+
+        A(B,C) where both B and C are also labels. Calls to B and C
+        from inside A must resolve to label functions, not param values.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n D A(100,200)\n Q\n"
+            "A(B,C)\n D B(B) D C(C) Q\n"
+            "B(X)\n W X\n Q\n"
+            "C(X)\n W X\n Q\n"
+        )
+        assert result.output == "100200"
+
+    def test_param_shadows_label_byref_with_goto(self, execute_mumps):
+        """By-ref DO where param name shadows label in TRAMPOLINE mode.
+
+        GOTO forces TRAMPOLINE. D SUB(.X) where SUB(SUB) has param
+        shadowing label SUB. The by-ref mechanism must still work.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n S X=5 D SUB(.X) W X\n Q\n"
+            "SUB(SUB)\n S SUB=SUB*3\n Q\n"
+        )
+        assert result.output == "15"
+
+    def test_recursive_call_param_shadows_label(self, execute_mumps):
+        """Recursive DO where param name shadows its own label.
+
+        FACT(FACT) — param FACT shadows label FACT. Recursive call
+        D FACT(FACT-1) must resolve to the label, not the param value.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n W $$FACT(5)\n Q\n"
+            "FACT(FACT)\n Q:FACT<2 1\n Q FACT*$$FACT(FACT-1)\n"
+        )
+        assert result.output == "120"
+
+    def test_simple_functions_param_shadowing_still_works(self, execute_mumps):
+        """SIMPLE_FUNCTIONS mode (no GOTO) — param shadowing still works.
+
+        Regression test: the fix unified both strategies to use _globals[].
+        Without GOTO, SIMPLE_FUNCTIONS is used. Must still handle shadows.
+        """
+        result = execute_mumps("TEST\n D B\n Q\nA(A,B)\n W A,B\n Q\nB\n D A(7,8)\n Q\n")
+        assert result.output == "78"
+
+    def test_dicomp_pattern_param_shadows_routine_label(self, execute_mumps):
+        """DICOMP-style pattern: EXPR(FILE,DICOMP,...) where DICOMP is a label.
+
+        This is the exact pattern that caused the original bug. EXPR calls
+        D DICOMP(args) but param DICOMP has value like "1" from the caller.
+        Without _globals[], Python would call "1"(...) → TypeError.
+        """
+        result = execute_mumps(
+            "TEST\n G START\n"
+            'START\n D EXPR("filenum","compval",1)\n Q\n'
+            'EXPR(FILE,DICOMP,I)\n W "EXPR:",FILE,",",DICOMP,",",I,!\n'
+            " D DICOMP(FILE)\n Q\n"
+            'DICOMP(F)\n W "DICOMP:",F\n Q\n'
+        )
+        assert result.output == "EXPR:filenum,compval,1\nDICOMP:filenum"

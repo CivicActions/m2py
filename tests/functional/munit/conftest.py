@@ -451,6 +451,16 @@ def fileman_bootstrap(munit_runtime):
         total += count
         logger.info("Loaded %d nodes from 0.85+LANGUAGE.zwr (^DI(.85,...))", count)
 
+    # ^DI(.84) — Dialog file.  Contains error/help text definitions used
+    # by BLD^DIALOG.  Without it, FileMan error handling silently returns 0
+    # (no error built), causing infinite loops in routines like DIDU that
+    # rely on DIERR being set when an error is encountered.
+    dialog_zwr = _VISTA_M_FILEMAN_GLOBALS_DIR / "0.84+DIALOG.zwr"
+    if dialog_zwr.exists():
+        count = import_zwr(munit_runtime.globals, dialog_zwr)
+        total += count
+        logger.info("Loaded %d nodes from 0.84+DIALOG.zwr (^DI(.84,...))", count)
+
     logger.info("FileMan bootstrap complete: %d total global nodes", total)
 
     # Ensure Package file (9.4) has VA FileMan entry so $$VERSION^XPDUTL("DI")

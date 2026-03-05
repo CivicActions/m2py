@@ -583,6 +583,13 @@ def transpile_and_execute(
             _prev_handler = signal.signal(signal.SIGALRM, _alarm_handler)
             signal.alarm(int(timeout))
 
+        # Guard against infinite GOTO/DO recursion that would segfault.
+        # MUMPS programs rarely nest beyond ~50 frames; 500 is generous.
+        # The C stack overflows before Python's default 1000-frame limit
+        # triggers RecursionError, so we lower it to catch the error.
+        _prev_limit = sys.getrecursionlimit()
+        sys.setrecursionlimit(500)
+
         try:
             # Call the resolved entry function.
             #
@@ -608,6 +615,7 @@ def transpile_and_execute(
                     scope,
                 )
         finally:
+            sys.setrecursionlimit(_prev_limit)
             if timeout > 0:
                 import signal
 
