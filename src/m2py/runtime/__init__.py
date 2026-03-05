@@ -1821,6 +1821,15 @@ class MUMPSRuntime:
         # so caching avoids re-parsing and re-generating Python each time.
         self._xecute_cache: Dict[str, Any] = {}
 
+        # MUMPS has no recursion limit — deep DO/XECUTE nesting is normal
+        # (e.g., DICOMP evaluating computed fields that reference other computed
+        # fields via XECUTE → D ^DICOMP chains).  Each MUMPS DO/XECUTE level
+        # consumes ~20-50 Python stack frames, so Python's default limit of 1000
+        # is far too low.  Raise it once, permanently.
+        _min_recursion_limit = 10_000
+        if sys.getrecursionlimit() < _min_recursion_limit:
+            sys.setrecursionlimit(_min_recursion_limit)
+
     def _get_codegen_callback(self) -> Any:
         """Get the codegen callback, using auto-discovery if not explicitly set."""
         if self._codegen_callback is not None:

@@ -276,18 +276,44 @@ def _reset_io(runtime: "MUMPSRuntime") -> None:  # noqa: F821
     runtime._current_device = principal
 
 
+class _ResolvedEntry:
+    """Result of resolving a MUMPS invocation string to a callable.
+
+    Attributes:
+        func: The Python function to call.
+        args: List of MArray arguments to pass as positional args.
+        description: Human-readable description for logging.
+    """
+
+    __slots__ = ("func", "args", "description")
+
+    def __init__(
+        self, func: Callable, args: list | None = None, description: str = ""
+    ) -> None:
+        self.func = func
+        self.args = args or []
+        self.description = description
+
+
 def _resolve_entry_function(
     module: types.ModuleType | None,
     invocation: str,
     routine_name: str,
-) -> Callable | None:
+) -> _ResolvedEntry | None:
     """Determine the Python function to call from a MUMPS invocation string.
 
     Handles the common invocation patterns found in M-Unit TestList files:
 
-    - ``D ^ROUTINE``          → module._entry_function
-    - ``D LABEL^ROUTINE``     → module.LABEL
-    - ``D EN^%ut("ROUTINE")`` → module._entry_function (fallback)
+    - ``D ^ROUTINE``              → module._entry_function
+    - ``D LABEL^ROUTINE``         → module.LABEL
+    - ``D EN^%ut("ROUTINE")``     → %ut.EN with routine name as argument
+    - ``D LABEL^ROUTINE("args")`` → LABEL on target with string args
+
+    For the ``D EN^%ut("ROUTINE")`` pattern, this correctly resolves to the
+    ``EN`` label on the ``%ut`` framework module and passes the routine name
+    as the first argument.  This is critical because many test routines
+    (``%utt2``, ``%utt3``, etc.) are designed to be invoked *by* the
+    framework, not to self-invoke it from their first line.
 
     Args:
         module: The transpiled Python module for the routine.
@@ -295,9 +321,61 @@ def _resolve_entry_function(
         routine_name: Routine name for logging.
 
     Returns:
-        The callable entry function, or None if not found.
+        A _ResolvedEntry with the callable and arguments, or None if not found.
     """
     import re
+
+    from m2py.runtime import MArray
+
+    # Pattern: D LABEL^%ut("ROUTINE"[,verb[,break]])  — M-Unit framework call
+    m = re.match(
+        r'D\s+(\w+)\^%ut\(\s*"([^"]+)"(?:\s*,\s*(\d+))?(?:\s*,\s*(\d+))?\s*\)',
+        invocation,
+    )
+    if m:
+        label = m.group(1)
+        target_routine = m.group(2)
+        verbosity = m.group(3)
+        brk = m.group(4)
+
+        # Look up the label on the %ut framework module
+        ut_module = sys.modules.get("_pct_ut")
+        if ut_module is None:
+            logger.error("Cannot resolve %s — %%ut framework not loaded", invocation)
+            return None
+
+        func = getattr(ut_module, label, None)
+        if func is None:
+            logger.error("Label %s not found in %%ut", label)
+            return None
+
+        # Build MArray arguments matching EN(%utRNAM,%utVERB,%utBREAK)
+        args: list[MArray] = []
+        _rnam = MArray()
+        _rnam.value = target_routine
+        args.append(_rnam)
+
+        if verbosity is not None:
+            _verb = MArray()
+            _verb.value = verbosity
+            args.append(_verb)
+
+        if brk is not None:
+            _brk = MArray()
+            _brk.value = brk
+            args.append(_brk)
+
+        logger.debug(
+            "Resolved %s → %%ut.%s(%s) (framework call)",
+            invocation,
+            label,
+            target_routine,
+        )
+        return _ResolvedEntry(
+            func=func,
+            args=args,
+            description=f"%ut.{label}({target_routine})",
+        )
 
     if module is None:
         return None
@@ -311,7 +389,7 @@ def _resolve_entry_function(
             logger.debug(
                 "Resolved %s → %s.%s (label call)", invocation, routine_name, label
             )
-            return func
+            return _ResolvedEntry(func=func, description=f"{routine_name}.{label}")
         # Label not found — fall through to _entry_function
         logger.warning(
             "Label %s not found in %s, falling back to _entry_function",
@@ -323,7 +401,8 @@ def _resolve_entry_function(
     func = getattr(module, "_entry_function", None)
     if func is not None:
         logger.debug("Resolved %s → %s._entry_function", invocation, routine_name)
-    return func
+        return _ResolvedEntry(func=func, description=f"{routine_name}._entry_function")
+    return None
 
 
 # =============================================================================
@@ -456,11 +535,11 @@ def transpile_and_execute(
     _patch_startup_shutdown(routine_name, test_module, runtime)
 
     # Determine the correct entry point from the invocation pattern:
-    #   D ^ROUTINE         → _entry_function (routine's first label)
-    #   D LABEL^ROUTINE    → LABEL function within the module
-    #   D EN^%ut("NAME")   → _entry_function (fallback)
-    entry_func = _resolve_entry_function(test_module, config.invocation, routine_name)
-    if entry_func is None:
+    #   D ^ROUTINE             → _entry_function (routine's first label)
+    #   D LABEL^ROUTINE        → LABEL function within the module
+    #   D EN^%ut("NAME")       → %ut.EN with routine name as argument
+    resolved = _resolve_entry_function(test_module, config.invocation, routine_name)
+    if resolved is None:
         return MUnitResult(
             routine=routine_name,
             package=config.package_name,
@@ -505,14 +584,29 @@ def transpile_and_execute(
             signal.alarm(int(timeout))
 
         try:
-            # Call the routine's entry function directly (D ^ROUTINE).
-            # This runs the preamble (e.g., D DT^DICRW to set DT) and
-            # then invokes EN^%ut internally with the correct scope.
-            run_with_goto_support(
-                entry_func,
-                runtime,
-                scope,
-            )
+            # Call the resolved entry function.
+            #
+            # For D ^ROUTINE or D LABEL^ROUTINE: calls the routine's own
+            # entry point directly (runs preamble, then invokes EN^%ut
+            # internally).
+            #
+            # For D EN^%ut("ROUTINE"): calls the %ut framework's EN label
+            # directly with the routine name as argument.  This is the
+            # correct invocation for routines like %utt2, %utt3 that are
+            # designed to be *called by* the framework, not to self-invoke.
+            if resolved.args:
+                run_with_goto_support(
+                    resolved.func,
+                    runtime,
+                    scope,
+                    _args=resolved.args,
+                )
+            else:
+                run_with_goto_support(
+                    resolved.func,
+                    runtime,
+                    scope,
+                )
         finally:
             if timeout > 0:
                 import signal

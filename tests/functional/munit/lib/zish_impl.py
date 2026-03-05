@@ -48,6 +48,7 @@ _label_lines = {
     "READNXT": 285,
     "MGTF": 314,
     "EOF": 238,
+    "STATUS": 235,
     "MAKEREF": 241,
 }
 _source_lines = ["%ZISH ;ISF/AC,RWF,VEN/SMH - Python implementation"]
@@ -410,3 +411,17 @@ def CLOSE(
 def EOF(rt: MUMPSRuntime, X=None, _scope=None) -> str:
     """``$$EOF^%ZISH(X)`` — Return EOF flag (pass-through)."""
     return _val(X)
+
+
+def STATUS(rt: MUMPSRuntime, _scope=None) -> str:
+    """``$$STATUS^%ZISH()`` — Return EOF status of current device.
+
+    Equivalent to ``U $I Q $ZEOF`` in ZISHGUX.m.
+    Returns "1" at EOF, "0" otherwise.
+    """
+    try:
+        device = rt._current_device
+        # zeof is a bool attribute on MUMPSDevice — convert to MUMPS numeric
+        return "1" if device.zeof else "0"
+    except Exception:
+        return "0"

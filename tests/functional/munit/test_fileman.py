@@ -11,8 +11,8 @@ Test routines and their status:
 - **ZZUTDIDT** (2 assertions): simplest, only needs ``%DT`` — PASS
 - **DMUDTC00** (92 assertions baseline): date/time calculations via ``%DTC``
   — PASS (92 tests, 0 failures, 0 errors)
-- **DMUDT000** (67 assertions): date/time validation via ``%DT``
-  — xfail: 4 failures + 6 errors (interactive prompts, German locale)
+- **DMUDT000** (61 assertions): date/time validation via ``%DT``
+  — xfail: 4 failures (interactive prompt echo, German locale), 0 errors
 - **DMUDIC00** (54 tests): dictionary lookup via ``DIC``
   — xfail: 0 failures, 15 errors in computed field expression evaluation
 - **DMUDIQ00** (7 assertions baseline): data retrieval via ``DIQ``
@@ -71,8 +71,8 @@ _INVOCATIONS = {
 # Routines expected to xfail with reason
 _XFAIL_ROUTINES: dict[str, str] = {
     "DMUDT000": (
-        "%DT date parsing: 4 failures + 6 errors — "
-        "interactive prompts (stdin/READ) and German locale (DIALOGU)"
+        "%DT date parsing: 4 failures (interactive prompt echo, German locale) — "
+        "61 tests, 0 errors"
     ),
     "DMUDIC00": (
         "DIC lookup runs 54 tests — 0 failures, 15 errors in "
