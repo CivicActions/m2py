@@ -70,8 +70,8 @@ _INVOCATIONS = {
 # Routines expected to xfail with reason
 _XFAIL_ROUTINES: dict[str, str] = {
     "DMUDIC00": (
-        "LISTX1/X2/X3: DIC 'X' flag sort not fully supported; "
-        "computed field sorting produces wrong results (5 failures, 4 errors)"
+        "LISTC/LISTX1/X2/X3: DIC 'X' flag sort not fully supported; "
+        "computed field sorting produces wrong results (6 failures, 0 errors)"
     ),
 }
 

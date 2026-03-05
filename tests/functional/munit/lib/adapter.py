@@ -147,7 +147,16 @@ def _load_routine(
     # via sys.modules[cls.__module__] during exec().  On failure we clean up.
     sys.modules[py_module_name] = module
     try:
-        exec(python_code, module.__dict__)  # noqa: S102
+        # Temporarily raise the recursion limit for exec/compile.
+        # Python's compiler is recursive and large generated routines
+        # (e.g. DIP5) need more than 500 frames to compile, even though
+        # the MUMPS runtime rarely nests beyond ~50 frames.
+        _prev = sys.getrecursionlimit()
+        sys.setrecursionlimit(max(_prev, 2000))
+        try:
+            exec(python_code, module.__dict__)  # noqa: S102
+        finally:
+            sys.setrecursionlimit(_prev)
     except Exception as e:
         del sys.modules[py_module_name]
         raise MUnitTranspileError(routine_name, f"exec failed: {e}") from e
@@ -584,11 +593,13 @@ def transpile_and_execute(
             signal.alarm(int(timeout))
 
         # Guard against infinite GOTO/DO recursion that would segfault.
-        # MUMPS programs rarely nest beyond ~50 frames; 500 is generous.
-        # The C stack overflows before Python's default 1000-frame limit
-        # triggers RecursionError, so we lower it to catch the error.
+        # MUMPS programs rarely nest beyond ~50 frames; 1500 is generous.
+        # Cross-routine GOTO chains (e.g. DIP2↔DIP22 FileMan sort) use
+        # re-raise semantics so they don't consume stack.  The limit here
+        # catches true infinite recursion from DO nesting or buggy GOTOs.
+        # The SIGALRM timeout catches any remaining infinite loops.
         _prev_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(500)
+        sys.setrecursionlimit(1500)
 
         try:
             # Call the resolved entry function.
