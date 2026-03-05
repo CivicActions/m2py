@@ -124,6 +124,24 @@ class MumpsAutoImporter(importlib.abc.MetaPathFinder):
                         mumps_name = _FILENAME_OVERRIDES[stem]
                         py_name = "_pct_" + mumps_name[1:]
                         self._index[py_name] = m_file
+                    else:
+                        # Auto-detect %-prefix routines by reading first line.
+                        # Many Kernel routines have filename ZIS.m but start
+                        # with %ZIS — register them under _pct_ZIS too.
+                        try:
+                            with open(m_file, "r", errors="replace") as fh:
+                                first_line = fh.readline(200)
+                            # First non-whitespace token before ; or whitespace
+                            rname = (
+                                first_line.split(";")[0].split()[0]
+                                if first_line.strip()
+                                else ""
+                            )
+                            if rname.startswith("%") and rname[1:] == stem:
+                                py_name = "_pct_" + stem
+                                self._index[py_name] = m_file
+                        except Exception:
+                            pass  # skip unreadable files
         logger.debug(
             "MumpsAutoImporter indexed %d routines from %d dirs",
             len(self._index),
@@ -157,6 +175,9 @@ class MumpsAutoImporter(importlib.abc.MetaPathFinder):
         stem = m_file.stem
         if stem in _FILENAME_OVERRIDES:
             routine_name = _FILENAME_OVERRIDES[stem]
+        elif fullname.startswith("_pct_"):
+            # Auto-detected %-prefix routine (e.g., _pct_ZIS → %ZIS)
+            routine_name = "%" + fullname[5:]
         else:
             routine_name = stem
 

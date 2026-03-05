@@ -14,9 +14,8 @@ Test routines and their status:
 - **DMUDT000** (61 assertions): date/time validation via ``%DT``
   — PASS (61 tests, 0 failures, 0 errors)
 - **DMUDIC00** (54 tests): dictionary lookup via ``DIC``
-  — xfail: 0 failures, 15 errors in computed field expression evaluation
-- **DMUDIQ00** (8 assertions): data retrieval via ``DIQ``
-  — xfail: 0 failures, 1 error (EN^DIQ runtime error in TENDIQ)
+  — xfail: LISTX1/X2 infinite DIC recursion, LISTX3 scope bug in DIBTED
+- **DMUDIQ00** (8 assertions): data retrieval via ``DIQ`` — PASS
 
 Dependencies are auto-loaded from VistA-M via the
 ``MumpsAutoImporter`` and ``fileman_library`` session fixture in conftest.py.
@@ -71,19 +70,13 @@ _INVOCATIONS = {
 # Routines expected to xfail with reason
 _XFAIL_ROUTINES: dict[str, str] = {
     "DMUDIC00": (
-        "DIC lookup: computed field evaluation (DICOMP) slow — "
-        "54 tests, some errors from XECUTE expression compilation"
-    ),
-    "DMUDIQ00": (
-        "DIQ data retrieval: 1 error in TENDIQ (EN^DIQ runtime error) — "
-        "8 tests, 0 failures"
+        "LISTX1/X2: infinite DIC GOTO recursion with X flag; "
+        "LISTX3: KeyError DIBTLINE scope bug in DIBTED sort template builder"
     ),
 }
 
 # Timeout (seconds) for routines known to potentially hang.
-_XFAIL_TIMEOUTS: dict[str, int] = {
-    "DMUDIC00": 600,  # Full compound index traversal is slow
-}
+_XFAIL_TIMEOUTS: dict[str, int] = {}
 
 # Routines that run but have known partial failures (not full xfail)
 _KNOWN_ERRORS: dict[str, dict] = {}
