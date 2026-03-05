@@ -1408,6 +1408,14 @@ class RoutineGenerator:
                                     f"_scope[{param!r}] = MArray(value={param})"
                                 )
 
+            # In dynamic_locals mode, state._locals is the live variable scope
+            # but _scope (received from the trampoline wrapper) may be stale —
+            # variables created by SET after NEW exist only in state._locals.
+            # Alias _scope to state._locals so that _call_extrinsic and DO
+            # calls (which pass _scope=_scope) see the current variables.
+            if ctx.uses_dynamic_locals:
+                ctx.emitter.line("_scope = state._locals")
+
             # Get label line number for offset calculation
             label_line = label.line_number
 

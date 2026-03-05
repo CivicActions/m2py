@@ -14,7 +14,7 @@ Test routines and their status:
 - **DMUDT000** (61 assertions): date/time validation via ``%DT``
   — PASS (61 tests, 0 failures, 0 errors)
 - **DMUDIC00** (54 tests): dictionary lookup via ``DIC``
-  — xfail: LISTX1/X2 infinite DIC recursion, LISTX3 scope bug in DIBTED
+  — xfail: LISTX1/X2/X3 DIC "X" flag computed field sort not fully supported
 - **DMUDIQ00** (8 assertions): data retrieval via ``DIQ`` — PASS
 
 Dependencies are auto-loaded from VistA-M via the
@@ -70,8 +70,8 @@ _INVOCATIONS = {
 # Routines expected to xfail with reason
 _XFAIL_ROUTINES: dict[str, str] = {
     "DMUDIC00": (
-        "LISTX1/X2: infinite DIC GOTO recursion with X flag; "
-        "LISTX3: KeyError DIBTLINE scope bug in DIBTED sort template builder"
+        "LISTX1/X2/X3: DIC 'X' flag sort not fully supported; "
+        "computed field sorting produces wrong results (5 failures, 4 errors)"
     ),
 }
 

@@ -1779,3 +1779,169 @@ class TestTrampolineParamShadowingRuntime:
             'DICOMP(F)\n W "DICOMP:",F\n Q\n'
         )
         assert result.output == "EXPR:filenum,compval,1\nDICOMP:filenum"
+
+
+# =============================================================================
+# TRAMPOLINE scope sync fix (_scope = state._locals)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestTrampolineScopeSyncCodegen:
+    """Codegen tests: TRAMPOLINE labels with dynamic_locals emit _scope = state._locals.
+
+    Fix: In TRAMPOLINE mode with dynamic_locals, ``state._locals`` diverges
+    from ``_scope`` after NEW/SET operations. Variables created by SET after
+    NEW exist only in ``state._locals``, so extrinsic calls (``$$FUNC``) that
+    pass ``_scope=_scope`` couldn't see them.
+
+    Solution: Each TRAMPOLINE label function emits ``_scope = state._locals``
+    so that ``_scope`` is always an alias for the live variable scope.
+    """
+
+    def test_trampoline_dynamic_locals_emits_scope_alias(self, generate_python):
+        """TRAMPOLINE labels with dynamic_locals emit '_scope = state._locals'.
+
+        GOTO forces TRAMPOLINE. Argumentless NEW forces dynamic_locals.
+        The generated label functions must alias _scope to state._locals.
+        """
+        code = generate_python(
+            "TEST\n G MAIN\nMAIN\n N  S X=1 D SUB\n Q\nSUB\n W X\n Q\n"
+        )
+        assert "_scope = state._locals" in code
+
+    def test_scope_alias_appears_in_every_trampoline_label(self, generate_python):
+        """Every TRAMPOLINE label function should have the scope alias.
+
+        Multiple labels each need the alias since any could be the GOTO target.
+        Argumentless NEW forces dynamic_locals.
+        """
+        code = generate_python("TEST\n G A\nA\n N  S V=1 G B\nB\n W V\n Q\n")
+        # Both _A and _B label functions should have the alias
+        # Count occurrences in the label function bodies
+        assert code.count("_scope = state._locals") >= 2
+
+
+@pytest.mark.codegen
+class TestTrampolineScopeSyncRuntime:
+    """Runtime tests: NEW'd variables visible to extrinsic calls in TRAMPOLINE mode.
+
+    These tests exercise the DIBTED-style bug where PROCESS NEWs DIBTLINE,
+    SETs it, then calls $$LINE which couldn't see DIBTLINE because _scope
+    was stale.
+    """
+
+    def test_newed_var_visible_to_extrinsic_same_routine(self, execute_mumps):
+        """Variable NEWed and SET in one label visible to $$FUNC in same routine.
+
+        GOTO forces TRAMPOLINE. Argumentless NEW forces dynamic_locals.
+        MAIN NEWs all, SETs X=42, calls $$GETX().
+        GETX must see X=42 via _scope (now aliased to state._locals).
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\nMAIN\n N  S X=42 W $$GETX()\n Q\nGETX()\n Q X\n"
+        )
+        assert result.output == "42"
+
+    def test_newed_var_visible_to_extrinsic_across_goto(self, execute_mumps):
+        """Variable NEWed in one label, accessed by extrinsic after GOTO.
+
+        A NEWs all, SETs X, GOTOs to B. B calls $$READER() which reads X.
+        Argumentless NEW forces dynamic_locals.
+        """
+        result = execute_mumps(
+            "TEST\n G A\nA\n N  S X=99 G B\nB\n W $$READER()\n Q\nREADER()\n Q X\n"
+        )
+        assert result.output == "99"
+
+    def test_multiple_newed_vars_visible_to_extrinsic(self, execute_mumps):
+        """Multiple NEW'd variables all visible to extrinsic calls.
+
+        Argumentless NEW forces dynamic_locals. SETs A, B, C then
+        calls $$SUM() which adds them.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\nMAIN\n N  S A=10,B=20,C=30 W $$SUM()\n Q\nSUM()\n Q A+B+C\n"
+        )
+        assert result.output == "60"
+
+    def test_newed_var_in_for_loop_visible_to_extrinsic(self, execute_mumps):
+        """Variable NEWed before a FOR loop, modified in loop, read by extrinsic.
+
+        Mirrors DIBTED pattern: PROCESS NEWs everything, FOR loop calls $$LINE
+        which reads LINE. Argumentless NEW forces dynamic_locals.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n N  S LINE=1 F  D  Q:LINE>3\n"
+            " . W $$GETLINE(),!\n"
+            " . S LINE=LINE+1\n"
+            " Q\n"
+            "GETLINE()\n Q LINE\n"
+        )
+        assert result.output == "1\n2\n3\n"
+
+    def test_newed_var_visible_to_do_subroutine(self, execute_mumps):
+        """NEW'd variable visible to a regular DO subroutine (not just extrinsic).
+
+        DO SUB where SUB reads a variable created after argumentless NEW.
+        """
+        result = execute_mumps(
+            'TEST\n G MAIN\nMAIN\n N  S MSG="hello" D PRINT\n Q\nPRINT\n W MSG\n Q\n'
+        )
+        assert result.output == "hello"
+
+    def test_extrinsic_with_array_access_on_newed_scope(self, execute_mumps):
+        """Extrinsic accessing array variable set after argumentless NEW.
+
+        Argumentless NEW + array + extrinsic reading it.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            'MAIN\n N  S ARR("A")="alpha",ARR("B")="beta"\n'
+            ' S IDX="A" W $$LOOKUP()\n Q\n'
+            "LOOKUP()\n Q ARR(IDX)\n"
+        )
+        assert result.output == "alpha"
+
+    def test_newed_var_not_leaked_after_quit(self, execute_mumps):
+        """NEW'd variables are properly cleaned up after subroutine returns.
+
+        Ensures the scope alias doesn't break NEW stack unwinding.
+        Uses by-ref call to force dynamic_locals.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n S X=1 D INNER(.X) W X\n Q\n"
+            "INNER(Y)\n N  S X=999\n Q\n"
+        )
+        # X should be restored to 1 after INNER returns (NEW unwound)
+        assert result.output == "1"
+
+    def test_nested_extrinsic_calls_with_new(self, execute_mumps):
+        """Nested extrinsic calls each with their own NEW'd variables.
+
+        MAIN sets A=1. OUTER sets B=2. INNER reads both A and B.
+        Argumentless NEW in MAIN forces dynamic_locals; OUTER uses
+        exclusive NEW to keep A visible while creating B locally.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n N  S A=1 W $$OUTER()\n Q\n"
+            "OUTER()\n N (A) S B=2 Q A+B+$$INNER()\n"
+            "INNER()\n Q A+B\n"
+        )
+        # OUTER: A=1, B=2, INNER returns A+B=3, OUTER returns 1+2+3=6
+        assert result.output == "6"
+
+    def test_scope_sync_with_do_passing_args(self, execute_mumps):
+        """DO with args + NEW'd variables — both must be accessible.
+
+        Argumentless NEW in MAIN, then calls D PROCESS("X") which reads CTR.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            'MAIN\n N  S CTR=0 D PROCESS("X")\n W CTR\n Q\n'
+            "PROCESS(VAL)\n S CTR=CTR+1 W VAL\n Q\n"
+        )
+        assert result.output == "X1"
