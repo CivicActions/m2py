@@ -364,3 +364,514 @@ class TestLoadRoutineExecRecursionLimit:
             assert hasattr(mod, "_routine_name")
         finally:
             sys.setrecursionlimit(prev)
+
+
+# =========================================================================
+# Wrapper label pattern — DO LABEL^ROUTINE where LABEL immediately GOTOs
+# externally (the MXMLPRS0 DOPARAM pattern)
+# =========================================================================
+
+
+@pytest.mark.codegen
+class TestTrampolineWrapperLabelPattern:
+    """TRAMPOLINE routines with wrapper labels that GOTO externally.
+
+    Pattern found in MXMLPRS0:
+        DOPARAM G DOPARAM^MXMLPRSE   ; wrapper label just GOTOs externally
+        READ    G READ^MXMLPRSE      ; another wrapper label
+
+    When called via D DOPARAM^MXMLPRS0, the DO must:
+    1. Enter MXMLPRS0's DOPARAM entry function
+    2. _DOPARAM raises GotoExternal to MXMLPRSE
+    3. The entry function catches it, handles locally via run_with_goto_support
+    4. run_with_goto_support runs MXMLPRSE's DOPARAM to completion
+    5. Control returns to the caller's code *after* the DO
+
+    If GotoExternal were re-raised instead, it would escape past the DO
+    boundary, and the caller would never continue.
+    """
+
+    def test_do_wrapper_label_continues_after(self, runtime):
+        """D WRAPPER^R where WRAPPER GOTOs externally → caller continues.
+
+        WRAPRT has multiple labels (TRAMPOLINE strategy) and one wrapper
+        label that immediately GOTOs an external routine.  The DO caller
+        should see W "after" execute.
+        """
+        try:
+            # WRAPRT has internal GOTOs → TRAMPOLINE; PARAM immediately GOTOs external
+            _load(
+                'WRAPRT\n G MAIN\n Q\nMAIN\n W "main" Q\nPARAM G PARAM^WRAPEXT\n Q\n',
+                "WRAPRT",
+            )
+            _load(
+                'WRAPEXT\n Q\nPARAM\n W "external" Q\n',
+                "WRAPEXT",
+            )
+            # Caller: DO PARAM^WRAPRT then writes "after"
+            mod_caller = _load(
+                'WRAPCALL\n W "before" D PARAM^WRAPRT W "after" Q\n',
+                "WRAPCALL",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_caller.WRAPCALL, runtime, scope)
+            assert runtime.get_output() == "beforeexternalafter"
+        finally:
+            _cleanup("WRAPRT", "WRAPEXT", "WRAPCALL")
+
+    def test_do_wrapper_label_with_shared_variables(self, runtime):
+        """Wrapper label GOTO preserves variable changes.
+
+        External routine sets a variable, wrapper returns, and
+        the caller can read the variable.
+        """
+        try:
+            _load(
+                'WVRT\n G MAIN\n Q\nMAIN\n W "main" Q\nSETEXT G SETEXT^WVEXT\n Q\n',
+                "WVRT",
+            )
+            _load(
+                'WVEXT\n Q\nSETEXT\n S RESULT="done" Q\n',
+                "WVEXT",
+            )
+            mod_caller = _load(
+                "WVCALL\n D SETEXT^WVRT W $G(RESULT) Q\n",
+                "WVCALL",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_caller.WVCALL, runtime, scope)
+            assert runtime.get_output() == "done"
+        finally:
+            _cleanup("WVRT", "WVEXT", "WVCALL")
+
+    def test_multiple_do_wrapper_calls(self, runtime):
+        """Multiple DO calls to wrapper labels in sequence.
+
+        Simulates MXMLPRS0's pattern where DOPARAM is called many times
+        during XML parsing.
+        """
+        try:
+            _load(
+                'MWRT\n G MAIN\n Q\nMAIN\n W "main" Q\nACT G ACT^MWEXT\n Q\n',
+                "MWRT",
+            )
+            _load(
+                "MWEXT\n Q\nACT\n S N=$G(N)+1 Q\n",
+                "MWEXT",
+            )
+            mod_caller = _load(
+                "MWCALL\n D ACT^MWRT D ACT^MWRT D ACT^MWRT W $G(N) Q\n",
+                "MWCALL",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_caller.MWCALL, runtime, scope)
+            assert runtime.get_output() == "3"
+        finally:
+            _cleanup("MWRT", "MWEXT", "MWCALL")
+
+
+# =========================================================================
+# TRAMPOLINE nested DO with external GOTO — the sort chain pattern
+# =========================================================================
+
+
+@pytest.mark.codegen
+class TestTrampolineNestedDoExternalGoto:
+    """TRAMPOLINE routine calls subroutine that GOTOs externally.
+
+    Pattern found in DIP/DICLGFT sort chain:
+        DICLGFT (TRAMPOLINE) calls D EN1^DIP
+        DIP (TRAMPOLINE) does G ^DIP5
+        DIP5 does work, QUITs
+        DIP returns to DICLGFT
+        DICLGFT continues (sets up DINDEX etc.)
+
+    With local handling, the GOTO chain runs to completion inside
+    DIP's trampoline, and DIP returns normally to DICLGFT.
+    """
+
+    def test_trampoline_do_subroutine_with_goto(self, runtime):
+        """TRAMPOLINE A calls D SUB → SUB GOTOs externally → A continues.
+
+        OUTERRT (TRAMPOLINE) calls D WORK^INNERRT.
+        INNERRT (TRAMPOLINE) does G ^EXTRT during WORK.
+        EXTRT does work (writes "ext") then QUITs.
+        INNERRT's WORK trampoline handles it locally (target=None).
+        Control returns to OUTERRT, which writes "continued".
+        """
+        try:
+            # INNERRT has internal GOTOs → TRAMPOLINE
+            _load(
+                "INNERRT\n G SETUP\n Q\n"
+                'SETUP\n W "setup" Q\n'
+                'WORK\n W "work" G ^TNEXTRT\n Q\n',
+                "INNERRT",
+            )
+            _load(
+                'TNEXTRT\n W "ext" Q\n',
+                "TNEXTRT",
+            )
+            # OUTERRT calls D WORK^INNERRT then continues
+            mod_outer = _load(
+                'OUTERRT\n D WORK^INNERRT W "continued" Q\n',
+                "OUTERRT",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_outer.OUTERRT, runtime, scope)
+            assert runtime.get_output() == "workextcontinued"
+        finally:
+            _cleanup("INNERRT", "TNEXTRT", "OUTERRT")
+
+    def test_trampoline_do_chain_preserves_variables(self, runtime):
+        """Variables survive through TRAMPOLINE GOTO chain and back.
+
+        OUTERRT sets X, calls D WORK^INNERRT.
+        WORK GOTOs ^EXTRT which sets Y.
+        After DO returns, OUTERRT writes X and Y.
+        """
+        try:
+            _load(
+                "TVIRT\n G SETUP\n Q\nSETUP\n Q\nWORK\n G ^TVEXTRT\n Q\n",
+                "TVIRT",
+            )
+            _load(
+                'TVEXTRT\n S Y="world" Q\n',
+                "TVEXTRT",
+            )
+            mod = _load(
+                'TVCALL\n S X="hello" D WORK^TVIRT W X," ",Y Q\n',
+                "TVCALL",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod.TVCALL, runtime, scope)
+            assert runtime.get_output() == "hello world"
+        finally:
+            _cleanup("TVIRT", "TVEXTRT", "TVCALL")
+
+    def test_nested_trampoline_do_chain(self, runtime):
+        """Two levels of TRAMPOLINE DO chains.
+
+        Pattern: caller -> TRAMPOLINE B -> GOTO ^C -> C QUITs
+                 -> B's trampoline handles locally -> B returns -> caller continues
+        """
+        try:
+            # B has internal GOTOs → TRAMPOLINE
+            _load(
+                'NTRB\n G INIT\n Q\nINIT\n Q\nSUB\n W "B" G ^NTRC\n Q\n',
+                "NTRB",
+            )
+            _load(
+                'NTRC\n W "C" Q\n',
+                "NTRC",
+            )
+            # A also has internal GOTOs → TRAMPOLINE
+            mod = _load(
+                'NTRA\n G START\n Q\nSTART\n W "A" D SUB^NTRB W "done" Q\n',
+                "NTRA",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod.NTRA, runtime, scope)
+            assert runtime.get_output() == "ABCdone"
+        finally:
+            _cleanup("NTRA", "NTRB", "NTRC")
+
+    def test_trampoline_multi_hop_goto(self, runtime):
+        """TRAMPOLINE routine GOTOs through multiple external routines.
+
+        MHRT (TRAMPOLINE) WORK label GOTOs ^MH1 → MH1 GOTOs ^MH2 → MH2 QUITs.
+        All handled locally via run_with_goto_support nesting.
+        """
+        try:
+            _load(
+                'MHRT\n G INIT\n Q\nINIT\n Q\nWORK\n W "start" G ^MHRT1\n Q\n',
+                "MHRT",
+            )
+            _load(
+                'MHRT1\n W "-hop1" G ^MHRT2\n Q\n',
+                "MHRT1",
+            )
+            _load(
+                'MHRT2\n W "-hop2" Q\n',
+                "MHRT2",
+            )
+            mod = _load(
+                'MHCALL\n D WORK^MHRT W "-done" Q\n',
+                "MHCALL",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod.MHCALL, runtime, scope)
+            assert runtime.get_output() == "start-hop1-hop2-done"
+        finally:
+            _cleanup("MHRT", "MHRT1", "MHRT2", "MHCALL")
+
+
+# =========================================================================
+# Codegen detail tests — verify state/scope sync in GotoExternal handler
+# =========================================================================
+
+
+@pytest.mark.codegen
+class TestTrampolineGotoExternalCodegenDetails:
+    """Verify codegen details of the GotoExternal handler."""
+
+    def test_main_entry_has_scope_to_state_sync_after_handler(self):
+        """After run_with_goto_support, the handler syncs scope→state.
+
+        The handler pattern is:
+            except GotoExternal:
+                state→scope sync
+                run_with_goto_support(...)
+                scope→state sync
+                target = None
+        """
+        code = generate_python("TEST\n G NEXT\n Q\nNEXT\n G ^OTHER\n Q\n")
+        lines = code.split("\n")
+
+        in_main = False
+        in_handler = False
+        found_rwgs = False
+        found_target_none = False
+        for line in lines:
+            stripped = line.strip()
+            if "def TEST(" in line and "_scope=" in line:
+                in_main = True
+                continue
+            if not in_main:
+                continue
+            if line.startswith("def ") and "def TEST" not in line:
+                break
+            if "except GotoExternal as _goto:" in stripped:
+                in_handler = True
+                continue
+            if in_handler:
+                if "run_with_goto_support" in stripped:
+                    found_rwgs = True
+                    continue
+                if stripped == "target = None":
+                    found_target_none = True
+                if stripped.startswith("except "):
+                    break
+
+        assert found_rwgs, "Handler must call run_with_goto_support"
+        assert found_target_none, "Handler must set target = None"
+
+    def test_handler_does_not_use_bare_raise(self):
+        """GotoExternal handler must NOT use bare 'raise'.
+
+        A bare 'raise' would abort the trampoline and escape past the
+        DO boundary, breaking wrapper-label patterns.
+        """
+        code = generate_python("TEST\n G NEXT\n Q\nNEXT\n G ^OTHER\n Q\n")
+        lines = code.split("\n")
+
+        in_main = False
+        in_handler = False
+        for line in lines:
+            stripped = line.strip()
+            if "def TEST(" in line and "_scope=" in line:
+                in_main = True
+                continue
+            if not in_main:
+                continue
+            if line.startswith("def ") and "def TEST" not in line:
+                break
+            if "except GotoExternal as _goto:" in stripped:
+                in_handler = True
+                continue
+            if in_handler:
+                assert stripped != "raise", (
+                    "GotoExternal handler must NOT use bare 'raise' — "
+                    "this would abort the trampoline and break wrapper labels"
+                )
+                if stripped.startswith("except "):
+                    break
+
+    def test_simple_functions_has_no_goto_external_handler(self):
+        """SIMPLE_FUNCTIONS routines don't catch GotoExternal in entries.
+
+        Single-label routines use SIMPLE_FUNCTIONS strategy and have no
+        trampoline.  GotoExternal propagates naturally to the caller's
+        run_with_goto_support.
+        """
+        code = generate_python('SIMPLE\n W "hi" G ^OTHER\n Q\n')
+        lines = code.split("\n")
+
+        in_entry = False
+        found_goto_handler = False
+        for line in lines:
+            stripped = line.strip()
+            if "def SIMPLE(" in line and "_scope=" in line:
+                in_entry = True
+                continue
+            if not in_entry:
+                continue
+            if line.startswith("def ") and "def SIMPLE" not in line:
+                break
+            if "except GotoExternal" in stripped:
+                found_goto_handler = True
+
+        assert not found_goto_handler, (
+            "SIMPLE_FUNCTIONS entry should not catch GotoExternal — "
+            "it should propagate naturally to run_with_goto_support"
+        )
+
+
+# =========================================================================
+# Edge cases
+# =========================================================================
+
+
+@pytest.mark.codegen
+class TestGotoExternalEdgeCases:
+    """Edge cases for GotoExternal handling."""
+
+    def test_goto_after_write_in_trampoline(self, runtime):
+        """GOTO after WRITE in trampoline — written output preserved.
+
+        The trampoline catches GotoExternal locally, so output from
+        BEFORE the GOTO is preserved.
+        """
+        try:
+            _load(
+                'GAWRT\n G INIT\n Q\nINIT\n Q\nSUB\n W "before-goto" G ^GAWEXT\n Q\n',
+                "GAWRT",
+            )
+            _load(
+                'GAWEXT\n W "-external" Q\n',
+                "GAWEXT",
+            )
+            mod = _load(
+                "GAWCALL\n D SUB^GAWRT Q\n",
+                "GAWCALL",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod.GAWCALL, runtime, scope)
+            assert runtime.get_output() == "before-goto-external"
+        finally:
+            _cleanup("GAWRT", "GAWEXT", "GAWCALL")
+
+    def test_goto_external_returns_to_caller_cleanly(self, runtime):
+        """Entry that GOTOs externally returns cleanly to DO caller.
+
+        When a label entry handles GotoExternal locally and sets
+        target=None, the function exits normally and the DO caller
+        continues without error.
+        """
+        try:
+            _load(
+                "RTNRT\n G INIT\n Q\nINIT\n Q\nSUB\n G ^RTNEXT\n Q\n",
+                "RTNRT",
+            )
+            _load(
+                "RTNEXT\n Q\n",
+                "RTNEXT",
+            )
+            # Verify DO SUB^RTNRT works without error
+            mod = _load(
+                'RTNCALL\n D SUB^RTNRT W "ok" Q\n',
+                "RTNCALL",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod.RTNCALL, runtime, scope)
+            assert runtime.get_output() == "ok"
+        finally:
+            _cleanup("RTNRT", "RTNEXT", "RTNCALL")
+
+    def test_conditional_goto_external_taken(self, runtime):
+        """Conditional GOTO ^EXTERNAL — takes GOTO path.
+
+        When condition is true, GOTO fires and the handler catches it.
+        """
+        try:
+            _load(
+                'CGRT\n G INIT\n Q\nINIT\n Q\nWORK\n I 1 G ^CGEXT\n W "not-taken" Q\n',
+                "CGRT",
+            )
+            _load(
+                'CGEXT\n W "taken" Q\n',
+                "CGEXT",
+            )
+            mod = _load(
+                'CGCALL\n D WORK^CGRT W "-done" Q\n',
+                "CGCALL",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod.CGCALL, runtime, scope)
+            assert runtime.get_output() == "taken-done"
+        finally:
+            _cleanup("CGRT", "CGEXT", "CGCALL")
+
+    def test_conditional_goto_external_not_taken(self, runtime):
+        """Conditional GOTO ^EXTERNAL — does NOT take GOTO path.
+
+        When condition is false, GOTO doesn't fire and normal code executes.
+        """
+        try:
+            _load(
+                'CGNRT\n G INIT\n Q\nINIT\n Q\nWORK\n I 0 G ^CGNEXT\n W "normal" Q\n',
+                "CGNRT",
+            )
+            _load(
+                'CGNEXT\n W "external" Q\n',
+                "CGNEXT",
+            )
+            mod = _load(
+                'CGNCALL\n D WORK^CGNRT W "-done" Q\n',
+                "CGNCALL",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod.CGNCALL, runtime, scope)
+            assert runtime.get_output() == "normal-done"
+        finally:
+            _cleanup("CGNRT", "CGNEXT", "CGNCALL")
+
+    def test_extrinsic_with_trampoline_routine(self, runtime):
+        """$$FUNC^R where R is a TRAMPOLINE routine.
+
+        Extrinsic calls should work correctly with TRAMPOLINE routines
+        that have internal GOTOs (but not through the extrinsic path).
+        """
+        try:
+            _load(
+                'EXRT\n G INIT\n Q\nINIT\n Q\nFUNC()\n Q "result"\n',
+                "EXRT",
+            )
+            mod_caller = _load(
+                "EXCALL\n W $$FUNC^EXRT() Q\n",
+                "EXCALL",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_caller.EXCALL, runtime, scope)
+            assert runtime.get_output() == "result"
+        finally:
+            _cleanup("EXRT", "EXCALL")
+
+    def test_ping_pong_trampoline_routines(self, runtime):
+        """GOTO ping-pong between TRAMPOLINE routines — both have multiple labels."""
+        try:
+            mod_a = _load(
+                "TPPA2\n G START\n Q\nSTART\n S N=$G(N)+1 I N>3 W N Q\n G ^TPPB2\n Q\n",
+                "TPPA2",
+            )
+            _load(
+                "TPPB2\n G GO\n Q\nGO\n G ^TPPA2\n Q\n",
+                "TPPB2",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_a.TPPA2, runtime, scope)
+            assert runtime.get_output() == "4"
+        finally:
+            _cleanup("TPPA2", "TPPB2")

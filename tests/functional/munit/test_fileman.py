@@ -68,12 +68,7 @@ _INVOCATIONS = {
 # ---------------------------------------------------------------------------
 
 # Routines expected to xfail with reason
-_XFAIL_ROUTINES: dict[str, str] = {
-    "DMUDIC00": (
-        "LISTC/LISTX1/X2/X3: DIC 'X' flag sort not fully supported; "
-        "computed field sorting produces wrong results (6 failures, 0 errors)"
-    ),
-}
+_XFAIL_ROUTINES: dict[str, str] = {}
 
 # Timeout (seconds) for routines known to potentially hang.
 _XFAIL_TIMEOUTS: dict[str, int] = {}
