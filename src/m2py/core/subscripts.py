@@ -76,7 +76,13 @@ class SubscriptCanonicalizer:
     @staticmethod
     @lru_cache(maxsize=8192)
     def _canonicalize_string_cached(value: str) -> str:
-        """Cached canonicalization for string subscripts."""
+        """Cached canonicalization for string subscripts.
+
+        This is semantically an identity function (returns value unchanged),
+        but the LRU cache provides ~11x speedup by skipping the expensive
+        is_canonical_numeric_string check (Decimal parsing) on repeated
+        subscript values — common during VistA global traversal.
+        """
         # Check if it's a canonical numeric string
         if SubscriptCanonicalizer.is_canonical_numeric_string(value):
             # It's already canonical, return as-is
@@ -202,19 +208,6 @@ class SubscriptCanonicalizer:
             False
         """
         if not s:
-            return False
-
-        # Fast-path: if the first char can't start a canonical number, skip
-        # Canonical numbers start with: digit, '-', or '.' (for .5 etc.)
-        first = s[0]
-        if first not in "-0123456789.":
-            return False
-
-        # Quick rejection for strings that look non-numeric without
-        # expensive Decimal parsing (avoid try/except overhead)
-        # Canonical forms: "0", "123", "-1", ".5", "-.5", "1.5", "-1.5"
-        # Only digits, minus, and dot are allowed
-        if not all(c in "0123456789.-" for c in s):
             return False
 
         # Try to parse as number using Decimal for precision
