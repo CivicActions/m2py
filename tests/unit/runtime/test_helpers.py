@@ -452,6 +452,24 @@ class TestMGet:
         # "ABC" can't be converted to int, stays as string
         assert m_get(arr, ("ABC",), "DEFAULT") == "VALUE"
 
+    def test_plain_int_no_subscripts(self):
+        """m_get on plain int (from GOTO trampoline state) returns str value."""
+        assert m_get(42, (), "") == "42"
+
+    def test_plain_decimal_no_subscripts(self):
+        """m_get on plain Decimal (from trampoline state) returns str value."""
+        from decimal import Decimal
+
+        assert m_get(Decimal("3070930"), (), "") == "3070930"
+
+    def test_plain_string_no_subscripts(self):
+        """m_get on plain string (from trampoline state) returns it."""
+        assert m_get("HELLO", (), "") == "HELLO"
+
+    def test_plain_value_with_subscripts_returns_default(self):
+        """m_get on plain value with subscripts returns default (no children)."""
+        assert m_get(42, ("sub",), "DEFAULT") == "DEFAULT"
+
 
 class TestMGetGlobal:
     """Tests for m_get_global() helper function."""

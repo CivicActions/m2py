@@ -91,6 +91,9 @@ _FM_TESTING_DIR = _VISTA_SUBMODULE / "Packages" / "VA FileMan" / "Testing" / "MU
 # Scheduling Testing/MUnit directory (Tier 4b test routines)
 _SCHED_TESTING_DIR = _VISTA_SUBMODULE / "Packages" / "Scheduling" / "Testing" / "MUnit"
 
+# Registration Testing/MUnit directory (Tier 4c test routines)
+_REG_TESTING_DIR = _VISTA_SUBMODULE / "Packages" / "Registration" / "Testing" / "MUnit"
+
 
 # ---------------------------------------------------------------------------
 # Auto-importer: transpile MUMPS routines on demand
@@ -709,6 +712,33 @@ def scheduling_library(munit_framework, fileman_bootstrap):
     # Pre-load XLFDT, XLFSTR (Kernel utilities used by Scheduling tests)
     _try_load_routine(_VISTA_M_KERNEL_DIR / "XLFDT.m", "XLFDT")
     _try_load_routine(_VISTA_M_KERNEL_DIR / "XLFSTR.m", "XLFSTR")
+
+
+@pytest.fixture(scope="session")
+def registration_library(scheduling_library, munit_runtime):
+    """Load Registration dependency routines (Tier 4c).
+
+    Relies on ``scheduling_library`` which already extends the auto-importer
+    with Registration and VEHU-M directories.  Adds the Registration MUnit
+    testing directory so the ZZDGPTCO1 test routine resolves on import.
+
+    Seeds ``^DG(45.86)`` (PTF CENSUS DATE) fixture data required by
+    ZZDGPTCO1's ``GETDGIEN`` subroutine.  Record 22 is set as the active
+    census date so that ``GETDGIEN`` returns 22 and ``NEWDGIEN`` = 23.
+    """
+    assert _auto_importer is not None
+    _auto_importer.add_dirs([_REG_TESTING_DIR])
+
+    # Seed ^DG(45.86) — ZZDGPTCO1 expects GETDGIEN to return 22.
+    # GETDGIEN logic:
+    #   S DGIEN=$S($D(^DG(45.86,+$O(^DG(45.86,"AC",1,0)),0)):+^(0),1:"")
+    #   S DGIEN=$O(^DG(45.86,"B",+$G(DGIEN),0))
+    # → needs AC,1 → IEN 22 → 0-node with +^(0)=22 → B,22,22
+    g = munit_runtime.globals
+    g.set("DG", ("45.86", "0"), "PTF CENSUS DATE^45.86D^22^22")
+    g.set("DG", ("45.86", "22", "0"), "22^^^1^")
+    g.set("DG", ("45.86", "AC", "1", "22"), "")
+    g.set("DG", ("45.86", "B", "22", "22"), "")
 
 
 @pytest.fixture(scope="session")

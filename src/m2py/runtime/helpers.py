@@ -929,6 +929,17 @@ def m_get(
     if array is None:
         return default
 
+    # Handle plain values from GOTO trampoline state variables.
+    # In the trampoline codegen path, scalar state vars may hold plain
+    # values (str/int/Decimal) instead of MArray when the var is not
+    # tracked as an array.  $G(VAR) still needs to work correctly.
+    from m2py.runtime import MArray as _MArray
+
+    if not isinstance(array, _MArray):
+        if subscripts:
+            return default
+        return str(array)
+
     if not subscripts:
         # Check root value - None means undefined
         if array._value is None:

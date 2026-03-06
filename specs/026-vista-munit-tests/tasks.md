@@ -428,16 +428,16 @@ _Originally planned for a separate vista-test repo; consolidated into m2py `test
 
 ### Registration Dependencies (US5 + US6)
 
-- [ ] T106 [US6] Transpile `DGPTCO1` (patient combine API); verify it loads
+- [x] T106 [US6] Transpile `DGPTCO1` (patient combine API); verify it loads
 
 ### Registration Global Bootstrap (US4 + US6)
 
-- [ ] T107 [US4] Capture Registration globals from osehravista: `^DG*`; save ZWR to `tests/functional/munit/baselines/globals/` (may share `^DPT` from Tier 4b)
+- [x] T107 [US4] Capture Registration globals from osehravista: `^DG*`; save ZWR to `tests/functional/munit/baselines/globals/` (may share `^DPT` from Tier 4b)
 
 ### Registration Test Routine (US6)
 
-- [ ] T108 [US6] Transpile and run ZZDGPTCO1 (10 assertions, DGPTCO1, DICRW); compare to baseline
-- [ ] T109 [US5] Fix m2py issues discovered during Tier 4c; add standalone unit tests per fix in `tests/` (m2py root)
+- [x] T108 [US6] Transpile and run ZZDGPTCO1 (10 assertions, DGPTCO1, DICRW); compare to baseline
+- [x] T109 [US5] Fix m2py issues discovered during Tier 4c; add standalone unit tests per fix in `tests/` (m2py root)
 
 **Checkpoint**: **38 / 38 routines (100%)**. All M-Unit tests passing. ~1,204 cumulative assertions.
 
