@@ -597,7 +597,20 @@ class InMemoryGlobalStorage:
         """Set value at ^NAME(subscripts) without canonicalizing.
 
         Used by import_zwr where subscripts are already canonical.
+        Callers MUST ensure subscripts are pre-canonicalized — misuse
+        will silently create unreachable nodes.
         """
+        assert __debug__ or True  # no-op in -O mode; marker for grep
+        # Spot-check: first subscript (if any) should already be canonical.
+        # Full validation is too expensive; this catches obvious misuse.
+        if __debug__ and subscripts:
+            from m2py.core.subscripts import SubscriptCanonicalizer
+
+            sample = subscripts[0]
+            assert sample == SubscriptCanonicalizer.canonicalize(sample), (
+                f"_set_raw called with non-canonical subscript: {sample!r}"
+            )
+
         from m2py.runtime import MArray
 
         self._update_naked_indicator(name, subscripts)
