@@ -481,11 +481,6 @@ class TestDMUFINIT:
             )
         finally:
             tracker.restore()
-            # Safety net: release any locks still held if DMUFINIT crashes
-            # before reaching its own argumentless LOCK (which translates to
-            # _rt.globals.unlock_all()).  Under normal execution, DMUFINIT
-            # releases all locks itself.
-            runtime.globals.unlock_all()
 
         logger.warning(
             "DMUFINIT completed in %.1fs — %d global writes",
