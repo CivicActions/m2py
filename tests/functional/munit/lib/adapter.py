@@ -592,15 +592,6 @@ def transpile_and_execute(
             _prev_handler = signal.signal(signal.SIGALRM, _alarm_handler)
             signal.alarm(int(timeout))
 
-        # Guard against infinite GOTO/DO recursion that would segfault.
-        # MUMPS programs rarely nest beyond ~50 frames; 1500 is generous.
-        # Cross-routine GOTO chains (e.g. DIP2↔DIP22 FileMan sort) use
-        # re-raise semantics so they don't consume stack.  The limit here
-        # catches true infinite recursion from DO nesting or buggy GOTOs.
-        # The SIGALRM timeout catches any remaining infinite loops.
-        _prev_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(1500)
-
         try:
             # Call the resolved entry function.
             #
@@ -626,7 +617,6 @@ def transpile_and_execute(
                     scope,
                 )
         finally:
-            sys.setrecursionlimit(_prev_limit)
             if timeout > 0:
                 import signal
 
