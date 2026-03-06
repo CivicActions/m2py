@@ -1,16 +1,22 @@
-"""Tests for GotoExternal re-raise in trampoline entry functions.
+"""Tests for GotoExternal handling in trampoline entry functions.
 
-When a trampoline entry function catches GotoExternal from its label
-functions, it now re-raises the exception (after syncing state to scope)
-instead of recursively calling run_with_goto_support.  This allows the
-caller's run_with_goto_support to handle the entire GOTO chain in a flat
-loop, preventing stack overflow from cross-routine GOTO ping-pong.
+TRAMPOLINE entry functions handle GotoExternal locally via
+run_with_goto_support — running the external GOTO chain to completion
+and then returning to the caller.  This ensures that when a subroutine
+(DO) does an external GOTO, the caller continues after the DO.
 
-Key scenario:
-    Routine A does GOTO ^B → B does GOTO ^A → A does GOTO ^B → …
-    Without re-raise, each hop adds ~6 stack frames, exhausting the
-    recursion limit after ~80 hops.  With re-raise, run_with_goto_support
-    handles the chain iteratively with constant stack depth.
+Cross-routine GOTO ping-pong (A → B → A → B → …) works efficiently
+because the routines involved typically use SIMPLE_FUNCTIONS strategy
+(single label, no internal GOTOs), where GotoExternal propagates
+directly to the outermost run_with_goto_support which handles it in
+a flat loop with constant stack depth.
+
+Key scenarios tested:
+    - TRAMPOLINE entries handle GotoExternal locally (run_with_goto_support)
+    - Cross-routine GOTO chains work correctly
+    - Deep ping-pong doesn't overflow the stack
+    - Variables are preserved across GOTO chains
+    - GOTO from within DO context returns properly
 """
 
 import sys
@@ -50,19 +56,28 @@ def _cleanup(*names):
 
 
 @pytest.mark.codegen
-class TestTrampolineGotoExternalReraise:
-    """Trampoline entry functions re-raise GotoExternal."""
+class TestTrampolineGotoExternalLocalHandling:
+    """Trampoline entry functions handle GotoExternal locally.
 
-    def test_main_entry_reraises_goto_external(self):
-        """Main entry function's GotoExternal handler uses 'raise'.
+    TRAMPOLINE entry functions catch GotoExternal and handle it locally
+    via run_with_goto_support — running the external GOTO chain to
+    completion and then exiting the trampoline (target = None).
+
+    This ensures that when a subroutine (DO) does an external GOTO,
+    the chain runs to completion and control returns to the caller
+    after the DO.  Cross-routine GOTO ping-pong from SIMPLE_FUNCTIONS
+    routines naturally uses flat resolution via run_with_goto_support.
+    """
+
+    def test_main_entry_handles_goto_external_locally(self):
+        """Main entry function's GotoExternal handler uses run_with_goto_support.
 
         The generated main entry trampoline should have:
             except GotoExternal as _goto:
                 ... state sync ...
-                raise
-        NOT:
-            except GotoExternal as _goto:
-                ... run_with_goto_support(...)
+                run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)
+                ... scope→state sync ...
+                target = None
 
         Need internal GOTOs to trigger TRAMPOLINE strategy.
         """
@@ -73,8 +88,8 @@ class TestTrampolineGotoExternalReraise:
         # then look for GotoExternal handler within it
         in_main_entry = False
         in_goto_handler = False
-        found_raise = False
         found_run_with = False
+        found_target_none = False
         for line in lines:
             stripped = line.strip()
             if "def TEST(" in line and "_scope=" in line:
@@ -89,26 +104,23 @@ class TestTrampolineGotoExternalReraise:
                 in_goto_handler = True
                 continue
             if in_goto_handler:
-                if stripped == "raise":
-                    found_raise = True
-                    break
                 if "run_with_goto_support" in stripped:
                     found_run_with = True
-                    break
+                if stripped == "target = None":
+                    found_target_none = True
                 if stripped.startswith("except "):
                     break
 
-        assert found_raise, (
-            "Main entry GotoExternal handler should use 'raise', "
-            "not run_with_goto_support"
+        assert found_run_with, (
+            "Main entry GotoExternal handler should use run_with_goto_support "
+            "for local handling"
         )
-        assert not found_run_with
+        assert found_target_none, (
+            "Main entry GotoExternal handler should set target = None to exit trampoline"
+        )
 
-    def test_label_entry_reraises_goto_external(self):
-        """Label entry function's GotoExternal handler uses 'raise'.
-
-        When a label entry (e.g. SUB) catches GotoExternal, it should
-        re-raise to let the caller's run_with_goto_support handle it.
+    def test_label_entry_handles_goto_external_locally(self):
+        """Label entry function's GotoExternal handler uses run_with_goto_support.
 
         Need internal GOTOs to trigger TRAMPOLINE strategy.
         """
@@ -118,7 +130,6 @@ class TestTrampolineGotoExternalReraise:
         # Find the SUB entry function (def SUB(..., _scope=None):)
         in_sub = False
         in_goto_handler = False
-        found_raise = False
         found_run_with = False
         for line in lines:
             stripped = line.strip()
@@ -137,20 +148,16 @@ class TestTrampolineGotoExternalReraise:
                 in_goto_handler = True
                 continue
             if in_goto_handler:
-                if stripped == "raise":
-                    found_raise = True
-                    break
                 if "run_with_goto_support" in stripped:
                     found_run_with = True
                     break
                 if stripped.startswith("except ") or stripped.startswith("def "):
                     break
 
-        assert found_raise, (
-            "Label entry GotoExternal handler should use 'raise', "
-            "not run_with_goto_support"
+        assert found_run_with, (
+            "Label entry GotoExternal handler should use run_with_goto_support "
+            "for local handling"
         )
-        assert not found_run_with
 
 
 # =========================================================================
@@ -201,10 +208,9 @@ class TestCrossRoutineGotoPingPong:
     def test_deep_ping_pong_no_overflow(self, runtime):
         """GOTO ping-pong with many iterations doesn't overflow stack.
 
-        Previously, each cross-routine GOTO added ~6 stack frames via
-        recursive run_with_goto_support calls.  With 500-frame limit,
-        only ~80 hops were possible.  After the re-raise fix, hundreds
-        of hops should work without stack overflow.
+        These single-label routines use SIMPLE_FUNCTIONS strategy, so
+        GotoExternal propagates directly to run_with_goto_support which
+        handles the chain in a flat loop with constant stack depth.
         """
         try:
             # DPPINGA: increment N, if N<200 GOTO ^DPPINGB, else QUIT
