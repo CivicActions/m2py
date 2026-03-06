@@ -773,4 +773,4 @@ def _clean_backend_globals():
         try:
             get_global_storage(backend_name).unlock_all()
         except Exception:
-            pass
+            logger.debug("unlock_all failed in teardown", exc_info=True)
