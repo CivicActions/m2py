@@ -61,6 +61,14 @@ _VISTA_M_FILEMAN_DIR = _VISTA_M_PACKAGES_DIR / "VA FileMan" / "Routines"
 _VISTA_M_FILEMAN_GLOBALS_DIR = _VISTA_M_PACKAGES_DIR / "VA FileMan" / "Globals"
 _VISTA_M_MXML_DIR = _VISTA_M_PACKAGES_DIR / "M XML Parser" / "Routines"
 _VISTA_M_MASH_DIR = _VISTA_M_PACKAGES_DIR / "MASH Utilities" / "Routines"
+_VISTA_M_SCHEDULING_DIR = _VISTA_M_PACKAGES_DIR / "Scheduling" / "Routines"
+_VISTA_M_REGISTRATION_DIR = _VISTA_M_PACKAGES_DIR / "Registration" / "Routines"
+
+# VistA-VEHU-M — contains additional routines not in VistA-M (e.g. SDMAPI*)
+_VEHU_M_DIR = _REPO_ROOT / "VistA-VEHU-M"
+_VEHU_M_PACKAGES_DIR = _VEHU_M_DIR / "Packages"
+_VEHU_M_SCHEDULING_DIR = _VEHU_M_PACKAGES_DIR / "Scheduling" / "Routines"
+_VEHU_M_REGISTRATION_DIR = _VEHU_M_PACKAGES_DIR / "Registration" / "Routines"
 
 # VistA (OSEHRA) — contains TestList files for Tier 2+ packages
 _VISTA_SUBMODULE = _VISTA_DIR
@@ -79,6 +87,9 @@ _MASH_TEST_ROUTINES = [
 
 # FileMan Testing/MUnit directory (OSEHRA test fixtures: DMUFINIT chain, etc.)
 _FM_TESTING_DIR = _VISTA_SUBMODULE / "Packages" / "VA FileMan" / "Testing" / "MUnit"
+
+# Scheduling Testing/MUnit directory (Tier 4b test routines)
+_SCHED_TESTING_DIR = _VISTA_SUBMODULE / "Packages" / "Scheduling" / "Testing" / "MUnit"
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +158,40 @@ class MumpsAutoImporter(importlib.abc.MetaPathFinder):
             len(self._index),
             len(search_dirs),
         )
+
+    def add_dirs(self, dirs: list[Path]) -> None:
+        """Extend the search index with additional directories."""
+        added = 0
+        for d in dirs:
+            if not d.is_dir():
+                continue
+            for m_file in d.glob("*.m"):
+                stem = m_file.stem
+                if stem not in self._index:
+                    self._index[stem] = m_file
+                    added += 1
+                if stem in _FILENAME_OVERRIDES:
+                    mumps_name = _FILENAME_OVERRIDES[stem]
+                    py_name = "_pct_" + mumps_name[1:]
+                    if py_name not in self._index:
+                        self._index[py_name] = m_file
+                else:
+                    try:
+                        with open(m_file, "r", errors="replace") as fh:
+                            first_line = fh.readline(200)
+                        rname = (
+                            first_line.split(";")[0].split()[0]
+                            if first_line.strip()
+                            else ""
+                        )
+                        if rname.startswith("%") and rname[1:] == stem:
+                            py_name = "_pct_" + stem
+                            if py_name not in self._index:
+                                self._index[py_name] = m_file
+                    except Exception:
+                        pass
+        if added:
+            logger.debug("Auto-importer extended with %d new routines", added)
 
     # -- Modern importlib protocol (find_spec / create_module / exec_module) --
 
@@ -629,6 +674,41 @@ def fileman_library(munit_framework, fileman_bootstrap):
     - %ZISH Python implementation
     """
     _register_fileman_dependencies()
+
+
+@pytest.fixture(scope="session")
+def scheduling_library(munit_framework, fileman_bootstrap):
+    """Load Scheduling and Registration dependency routines (Tier 4b).
+
+    Extends the auto-importer with Scheduling, Registration, and VEHU-M
+    directories so that SDK APIs (``SDAMA*``), management APIs
+    (``SDMAPI*``), Registration utilities (``VADPT*``), and any other
+    transitive dependencies resolve on demand.
+
+    Requires:
+    - M-Unit framework loaded (for cross-routine call resolution)
+    - FileMan bootstrap (``^DD``, ``^DIC``) for routines that reference
+      the data dictionary
+    """
+    # Expand the auto-importer with Scheduling, Registration, and VEHU-M
+    # directories.  _install_auto_importer ensures the base importer exists;
+    # add_dirs extends it with package-specific source trees.
+    _install_auto_importer()
+    _register_fileman_dependencies()
+    assert _auto_importer is not None
+    _auto_importer.add_dirs(
+        [
+            _VISTA_M_SCHEDULING_DIR,
+            _VISTA_M_REGISTRATION_DIR,
+            _SCHED_TESTING_DIR,
+            _VEHU_M_SCHEDULING_DIR,
+            _VEHU_M_REGISTRATION_DIR,
+        ]
+    )
+
+    # Pre-load XLFDT, XLFSTR (Kernel utilities used by Scheduling tests)
+    _try_load_routine(_VISTA_M_KERNEL_DIR / "XLFDT.m", "XLFDT")
+    _try_load_routine(_VISTA_M_KERNEL_DIR / "XLFSTR.m", "XLFSTR")
 
 
 @pytest.fixture(scope="session")
