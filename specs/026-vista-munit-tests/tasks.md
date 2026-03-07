@@ -447,11 +447,11 @@ _Originally planned for a separate vista-test repo; consolidated into m2py `test
 
 **Purpose**: Final validation, documentation, CI readiness.
 
-- [ ] T110 [P] Update `README.md` with M-Unit test instructions (baseline capture, running transpiled tests, per-tier commands)
+- [ ] T110 [P] Update `tests/functional/munit/README.md` (detail) and `docs/testing.md` (high level only) with M-Unit test instructions (baseline capture, running transpiled tests, per-tier commands)
 - [ ] T111 [P] Update `specs/026-vista-munit-tests/quickstart.md` with any corrections discovered during implementation
-- [ ] T112 Run full `uv run pytest tests/functional/munit/ -v` to validate all tiers end-to-end
-- [ ] T113 Run full `uv run pytest` from m2py root to verify no regressions from transpiler/runtime fixes
-- [ ] T114 [P] Document known xfail routines and their root causes in `tests/functional/munit/baselines/XFAIL.md`
+- [x] T112 Run full `uv run pytest tests/functional/munit/ -v` to validate all tiers end-to-end
+- [x] T113 Run full `uv run pytest` from m2py root to verify no regressions from transpiler/runtime fixes
+- [ ] T114 [P] Document known xfail routines (if any) and their root causes in `tests/functional/munit/baselines/XFAIL.md`
 - [ ] T115 Validate quickstart.md: follow setup and run instructions from scratch in a clean environment
 
 ---

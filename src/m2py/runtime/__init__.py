@@ -1499,6 +1499,18 @@ def run_with_goto_support(
     if _scope is None:
         _scope = {}
 
+    # Track call depth to prevent segfaults from unbounded recursion.
+    # When entry functions handle GotoExternal by calling rwgs recursively
+    # (e.g., DIP2 ↔ DIP22 GOTO cycle in FileMan PRINT), each cycle adds
+    # stack frames.  A clean RecursionError is raised before hitting the
+    # C-stack limit that causes a segfault.
+    _rwgs_depth = getattr(_rt, "_rwgs_depth", 0)
+    if _rwgs_depth > 500:
+        raise RecursionError(
+            f"run_with_goto_support depth {_rwgs_depth} exceeded limit"
+        )
+    _rt._rwgs_depth = _rwgs_depth + 1
+
     # Save/restore _in_extrinsic for $QUIT tracking
     # DO calls are subroutine invocations, so $QUIT=0 inside them
     _rt._extrinsic_stack.append(_rt._in_extrinsic)
@@ -1507,95 +1519,103 @@ def run_with_goto_support(
     current_func = entry_func
     current_rt = _rt
     extra_args: list[Any] = _args if _args else []
-    while True:
-        try:
-            _result = current_func(current_rt, *extra_args, _scope=_scope)
-            _rt._in_extrinsic = _rt._extrinsic_stack.pop()
-            return _result
-        except GotoExternal as goto:
-            # Transfer to external routine
-            module = goto.module
-            label = goto.label
-            offset = goto.offset
-            # Use _rt from exception if available, else current
-            current_rt = goto._rt if goto._rt is not None else current_rt
+    try:
+        while True:
+            try:
+                _result = current_func(current_rt, *extra_args, _scope=_scope)
+                _rt._in_extrinsic = _rt._extrinsic_stack.pop()
+                return _result
+            except GotoExternal as goto:
+                # Transfer to external routine
+                module = goto.module
+                label = goto.label
+                offset = goto.offset
+                # Use _rt from exception if available, else current
+                current_rt = goto._rt if goto._rt is not None else current_rt
 
-            # Get the entry function from target module
-            if offset is not None:
-                # G +N^ROUTINE or G LABEL+N^ROUTINE - use line dispatch
-                if label is not None:
-                    # G LABEL+N^ROUTINE - compute line from label
-                    if label not in module._label_lines:
+                # Get the entry function from target module
+                if offset is not None:
+                    # G +N^ROUTINE or G LABEL+N^ROUTINE - use line dispatch
+                    if label is not None:
+                        # G LABEL+N^ROUTINE - compute line from label
+                        if label not in module._label_lines:
+                            raise LabelNotFoundError(
+                                label,
+                                module._routine_name,
+                                list(module._label_lines.keys()),
+                            ) from goto
+                        # _label_lines uses 0-indexed line numbers, add offset
+                        # Then convert to 1-based for _line_map lookup
+                        target_line = module._label_lines[label] + offset + 1
+                    else:
+                        # G +N^ROUTINE - absolute line offset (already 1-based)
+                        target_line = offset
+
+                    # Look up function via _line_map
+                    if target_line not in module._line_map:
+                        # Find next valid line
+                        valid_lines = [
+                            ln for ln in module._line_map if ln >= target_line
+                        ]
+                        if not valid_lines:
+                            raise ValueError(
+                                f"Entry point +{offset} not valid in {module._routine_name}"
+                            )
+                        target_line = min(valid_lines)
+
+                    # Get the function from line map
+                    label_name, line_offset = module._line_map[target_line]
+                    # Translate label name to Python function name
+                    from m2py.core.names import translate_name
+
+                    func_name = translate_name(label_name)
+                    target_func = getattr(module, func_name)
+
+                    # If there's a line_offset, create a wrapper that passes _start_offset
+                    if line_offset > 0:
+                        # Get the internal function (prefixed with _)
+                        internal_func_name = "_" + func_name
+                        if hasattr(module, internal_func_name):
+                            internal_func = getattr(module, internal_func_name)
+                            # Use factory to create offset wrapper with dir()-based sync
+                            current_func = _create_offset_entry_wrapper(
+                                internal_func,
+                                line_offset,
+                                module,
+                                use_dataclass_sync=False,
+                            )
+                        else:
+                            current_func = target_func
+                    else:
+                        current_func = target_func
+                elif label is not None:
+                    # G LABEL^ROUTINE - call specific label
+                    # Translate label name to Python function name (handles digits, %, etc.)
+                    from m2py.core.names import translate_name
+
+                    label_func_name = translate_name(label)
+                    if not hasattr(module, label_func_name):
                         raise LabelNotFoundError(
                             label,
                             module._routine_name,
-                            list(module._label_lines.keys()),
+                            list(getattr(module, "_label_lines", {}).keys()),
                         ) from goto
-                    # _label_lines uses 0-indexed line numbers, add offset
-                    # Then convert to 1-based for _line_map lookup
-                    target_line = module._label_lines[label] + offset + 1
+                    current_func = getattr(module, label_func_name)
                 else:
-                    # G +N^ROUTINE - absolute line offset (already 1-based)
-                    target_line = offset
+                    # G ^ROUTINE - call entry label (same name as routine)
+                    from m2py.core.names import translate_name
 
-                # Look up function via _line_map
-                if target_line not in module._line_map:
-                    # Find next valid line
-                    valid_lines = [ln for ln in module._line_map if ln >= target_line]
-                    if not valid_lines:
-                        raise ValueError(
-                            f"Entry point +{offset} not valid in {module._routine_name}"
-                        )
-                    target_line = min(valid_lines)
+                    entry_name = translate_name(module._routine_name)
+                    if not hasattr(module, entry_name):
+                        # Fall back to lowercase
+                        entry_name = translate_name(module._routine_name.lower())
+                    current_func = getattr(module, entry_name)
 
-                # Get the function from line map
-                label_name, line_offset = module._line_map[target_line]
-                # Translate label name to Python function name
-                from m2py.core.names import translate_name
-
-                func_name = translate_name(label_name)
-                target_func = getattr(module, func_name)
-
-                # If there's a line_offset, create a wrapper that passes _start_offset
-                if line_offset > 0:
-                    # Get the internal function (prefixed with _)
-                    internal_func_name = "_" + func_name
-                    if hasattr(module, internal_func_name):
-                        internal_func = getattr(module, internal_func_name)
-                        # Use factory to create offset wrapper with dir()-based sync
-                        current_func = _create_offset_entry_wrapper(
-                            internal_func, line_offset, module, use_dataclass_sync=False
-                        )
-                    else:
-                        current_func = target_func
-                else:
-                    current_func = target_func
-            elif label is not None:
-                # G LABEL^ROUTINE - call specific label
-                # Translate label name to Python function name (handles digits, %, etc.)
-                from m2py.core.names import translate_name
-
-                label_func_name = translate_name(label)
-                if not hasattr(module, label_func_name):
-                    raise LabelNotFoundError(
-                        label,
-                        module._routine_name,
-                        list(getattr(module, "_label_lines", {}).keys()),
-                    ) from goto
-                current_func = getattr(module, label_func_name)
-            else:
-                # G ^ROUTINE - call entry label (same name as routine)
-                from m2py.core.names import translate_name
-
-                entry_name = translate_name(module._routine_name)
-                if not hasattr(module, entry_name):
-                    # Fall back to lowercase
-                    entry_name = translate_name(module._routine_name.lower())
-                current_func = getattr(module, entry_name)
-
-            # Clear extra_args — JOB arguments only apply to the initial
-            # entry point, not to subsequent GOTO targets
-            extra_args = []
+                # Clear extra_args — JOB arguments only apply to the initial
+                # entry point, not to subsequent GOTO targets
+                extra_args = []
+    finally:
+        _rt._rwgs_depth = _rwgs_depth
 
 
 @dataclass
@@ -1820,6 +1840,10 @@ class MUMPSRuntime:
         # Old-style cross-references execute the same M code for every entry,
         # so caching avoids re-parsing and re-generating Python each time.
         self._xecute_cache: Dict[str, Any] = {}
+
+        # Depth counter for run_with_goto_support (prevents segfault from
+        # infinite GOTO recursion cycles like DIP2 <-> DIP22 in FileMan PRINT)
+        self._rwgs_depth: int = 0
 
         # MUMPS has no recursion limit — deep DO/XECUTE nesting is normal
         # (e.g., DICOMP evaluating computed fields that reference other computed

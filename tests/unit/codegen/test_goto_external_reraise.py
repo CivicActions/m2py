@@ -875,3 +875,42 @@ class TestGotoExternalEdgeCases:
             assert runtime.get_output() == "4"
         finally:
             _cleanup("TPPA2", "TPPB2")
+
+
+# =========================================================================
+# Depth limit — prevent segfault from infinite GOTO recursion
+# =========================================================================
+
+
+@pytest.mark.codegen
+class TestRwgsDepthLimit:
+    """run_with_goto_support depth limit prevents segfaults.
+
+    When TRAMPOLINE entry functions handle GotoExternal by calling rwgs
+    recursively (e.g., DIP2 ↔ DIP22 GOTO cycle in FileMan PRINT), each
+    cycle adds stack frames.  A depth limit raises a clean RecursionError
+    instead of hitting the C-stack limit that causes a segfault.
+    """
+
+    def test_infinite_goto_cycle_raises_recursion_error(self, runtime):
+        """Infinite GOTO cycle between TRAMPOLINE routines raises RecursionError.
+
+        TRAMPOLINE routines catch GotoExternal and call rwgs recursively,
+        which can cause unbounded nesting.  The depth limit prevents segfault.
+        """
+        try:
+            # INFRA and INFRB form an infinite GOTO cycle through TRAMPOLINE entries
+            mod_a = _load(
+                "INFRA\n G START\n Q\nSTART\n G ^INFRB\n Q\n",
+                "INFRA",
+            )
+            _load(
+                "INFRB\n G GO\n Q\nGO\n G ^INFRA\n Q\n",
+                "INFRB",
+            )
+
+            scope: dict = {}
+            with pytest.raises(RecursionError, match="depth.*exceeded"):
+                run_with_goto_support(mod_a.INFRA, runtime, scope)
+        finally:
+            _cleanup("INFRA", "INFRB")
