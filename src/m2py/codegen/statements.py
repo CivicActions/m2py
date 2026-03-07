@@ -4882,7 +4882,12 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             call_expr = f"_globals[{label_name!r}](_rt, {byref_args}, _scope=_scope)"
         else:
             call_expr = f"_globals[{label_name!r}](_rt, _scope=_scope)"
-        ctx.emitter.line(call_expr)
+        ctx.emitter.line("try:")
+        with ctx.emitter.indented():
+            ctx.emitter.line(call_expr)
+        ctx.emitter.line("except GotoExternal as _goto:")
+        with ctx.emitter.indented():
+            _emit_goto_external_handler(ctx)
 
     elif has_byref_args:
         # TRAMPOLINE by-ref: pass MArray from state._locals for aliasing.
@@ -4926,11 +4931,18 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # Use _globals[] lookup to avoid formal parameters shadowing
         # module-level label functions (e.g., EXPR(FILE,DICOMP,...) where
         # parameter DICOMP shadows the DICOMP label function).
+        # Wrap in try/except GotoExternal so GOTO from inside DO stays
+        # within the DO frame.
         if byref_args:
             call_expr = f"_globals[{label_name!r}](_rt, {byref_args}, _scope=_scope)"
         else:
             call_expr = f"_globals[{label_name!r}](_rt, _scope=_scope)"
-        ctx.emitter.line(call_expr)
+        ctx.emitter.line("try:")
+        with ctx.emitter.indented():
+            ctx.emitter.line(call_expr)
+        ctx.emitter.line("except GotoExternal as _goto:")
+        with ctx.emitter.indented():
+            _emit_goto_external_handler(ctx)
 
         # Sync _scope → state._locals after return so caller sees variables
         # SET by the callee (e.g. DIKJ set inside DISKIPIN via DDGO→DIKJ label).
@@ -4968,10 +4980,20 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # Use _globals[] lookup for all strategies to avoid parameter
         # shadowing label names (e.g., EXPR(DICOMP,...) where param DICOMP
         # shadows the DICOMP label function in TRAMPOLINE mode).
-        if args:
-            ctx.emitter.line(f"_globals[{label_name!r}](_rt, {args}, _scope=_scope)")
-        else:
-            ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
+        # Wrap in try/except GotoExternal so that if the called label does
+        # an external GOTO, the chain runs within this DO frame (matching
+        # MUMPS semantics where GOTO stays at the current stack level).
+        ctx.emitter.line("try:")
+        with ctx.emitter.indented():
+            if args:
+                ctx.emitter.line(
+                    f"_globals[{label_name!r}](_rt, {args}, _scope=_scope)"
+                )
+            else:
+                ctx.emitter.line(f"_globals[{label_name!r}](_rt, _scope=_scope)")
+        ctx.emitter.line("except GotoExternal as _goto:")
+        with ctx.emitter.indented():
+            _emit_goto_external_handler(ctx)
         # Sync _scope back to state after call
         if (
             ctx.strategy == GotoStrategy.TRAMPOLINE

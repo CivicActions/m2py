@@ -521,7 +521,7 @@ MVTS_VV3_ROUTINES: list[RoutineDefinition] = [
     ),
     RoutineDefinition("43.1---V3FN2", "V3FN2", expected_passes=403),
     RoutineDefinition("65.1---V3FN3", "V3FN3", expected_passes=49),
-    RoutineDefinition("70.1---V3NEW", "V3NEW", expected_passes=156),
+    RoutineDefinition("70.1---V3NEW", "V3NEW", expected_passes=159),
     RoutineDefinition("136---V3FP", "V3FP", expected_passes=4),
     RoutineDefinition("137---V3DWP", "V3DWP", expected_passes=6, expected_fails=0),
     RoutineDefinition("138---V3ESV", "V3ESV", expected_passes=4),

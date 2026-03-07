@@ -1209,8 +1209,13 @@ def _create_offset_entry_wrapper(
             def handle_goto_external(_goto, state, uses_dynamic, use_dataclass):
                 # Sync state back to scope BEFORE transferring control
                 sync_state_to_scope(state, uses_dynamic, use_dataclass)
-                # Handle nested external GOTO
-                run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)
+                # Save pending NEW entries for later unwinding
+                if hasattr(state, "_new_stack") and state._new_stack:
+                    _rt._pending_new_entries.extend(state._new_stack)
+                    state._new_stack.clear()
+                # Re-raise to let the outer run_with_goto_support handle
+                # the GOTO iteratively (avoids recursive rwgs depth growth)
+                raise _goto
 
             # Call internal function with offset - wrap in try to catch GotoExternal
             try:
@@ -1461,6 +1466,48 @@ def call_external_with_offset(
         _rt._current_label_lines = _saved_label_lines
 
 
+def _unwind_pending_news(_rt: "MUMPSRuntime", _scope: Dict[str, Any]) -> None:
+    """Unwind pending NEW stack entries saved by re-raised GotoExternal handlers.
+
+    When entry functions re-raise GotoExternal (to let the outer
+    run_with_goto_support handle GOTOs iteratively), they save their
+    NEW stack entries to _rt._pending_new_entries.  When the GOTO chain
+    eventually QUITs normally, this function unwinds those entries against
+    _scope in LIFO order — matching MUMPS semantics where NEWs at a stack
+    level are unwound when that level QUITs.
+
+    Entry formats (same as runtime.helpers._unwind_one_new_entry):
+        ('all', saved_dict) - Argumentless NEW: restore full snapshot
+        ('excl', keep_set, saved_dict) - Exclusive NEW: restore non-kept vars
+        ('var', name, saved_value) - Selective NEW: restore single variable
+        dict - Legacy: treat as argumentless NEW (full snapshot)
+    """
+    pending = _rt._pending_new_entries
+    if not pending:
+        return
+    while pending:
+        entry = pending.pop()
+        if isinstance(entry, dict):
+            _scope.clear()
+            _scope.update(entry)
+        elif entry[0] == "all":
+            _scope.clear()
+            _scope.update(entry[1])
+        elif entry[0] == "excl":
+            keep_vars = entry[1]
+            saved = entry[2]
+            current_kept = {k: v for k, v in _scope.items() if k in keep_vars}
+            _scope.clear()
+            _scope.update(saved)
+            _scope.update(current_kept)
+        elif entry[0] == "var":
+            name, saved_value = entry[1], entry[2]
+            if saved_value is not None:
+                _scope[name] = saved_value
+            else:
+                _scope.pop(name, None)
+
+
 def run_with_goto_support(
     entry_func: Callable[..., Any],
     _rt: "MUMPSRuntime",
@@ -1519,13 +1566,28 @@ def run_with_goto_support(
     current_func = entry_func
     current_rt = _rt
     extra_args: list[Any] = _args if _args else []
+    _goto_iterations = 0
+    _max_goto_iterations = 10_000
     try:
         while True:
             try:
                 _result = current_func(current_rt, *extra_args, _scope=_scope)
+                # Unwind any pending NEW entries saved by entry functions
+                # that re-raised GotoExternal instead of calling rwgs
+                # recursively.  These represent NEWs from routines that
+                # GOTOed to another routine; now that the chain has QUITted,
+                # the NEWs must be unwound (LIFO) against _scope.
+                _unwind_pending_news(_rt, _scope)
                 _rt._in_extrinsic = _rt._extrinsic_stack.pop()
                 return _result
             except GotoExternal as goto:
+                _goto_iterations += 1
+                if _goto_iterations > _max_goto_iterations:
+                    raise RecursionError(
+                        f"run_with_goto_support GOTO iteration limit "
+                        f"({_max_goto_iterations}) exceeded — possible "
+                        f"infinite GOTO cycle"
+                    ) from goto
                 # Transfer to external routine
                 module = goto.module
                 label = goto.label
@@ -1844,6 +1906,12 @@ class MUMPSRuntime:
         # Depth counter for run_with_goto_support (prevents segfault from
         # infinite GOTO recursion cycles like DIP2 <-> DIP22 in FileMan PRINT)
         self._rwgs_depth: int = 0
+
+        # Pending NEW stack entries from entry functions that re-raised
+        # GotoExternal instead of calling rwgs recursively.  When an entry
+        # function GOTOs to another routine, its NEW stack entries are saved
+        # here so they can be unwound when the GOTO chain eventually QUITs.
+        self._pending_new_entries: list = []
 
         # MUMPS has no recursion limit — deep DO/XECUTE nesting is normal
         # (e.g., DICOMP evaluating computed fields that reference other computed

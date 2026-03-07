@@ -22,7 +22,6 @@ from m2py.codegen.line_dispatch import (
 )
 from m2py.codegen.names import NameTranslator, translate_name
 from m2py.codegen.statements import (
-    _emit_goto_external_handler,
     emit_scope_to_state_sync,
     emit_scope_var_to_state,
     emit_state_to_scope_sync,
@@ -1100,27 +1099,31 @@ class RoutineGenerator:
                             ctx.emitter.line("func = _labels[target]")
                             # Pass _rt and _scope to inner functions
                             ctx.emitter.line("target, state = func(_rt, state, _scope)")
-                    # Handle GotoExternal specially - it's control flow, not an error
-                    # When a subroutine (DO) does an external GOTO, we run that chain
-                    # to completion and then continue the trampoline
+                    # Handle GotoExternal — re-raise to let the outer
+                    # run_with_goto_support handle it iteratively (avoids
+                    # recursive rwgs depth growth that causes segfaults in
+                    # GOTO cycles like DIP2 ↔ DIP22 in FileMan PRINT)
                     ctx.emitter.line("except GotoExternal as _goto:")
                     with ctx.emitter.indented():
-                        # Sync state back to _scope BEFORE transferring control
+                        # Sync state back to _scope BEFORE re-raising
                         # Static vars need explicit sync when not using dynamic locals
                         if not ctx.uses_dynamic_locals:
                             for var_name in sorted(ctx.state_vars):
                                 py_name = translate_name(var_name)
                                 emit_state_var_to_scope(ctx, var_name, py_name)
-                        # Run the external GOTO chain to completion and sync back
-                        _emit_goto_external_handler(ctx)
-                        # Static scope→state sync after external call
-                        if not ctx.uses_dynamic_locals:
-                            for var_name in sorted(ctx.state_vars):
-                                py_name = translate_name(var_name)
-                                emit_scope_var_to_state(ctx, var_name, py_name)
-                        # Continue the trampoline - set target to None to exit
-                        # (the GOTO chain has completed, so we're done with this call)
-                        ctx.emitter.line("target = None")
+                        emit_state_to_scope_sync(ctx)
+                        # Save pending NEW entries for later unwinding
+                        if ctx.uses_dynamic_locals:
+                            ctx.emitter.line(
+                                "if hasattr(state, '_new_stack') and state._new_stack:"
+                            )
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(
+                                    "_rt._pending_new_entries.extend(state._new_stack)"
+                                )
+                                ctx.emitter.line("state._new_stack.clear()")
+                        # Re-raise for outer rwgs to handle iteratively
+                        ctx.emitter.line("raise")
                     # Error handling — invoke $ETRAP if set
                     ctx.emitter.line("except Exception as _e:")
                     with ctx.emitter.indented():
@@ -1244,23 +1247,29 @@ class RoutineGenerator:
                             ctx.emitter.line("assert isinstance(target, str)")
                             ctx.emitter.line("func = _labels[target]")
                             ctx.emitter.line("target, state = func(_rt, state, _scope)")
-                # Handle GotoExternal - run the external GOTO chain to completion
-                # The subroutine's external GOTO runs to completion, then control
-                # returns to the caller of this DO
+                # Handle GotoExternal — re-raise to let the outer
+                # run_with_goto_support handle it iteratively (avoids
+                # recursive rwgs depth growth)
                 ctx.emitter.line("except GotoExternal as _goto:")
                 with ctx.emitter.indented():
-                    # Static state→scope sync before external call
+                    # Static state→scope sync before re-raising
                     if not ctx.uses_dynamic_locals:
                         for var_name in sorted(ctx.state_vars):
                             py_name = translate_name(var_name)
                             emit_state_var_to_scope(ctx, var_name, py_name)
-                    # Run the external GOTO chain to completion and sync back
-                    _emit_goto_external_handler(ctx)
-                    # Static scope→state sync after external call
-                    if not ctx.uses_dynamic_locals:
-                        for var_name in sorted(ctx.state_vars):
-                            py_name = translate_name(var_name)
-                            emit_scope_var_to_state(ctx, var_name, py_name)
+                    emit_state_to_scope_sync(ctx)
+                    # Save pending NEW entries for later unwinding
+                    if ctx.uses_dynamic_locals:
+                        ctx.emitter.line(
+                            "if hasattr(state, '_new_stack') and state._new_stack:"
+                        )
+                        with ctx.emitter.indented():
+                            ctx.emitter.line(
+                                "_rt._pending_new_entries.extend(state._new_stack)"
+                            )
+                            ctx.emitter.line("state._new_stack.clear()")
+                    # Re-raise for outer rwgs to handle iteratively
+                    ctx.emitter.line("raise")
 
                 # Unwind NEW stack before syncing state back to _scope
                 if ctx.uses_dynamic_locals:

@@ -1769,6 +1769,21 @@ class NewScopeManager:
             from m2py.runtime import GotoExternal
 
             if issubclass(exc_type, GotoExternal):
+                # Save pending restore actions to _rt._pending_new_entries
+                # so they can be unwound when the GOTO chain eventually QUITs.
+                # This preserves MUMPS semantics: NEWed variables remain active
+                # for the GOTO target but are restored when the stack level pops.
+                if self._restore_actions:
+                    _rt = exc_val._rt if exc_val is not None else None
+                    if _rt is not None and hasattr(_rt, "_pending_new_entries"):
+                        # Convert restore actions to pending format (they're
+                        # already in forward order; extend preserves ordering
+                        # so outer caller's entries come first in the list)
+                        for action in self._restore_actions:
+                            if action[0] == "scope":
+                                _rt._pending_new_entries.append(("all", action[1]))
+                            else:
+                                _rt._pending_new_entries.append(action)
                 return  # Preserve scope for the GOTO target
 
         # Process restore actions in reverse (LIFO) for correct unwinding

@@ -70,15 +70,15 @@ class TestTrampolineGotoExternalLocalHandling:
     """
 
     def test_main_entry_handles_goto_external_locally(self):
-        """Main entry function's GotoExternal handler uses run_with_goto_support.
+        """Main entry function's GotoExternal handler re-raises the exception.
 
         The generated main entry trampoline should have:
             except GotoExternal as _goto:
                 ... state sync ...
-                run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)
-                ... scope→state sync ...
-                target = None
+                raise
 
+        This lets the outer run_with_goto_support handle the GOTO
+        iteratively, avoiding recursive depth growth.
         Need internal GOTOs to trigger TRAMPOLINE strategy.
         """
         code = generate_python("TEST\n G NEXT\n Q\nNEXT\n G ^OTHER\n Q\n")
@@ -88,8 +88,7 @@ class TestTrampolineGotoExternalLocalHandling:
         # then look for GotoExternal handler within it
         in_main_entry = False
         in_goto_handler = False
-        found_run_with = False
-        found_target_none = False
+        found_raise = False
         for line in lines:
             stripped = line.strip()
             if "def TEST(" in line and "_scope=" in line:
@@ -104,23 +103,18 @@ class TestTrampolineGotoExternalLocalHandling:
                 in_goto_handler = True
                 continue
             if in_goto_handler:
-                if "run_with_goto_support" in stripped:
-                    found_run_with = True
-                if stripped == "target = None":
-                    found_target_none = True
+                if stripped == "raise":
+                    found_raise = True
                 if stripped.startswith("except "):
                     break
 
-        assert found_run_with, (
-            "Main entry GotoExternal handler should use run_with_goto_support "
-            "for local handling"
-        )
-        assert found_target_none, (
-            "Main entry GotoExternal handler should set target = None to exit trampoline"
+        assert found_raise, (
+            "Main entry GotoExternal handler should re-raise "
+            "for iterative handling by run_with_goto_support"
         )
 
     def test_label_entry_handles_goto_external_locally(self):
-        """Label entry function's GotoExternal handler uses run_with_goto_support.
+        """Label entry function's GotoExternal handler re-raises the exception.
 
         Need internal GOTOs to trigger TRAMPOLINE strategy.
         """
@@ -130,7 +124,7 @@ class TestTrampolineGotoExternalLocalHandling:
         # Find the SUB entry function (def SUB(..., _scope=None):)
         in_sub = False
         in_goto_handler = False
-        found_run_with = False
+        found_raise = False
         for line in lines:
             stripped = line.strip()
             if (
@@ -148,15 +142,15 @@ class TestTrampolineGotoExternalLocalHandling:
                 in_goto_handler = True
                 continue
             if in_goto_handler:
-                if "run_with_goto_support" in stripped:
-                    found_run_with = True
+                if stripped == "raise":
+                    found_raise = True
                     break
                 if stripped.startswith("except ") or stripped.startswith("def "):
                     break
 
-        assert found_run_with, (
-            "Label entry GotoExternal handler should use run_with_goto_support "
-            "for local handling"
+        assert found_raise, (
+            "Label entry GotoExternal handler should re-raise "
+            "for iterative handling by run_with_goto_support"
         )
 
 
@@ -622,22 +616,19 @@ class TestTrampolineGotoExternalCodegenDetails:
     """Verify codegen details of the GotoExternal handler."""
 
     def test_main_entry_has_scope_to_state_sync_after_handler(self):
-        """After run_with_goto_support, the handler syncs scope→state.
+        """Handler syncs state→scope then re-raises to outer rwgs.
 
         The handler pattern is:
             except GotoExternal:
                 state→scope sync
-                run_with_goto_support(...)
-                scope→state sync
-                target = None
+                raise
         """
         code = generate_python("TEST\n G NEXT\n Q\nNEXT\n G ^OTHER\n Q\n")
         lines = code.split("\n")
 
         in_main = False
         in_handler = False
-        found_rwgs = False
-        found_target_none = False
+        found_raise = False
         for line in lines:
             stripped = line.strip()
             if "def TEST(" in line and "_scope=" in line:
@@ -651,28 +642,26 @@ class TestTrampolineGotoExternalCodegenDetails:
                 in_handler = True
                 continue
             if in_handler:
-                if "run_with_goto_support" in stripped:
-                    found_rwgs = True
-                    continue
-                if stripped == "target = None":
-                    found_target_none = True
+                if stripped == "raise":
+                    found_raise = True
                 if stripped.startswith("except "):
                     break
 
-        assert found_rwgs, "Handler must call run_with_goto_support"
-        assert found_target_none, "Handler must set target = None"
+        assert found_raise, "Handler must re-raise GotoExternal"
 
-    def test_handler_does_not_use_bare_raise(self):
-        """GotoExternal handler must NOT use bare 'raise'.
+    def test_handler_uses_bare_raise(self):
+        """GotoExternal handler MUST use bare 'raise'.
 
-        A bare 'raise' would abort the trampoline and escape past the
-        DO boundary, breaking wrapper-label patterns.
+        A bare 'raise' re-raises to the outer run_with_goto_support
+        which handles the GOTO iteratively (no recursive depth growth).
+        Same-routine DO call sites have their own try/except wrappers.
         """
         code = generate_python("TEST\n G NEXT\n Q\nNEXT\n G ^OTHER\n Q\n")
         lines = code.split("\n")
 
         in_main = False
         in_handler = False
+        found_raise = False
         for line in lines:
             stripped = line.strip()
             if "def TEST(" in line and "_scope=" in line:
@@ -686,12 +675,15 @@ class TestTrampolineGotoExternalCodegenDetails:
                 in_handler = True
                 continue
             if in_handler:
-                assert stripped != "raise", (
-                    "GotoExternal handler must NOT use bare 'raise' — "
-                    "this would abort the trampoline and break wrapper labels"
-                )
+                if stripped == "raise":
+                    found_raise = True
                 if stripped.startswith("except "):
                     break
+
+        assert found_raise, (
+            "GotoExternal handler must use bare 'raise' — "
+            "this lets the outer rwgs handle GOTOs iteratively"
+        )
 
     def test_simple_functions_has_no_goto_external_handler(self):
         """SIMPLE_FUNCTIONS routines don't catch GotoExternal in entries.
@@ -895,8 +887,9 @@ class TestRwgsDepthLimit:
     def test_infinite_goto_cycle_raises_recursion_error(self, runtime):
         """Infinite GOTO cycle between TRAMPOLINE routines raises RecursionError.
 
-        TRAMPOLINE routines catch GotoExternal and call rwgs recursively,
-        which can cause unbounded nesting.  The depth limit prevents segfault.
+        Entry functions re-raise GotoExternal, which rwgs handles iteratively.
+        An iteration limit in rwgs detects the infinite cycle and raises
+        RecursionError.
         """
         try:
             # INFRA and INFRB form an infinite GOTO cycle through TRAMPOLINE entries
@@ -910,7 +903,247 @@ class TestRwgsDepthLimit:
             )
 
             scope: dict = {}
-            with pytest.raises(RecursionError, match="depth.*exceeded"):
+            with pytest.raises(RecursionError, match="iteration limit"):
                 run_with_goto_support(mod_a.INFRA, runtime, scope)
         finally:
             _cleanup("INFRA", "INFRB")
+
+    def test_iteration_counter_resets_between_calls(self, runtime):
+        """After a successful GOTO chain, the iteration counter resets.
+
+        A subsequent GOTO chain should work without hitting the limit.
+        """
+        try:
+            mod_a = _load(
+                "ICRST\n S N=$G(N)+1 I N>3 Q\n G ^ICRSTB\n Q\n",
+                "ICRST",
+            )
+            _load("ICRSTB\n G ^ICRST\n Q\n", "ICRSTB")
+
+            # First call: 3 iterations
+            scope: dict = {}
+            run_with_goto_support(mod_a.ICRST, runtime, scope)
+
+            # Second call: should work fine (counter reset)
+            scope2: dict = {}
+            run_with_goto_support(mod_a.ICRST, runtime, scope2)
+        finally:
+            _cleanup("ICRST", "ICRSTB")
+
+
+# =========================================================================
+# _unwind_pending_news() unit tests
+# =========================================================================
+
+
+@pytest.mark.codegen
+class TestUnwindPendingNews:
+    """Unit tests for _unwind_pending_news() in run_with_goto_support.
+
+    When entry functions re-raise GotoExternal, they save NEW stack
+    entries to _rt._pending_new_entries.  When the GOTO chain QUITs
+    normally, _unwind_pending_news restores scope variables in LIFO order.
+    """
+
+    def test_no_pending_is_noop(self, runtime):
+        """No pending entries → scope unchanged."""
+        from m2py.runtime import _unwind_pending_news
+
+        scope = {"X": "hello", "Y": "world"}
+        _unwind_pending_news(runtime, scope)
+        assert scope == {"X": "hello", "Y": "world"}
+
+    def test_selective_new_restores_variable(self, runtime):
+        """('var', name, saved_value) restores a single variable."""
+        from m2py.runtime import _unwind_pending_news
+
+        scope = {"X": "new_value"}
+        runtime._pending_new_entries.append(("var", "X", "original"))
+        _unwind_pending_news(runtime, scope)
+        assert scope["X"] == "original"
+        assert runtime._pending_new_entries == []
+
+    def test_selective_new_removes_undefined_variable(self, runtime):
+        """('var', name, None) removes variable from scope."""
+        from m2py.runtime import _unwind_pending_news
+
+        scope = {"X": "new_value", "Y": "keep"}
+        runtime._pending_new_entries.append(("var", "X", None))
+        _unwind_pending_news(runtime, scope)
+        assert "X" not in scope
+        assert scope["Y"] == "keep"
+        assert runtime._pending_new_entries == []
+
+    def test_argumentless_new_restores_full_snapshot(self, runtime):
+        """('all', saved_dict) restores full scope snapshot."""
+        from m2py.runtime import _unwind_pending_news
+
+        scope = {"X": "new", "Y": "also_new"}
+        saved = {"A": "old_a", "B": "old_b"}
+        runtime._pending_new_entries.append(("all", saved))
+        _unwind_pending_news(runtime, scope)
+        assert scope == {"A": "old_a", "B": "old_b"}
+
+    def test_exclusive_new_restores_non_kept_vars(self, runtime):
+        """('excl', keep_set, saved_dict) restores non-kept variables."""
+        from m2py.runtime import _unwind_pending_news
+
+        scope = {"X": "current_x", "Y": "current_y"}
+        saved = {"A": "old_a", "X": "old_x"}
+        runtime._pending_new_entries.append(("excl", {"X"}, saved))
+        _unwind_pending_news(runtime, scope)
+        # X was in keep_set → preserved from current scope
+        assert scope["X"] == "current_x"
+        # A was in saved → restored
+        assert scope["A"] == "old_a"
+        # Y was not in saved or keep_set → gone
+        assert "Y" not in scope
+
+    def test_legacy_dict_entry_restores_full_snapshot(self, runtime):
+        """Plain dict entry (legacy format) restores full scope."""
+        from m2py.runtime import _unwind_pending_news
+
+        scope = {"X": "new"}
+        saved = {"A": "old_a"}
+        runtime._pending_new_entries.append(saved)
+        _unwind_pending_news(runtime, scope)
+        assert scope == {"A": "old_a"}
+
+    def test_lifo_ordering_of_multiple_entries(self, runtime):
+        """Multiple entries are unwound in LIFO order (last entry first)."""
+        from m2py.runtime import _unwind_pending_news
+
+        scope = {"X": "final"}
+        # Entry 0: outer NEW saved X="outer"
+        runtime._pending_new_entries.append(("var", "X", "outer"))
+        # Entry 1: inner NEW saved X="inner"
+        runtime._pending_new_entries.append(("var", "X", "inner"))
+
+        _unwind_pending_news(runtime, scope)
+        # LIFO: inner entry popped first (sets X="inner"),
+        # then outer entry popped (sets X="outer")
+        assert scope["X"] == "outer"
+
+    def test_pending_list_cleared_after_unwind(self, runtime):
+        """Pending list is empty after unwinding."""
+        from m2py.runtime import _unwind_pending_news
+
+        scope = {"X": "val"}
+        runtime._pending_new_entries.append(("var", "X", "old"))
+        _unwind_pending_news(runtime, scope)
+        assert runtime._pending_new_entries == []
+
+
+# =========================================================================
+# GOTO from within NEW scope — integration tests
+# =========================================================================
+
+
+@pytest.mark.codegen
+class TestGotoFromWithinNewScope:
+    """GOTO from within a NEW scope preserves variables for the target.
+
+    When a subroutine NEWs variables and then GOTOs externally:
+    1. The NEWed variables remain visible to the GOTO target
+    2. After the GOTO chain QUITs, the NEWs are unwound
+    """
+
+    def test_new_vars_visible_across_goto(self, runtime):
+        """Variables NEWed in routine A are visible to GOTO target B.
+
+        A NEW's X, sets X="hello", GOTOs B.  B reads X.
+        """
+        try:
+            mod_a = _load(
+                'NVSRC\n N X S X="hello" G ^NVDST\n Q\n',
+                "NVSRC",
+            )
+            _load(
+                "NVDST\n W X Q\n",
+                "NVDST",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_a.NVSRC, runtime, scope)
+            assert runtime.get_output() == "hello"
+        finally:
+            _cleanup("NVSRC", "NVDST")
+
+    def test_new_unwound_after_goto_chain_quits(self, runtime):
+        """After GOTO chain QUITs, NEWed variables are restored.
+
+        DO SUB^A where SUB NEWs X (saving old value), sets X="new",
+        GOTOs B. B QUITs.  After DO returns, X should be "old" again.
+        """
+        try:
+            # SUB NEWs X, sets it, GOTOs NUWB
+            _load(
+                'NUWA\n G INIT\n Q\nINIT\n Q\nSUB\n N X S X="new" G ^NUWB\n Q\n',
+                "NUWA",
+            )
+            _load(
+                'NUWB\n W X," " Q\n',
+                "NUWB",
+            )
+            # Caller sets X="old", DOs SUB^NUWA, reads X after
+            mod_caller = _load(
+                'NUWCALL\n S X="old" D SUB^NUWA W X Q\n',
+                "NUWCALL",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_caller.NUWCALL, runtime, scope)
+            assert runtime.get_output() == "new old"
+        finally:
+            _cleanup("NUWA", "NUWB", "NUWCALL")
+
+    def test_do_same_routine_catches_goto_external(self, runtime):
+        """DO LABEL within same TRAMPOLINE routine catches GotoExternal.
+
+        Pattern: MAIN calls D SUB (same routine).
+        SUB does G ^EXT.  EXT QUITs.
+        MAIN continues after the DO.
+        """
+        try:
+            mod = _load(
+                "DSGERT\n G MAIN\n Q\n"
+                'MAIN\n D SUB^DSGERT W "after" Q\n'
+                "SUB\n G ^DSGEEXT\n Q\n",
+                "DSGERT",
+            )
+            _load(
+                'DSGEEXT\n W "ext-" Q\n',
+                "DSGEEXT",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod.DSGERT, runtime, scope)
+            assert runtime.get_output() == "ext-after"
+        finally:
+            _cleanup("DSGERT", "DSGEEXT")
+
+    def test_long_goto_chain_with_new_across_multiple_routines(self, runtime):
+        """Multi-hop GOTO chain where each hop has NEW'd variables.
+
+        A NEWs X, GOTOs B.  B NEWs Y, GOTOs C.  C writes X,Y, QUITs.
+        After chain, both NEWs unwind.
+        """
+        try:
+            mod_a = _load(
+                'LGNEW\n N X S X="A" G ^LGNEWB\n Q\n',
+                "LGNEW",
+            )
+            _load(
+                'LGNEWB\n N Y S Y="B" G ^LGNEWC\n Q\n',
+                "LGNEWB",
+            )
+            _load(
+                "LGNEWC\n W X,Y Q\n",
+                "LGNEWC",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_a.LGNEW, runtime, scope)
+            assert runtime.get_output() == "AB"
+        finally:
+            _cleanup("LGNEW", "LGNEWB", "LGNEWC")
