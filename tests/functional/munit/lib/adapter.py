@@ -424,6 +424,11 @@ _FIXTURE_OVERRIDES: dict[str, tuple[str, tuple[str, ...]]] = {
     # DMUDIC00.STARTUP calls D ^DMUFINIT which creates files 1009.801/1009.802.
     # If ^DMU(1009.802,0) already exists (loaded from ZWR), skip STARTUP.
     "DMUDIC00": ("DMU", ("1009.802", "0")),
+    # ZZDGPTCO1.STARTUP runs D DT^DICRW, setting DT to today's date.
+    # A modern DT makes CHKCUR^DGPTCO1 call ADDREC (which needs ^DD(45.86)
+    # entries we don't load).  Replacing STARTUP with a stub that sets DT=0
+    # prevents ADDREC from triggering while keeping DT defined.
+    "ZZDGPTCO1": ("DG", ("45.86", "0")),
 }
 
 
@@ -452,10 +457,18 @@ def _patch_startup_shutdown(
     except Exception:
         return  # Data not loaded — let STARTUP try
 
-    # Data is pre-loaded — patch STARTUP and SHUTDOWN to no-ops
+    # Data is pre-loaded — patch STARTUP and SHUTDOWN to stubs
     def _noop_startup(_rt, _scope, *args, **kwargs):
+        # Set DT to 0 so date-dependent code (e.g. CHKCUR^DGPTCO1's
+        # `I DT>DGCLOSE D ADDREC`) doesn't trigger FileMan operations
+        # that require ^DD entries we haven't loaded.
+        from m2py.runtime import MArray
+
+        dt = MArray()
+        dt.value = "0"
+        _scope["DT"] = dt
         logger.info(
-            "%s.STARTUP skipped — fixture data pre-loaded from ZWR",
+            "%s.STARTUP replaced — fixture data pre-loaded, DT set to 0",
             routine_name,
         )
 

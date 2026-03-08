@@ -729,12 +729,18 @@ def registration_library(scheduling_library, munit_runtime):
     assert _auto_importer is not None
     _auto_importer.add_dirs([_REG_TESTING_DIR])
 
+    # Kill ^DG(45.86) first to ensure clean state.  On backends with
+    # persistent globals (YDB, IRIS) stale data from previous runs can
+    # accumulate when TROLLBACK is skipped after an error inside
+    # CHKCUR^DGPTCO1, causing phantom extra tests and cascading failures.
+    g = munit_runtime.globals
+    g.kill("DG", ("45.86",))
+
     # Seed ^DG(45.86) — ZZDGPTCO1 expects GETDGIEN to return 22.
     # GETDGIEN logic:
     #   S DGIEN=$S($D(^DG(45.86,+$O(^DG(45.86,"AC",1,0)),0)):+^(0),1:"")
     #   S DGIEN=$O(^DG(45.86,"B",+$G(DGIEN),0))
     # → needs AC,1 → IEN 22 → 0-node with +^(0)=22 → B,22,22
-    g = munit_runtime.globals
     g.set("DG", ("45.86", "0"), "PTF CENSUS DATE^45.86D^22^22")
     g.set("DG", ("45.86", "22", "0"), "22^^^1^")
     g.set("DG", ("45.86", "AC", "1", "22"), "")
