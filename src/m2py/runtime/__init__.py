@@ -1925,7 +1925,12 @@ class MUMPSRuntime:
         # Cache for XECUTE: mumps_code -> (python_source, compiled_code_object)
         # Old-style cross-references execute the same M code for every entry,
         # so caching avoids re-parsing and re-generating Python each time.
+        # Bounded to _XECUTE_CACHE_MAX entries (LRU eviction) because FileMan
+        # indirection generates data-dependent XECUTE strings; unbounded
+        # caching consumes ~29 KB/entry (arpeggio parse tree objects + codegen),
+        # causing OOM on large routines like DMUDIC00.
         self._xecute_cache: Dict[str, Any] = {}
+        self._xecute_cache_max = 1024
 
         # Depth counter for run_with_goto_support (prevents segfault from
         # infinite GOTO recursion cycles like DIP2 <-> DIP22 in FileMan PRINT)
@@ -3793,7 +3798,7 @@ class MUMPSRuntime:
             return ""
 
     def _freeze_stack_snapshot(self) -> None:
-        """Freeze a deep copy of the call stack for $STACK intrinsic function.
+        """Freeze a snapshot of the call stack for $STACK intrinsic function.
 
         When $ECODE transitions from empty to non-empty (first error),
         freeze the current call stack so $STACK(n) queries return the state
@@ -3803,14 +3808,20 @@ class MUMPSRuntime:
         into $ECODE do NOT update the snapshot. The snapshot is cleared when
         $ECODE is reset to "" via SET $ECODE="".
 
+        Uses shallow copies of StackFrame objects (via dataclasses.replace)
+        rather than copy.deepcopy, since StackFrame fields are all immutable
+        (str/int).  This avoids the O(n) deepcopy cost that becomes
+        prohibitive when $ETRAP fires thousands of times during validation
+        loops (e.g., DMUDIC00 → DIO2 → XDY error cycling).
+
         The snapshot includes:
-        - Deep copy of all StackFrame objects
+        - Copy of all StackFrame objects
         - The depth (len) at time of freeze
         """
-        import copy
-
         if self._stack_snapshot is None:
-            self._stack_snapshot = copy.deepcopy(self._stack_frames)
+            from dataclasses import replace as _dc_replace
+
+            self._stack_snapshot = [_dc_replace(f) for f in self._stack_frames]
             self._stack_snapshot_depth = len(self._stack_frames)
 
     def _format_zstatus(
@@ -7896,6 +7907,14 @@ class MUMPSRuntime:
                 error_msg = f"XECUTE parse error in '{mumps_code}': {e}"
                 raise SyntaxError(error_msg) from e
             code_obj = compile(python_code, "<xecute>", "exec")
+            # LRU eviction: discard oldest entries when cache is full.
+            # Each entry retains ~29 KB (arpeggio parse tree, codegen, code_obj).
+            if len(self._xecute_cache) >= self._xecute_cache_max:
+                # Remove oldest 25% to amortize eviction cost
+                to_remove = self._xecute_cache_max // 4
+                keys = list(self._xecute_cache)[:to_remove]
+                for k in keys:
+                    del self._xecute_cache[k]
             self._xecute_cache[cache_key] = (python_code, code_obj)
 
         # Create execution namespace with shared scope
@@ -7968,6 +7987,12 @@ class MUMPSRuntime:
         except Exception:
             # Re-raise with context
             raise
+
+        finally:
+            # Break reference cycle: exec() sets XECUTE.__globals__ = namespace,
+            # and namespace["XECUTE"] = XECUTE, creating a cycle that prevents
+            # prompt GC.  Clearing the dict breaks this immediately.
+            namespace.clear()
 
     def execute_mumps_indirected(
         self,

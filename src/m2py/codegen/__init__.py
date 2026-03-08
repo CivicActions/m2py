@@ -17,6 +17,11 @@ from m2py.codegen.exceptions import CodegenError, UnsupportedFeatureError
 if TYPE_CHECKING:
     from m2py.asg.elements import MRoutine
 
+# Cached parser instance — avoids re-creating textX metamodel + arpeggio
+# grammar objects on every generate_python() call, which leaks ~18 KB/call
+# of arpeggio parse tree nodes retained by module-level textX class caches.
+_cached_parser: MUMPSParser | None = None
+
 
 def _select_goto_strategy(routine: "MRoutine") -> GotoStrategy:
     """Select code generation strategy based on routine analysis.
@@ -194,9 +199,14 @@ def _generate_python_inner(
     validate: bool = True,
 ) -> str:
     """Inner implementation of generate_python (called with raised recursion limit)."""
-    # Parse MUMPS source
-    parser = MUMPSParser()
-    routine = parser.parse(source, filename=routine_name)
+    # Parse MUMPS source — reuse a cached parser to avoid re-creating the
+    # textX metamodel (and its arpeggio grammar objects) every call.  The
+    # MUMPSParser is safe to reuse: its only mutable state (_current_file)
+    # is set on each parse() call.
+    global _cached_parser
+    if _cached_parser is None:
+        _cached_parser = MUMPSParser()
+    routine = _cached_parser.parse(source, filename=routine_name)
 
     # Set routine name if provided
     if routine_name:
@@ -207,12 +217,12 @@ def _generate_python_inner(
 
     # Run analysis passes required for code generation
     # Order matters: references first, then GOTO, FOR, quit context, variables
-    parser.resolve_references(routine)
-    parser.classify_gotos(routine)
-    parser.analyze_for_loops(routine)
-    parser.analyze_quit_context(routine)
-    parser.analyze_variables(routine, compute_transitive=True)
-    parser.compute_signatures(routine)
+    _cached_parser.resolve_references(routine)
+    _cached_parser.classify_gotos(routine)
+    _cached_parser.analyze_for_loops(routine)
+    _cached_parser.analyze_quit_context(routine)
+    _cached_parser.analyze_variables(routine, compute_transitive=True)
+    _cached_parser.compute_signatures(routine)
 
     # Step 7: Infer expression-level types for type annotations
     from m2py.analysis.type_inference import infer_expression_types
