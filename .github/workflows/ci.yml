@@ -60,7 +60,7 @@ jobs:
   test:
     name: test (${{ matrix.backend }}, ${{ matrix.split }})
     runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
-    timeout-minutes: ${{ (matrix.split == 'slow' || matrix.split == 'quality' || matrix.split == 'munit') && 40 || 20 }}
+    timeout-minutes: ${{ matrix.split == 'munit' && 120 || (matrix.split == 'slow' || matrix.split == 'quality') && 40 || 20 }}
     strategy:
       fail-fast: false
       matrix:
@@ -73,8 +73,14 @@ jobs:
           - backend: iris
             split: quality
         include:
-          # YDB munit tests need more resources
+          # munit tests need more resources
+          - backend: inmemory
+            split: munit
+            runner: ubicloud-standard-2
           - backend: yottadb
+            split: munit
+            runner: ubicloud-standard-2
+          - backend: iris
             split: munit
             runner: ubicloud-standard-2
 
