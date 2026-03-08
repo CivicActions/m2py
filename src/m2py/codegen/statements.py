@@ -285,18 +285,30 @@ def _emit_goto_external_handler(ctx: "GeneratorContext") -> None:
 
     Emits three steps:
     1. state→scope sync (no-op when ``ctx.uses_dynamic_locals`` is False)
-    2. ``run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)``
+    2. ``run_with_goto_support(resolve_goto_target(_goto), _rt, _scope,
+       _pending_mark=_pm)`` — using the pre-DO mark so entries added during
+       exception propagation are included in the handler's unwind scope
     3. scope→state sync (no-op when ``ctx.uses_dynamic_locals`` is False)
 
     The caller is responsible for emitting the ``except GotoExternal as _goto:``
-    line and managing indentation.
+    line and managing indentation.  The variable ``_pm`` must have been emitted
+    by the caller via ``_emit_pending_mark_save(ctx)`` before the try block.
 
     Args:
         ctx: Current generator context with emitter.
     """
     emit_state_to_scope_sync(ctx)
-    ctx.emitter.line("run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)")
+    ctx.emitter.line(
+        "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope, _pending_mark=_pm)"
+    )
     emit_scope_to_state_sync(ctx)
+
+
+def _emit_pending_mark_save(ctx: "GeneratorContext") -> None:
+    """Emit ``_pm = len(_rt._pending_new_entries)`` to capture the pending
+    mark before a DO call so the GotoExternal handler can pass it to
+    run_with_goto_support."""
+    ctx.emitter.line("_pm = len(_rt._pending_new_entries)")
 
 
 # =============================================================================
@@ -4803,6 +4815,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # The internal function may return a label transition (e.g., when offset
         # lands at end of label block and execution should continue to next label)
         # Wrap in try/except to handle GotoExternal from subroutine
+        _emit_pending_mark_save(ctx)
         ctx.emitter.line("try:")
         with ctx.emitter.indented():
             if args:
@@ -4823,6 +4836,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # Handle both string targets (label names) and int targets (line numbers)
         ctx.emitter.line("while _do_target is not None:")
         with ctx.emitter.indented():
+            _emit_pending_mark_save(ctx)
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
                 ctx.emitter.line("if isinstance(_do_target, int):")
@@ -4882,6 +4896,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             call_expr = f"_globals[{label_name!r}](_rt, {byref_args}, _scope=_scope)"
         else:
             call_expr = f"_globals[{label_name!r}](_rt, _scope=_scope)"
+        _emit_pending_mark_save(ctx)
         ctx.emitter.line("try:")
         with ctx.emitter.indented():
             ctx.emitter.line(call_expr)
@@ -4937,6 +4952,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
             call_expr = f"_globals[{label_name!r}](_rt, {byref_args}, _scope=_scope)"
         else:
             call_expr = f"_globals[{label_name!r}](_rt, _scope=_scope)"
+        _emit_pending_mark_save(ctx)
         ctx.emitter.line("try:")
         with ctx.emitter.indented():
             ctx.emitter.line(call_expr)
@@ -4983,6 +4999,7 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         # Wrap in try/except GotoExternal so that if the called label does
         # an external GOTO, the chain runs within this DO frame (matching
         # MUMPS semantics where GOTO stays at the current stack level).
+        _emit_pending_mark_save(ctx)
         ctx.emitter.line("try:")
         with ctx.emitter.indented():
             if args:
@@ -6644,6 +6661,8 @@ def _generate_xecute(stmt: MXecuteStatement, ctx: "GeneratorContext") -> None:
 
         # Each code string gets its own try/except
         for code_str in code_strings:
+            if is_trampoline or has_external_gotos:
+                _emit_pending_mark_save(ctx)
             ctx.emitter.line("try:")
             with ctx.emitter.indented():
                 generate_inline_code(code_str)

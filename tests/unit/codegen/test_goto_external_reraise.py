@@ -942,7 +942,11 @@ class TestUnwindPendingNews:
 
     When entry functions re-raise GotoExternal, they save NEW stack
     entries to _rt._pending_new_entries.  When the GOTO chain QUITs
-    normally, _unwind_pending_news restores scope variables in LIFO order.
+    normally, _unwind_pending_news restores scope variables in LIFO order
+    (reverse of append order) — matching the normal NewScopeManager exit
+    path which iterates reversed(self._restore_actions).  A *mark*
+    parameter scopes unwinding to the current run_with_goto_support
+    invocation so nested calls don't consume outer entries.
     """
 
     def test_no_pending_is_noop(self, runtime):
@@ -1010,19 +1014,73 @@ class TestUnwindPendingNews:
         assert scope == {"A": "old_a"}
 
     def test_lifo_ordering_of_multiple_entries(self, runtime):
-        """Multiple entries are unwound in LIFO order (last entry first)."""
+        """Multiple entries are unwound in LIFO order (last entry first).
+
+        Entries accumulate in append order as GotoExternal propagates
+        outward through nested contexts: innermost routine's entries
+        first, then wrapping scope snapshots, then outer routine entries.
+        LIFO processing matches the normal NewScopeManager exit path
+        which iterates reversed(self._restore_actions).
+        """
         from m2py.runtime import _unwind_pending_news
 
         scope = {"X": "final"}
-        # Entry 0: outer NEW saved X="outer"
-        runtime._pending_new_entries.append(("var", "X", "outer"))
-        # Entry 1: inner NEW saved X="inner"
+        # Entry 0: inner routine saved X="inner" (appended first)
         runtime._pending_new_entries.append(("var", "X", "inner"))
+        # Entry 1: outer scope saved X="outer" (appended second)
+        runtime._pending_new_entries.append(("var", "X", "outer"))
 
         _unwind_pending_news(runtime, scope)
-        # LIFO: inner entry popped first (sets X="inner"),
-        # then outer entry popped (sets X="outer")
-        assert scope["X"] == "outer"
+        # LIFO: outer entry processed first (sets X="outer"),
+        # then inner entry processed (sets X="inner")
+        assert scope["X"] == "inner"
+
+    def test_cross_context_ordering_inner_vars_then_outer_snapshot(self, runtime):
+        """Outer scope snapshot processed first (LIFO), then inner var entries.
+
+        Simulates the real GOTO propagation pattern:
+        1. Inner routine NEWs X, GOTOs → entries: [('var', 'X', None)]
+        2. Outer NewScopeManager → entries: [('var', 'X', None), ('all', snapshot)]
+
+        LIFO processes outer snapshot first (restoring full scope), then
+        inner var entry runs (removes X since saved as None).  The outer
+        snapshot establishes the base, inner entries refine it.
+        """
+        from m2py.runtime import _unwind_pending_news
+
+        scope = {"X": "new_val", "Y": "new_y", "DIIENS": "important"}
+        # Inner routine's NEW for X (saved as undefined)
+        runtime._pending_new_entries.append(("var", "X", None))
+        # Outer NewScopeManager's full scope snapshot (the pre-call state)
+        saved = {"X": "orig_x", "Y": "orig_y", "DIIENS": "orig_diiens"}
+        runtime._pending_new_entries.append(("all", saved))
+
+        _unwind_pending_news(runtime, scope)
+        # LIFO: outer snapshot processed first (restores all),
+        # then inner var entry removes X (saved as None)
+        assert scope == {"Y": "orig_y", "DIIENS": "orig_diiens"}
+        assert "X" not in scope
+
+    def test_mark_scoping_only_unwinds_from_mark(self, runtime):
+        """Only entries at index >= mark are unwound; earlier entries preserved.
+
+        This tests the mark-based scoping that prevents nested
+        run_with_goto_support calls from unwinding outer entries.
+        """
+        from m2py.runtime import _unwind_pending_news
+
+        scope = {"X": "current"}
+        # Entry from outer rwgs invocation (index 0)
+        runtime._pending_new_entries.append(("var", "X", "outer_saved"))
+        # Entry from inner rwgs invocation (index 1)
+        runtime._pending_new_entries.append(("var", "X", "inner_saved"))
+
+        # Unwind only from mark=1 (inner rwgs's entries)
+        _unwind_pending_news(runtime, scope, mark=1)
+        assert scope["X"] == "inner_saved"
+        # Outer entry (index 0) is still in the list
+        assert len(runtime._pending_new_entries) == 1
+        assert runtime._pending_new_entries[0] == ("var", "X", "outer_saved")
 
     def test_pending_list_cleared_after_unwind(self, runtime):
         """Pending list is empty after unwinding."""

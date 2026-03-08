@@ -1466,15 +1466,23 @@ def call_external_with_offset(
         _rt._current_label_lines = _saved_label_lines
 
 
-def _unwind_pending_news(_rt: "MUMPSRuntime", _scope: Dict[str, Any]) -> None:
+def _unwind_pending_news(
+    _rt: "MUMPSRuntime", _scope: Dict[str, Any], mark: int = 0
+) -> None:
     """Unwind pending NEW stack entries saved by re-raised GotoExternal handlers.
 
     When entry functions re-raise GotoExternal (to let the outer
     run_with_goto_support handle GOTOs iteratively), they save their
     NEW stack entries to _rt._pending_new_entries.  When the GOTO chain
     eventually QUITs normally, this function unwinds those entries against
-    _scope in LIFO order — matching MUMPS semantics where NEWs at a stack
-    level are unwound when that level QUITs.
+    _scope — simulating the normal return path where innermost routines
+    exit first.
+
+    Only entries at index >= *mark* are processed, so nested
+    ``run_with_goto_support`` calls don't accidentally unwind entries
+    belonging to an outer invocation.  Entries are processed in
+    **reverse** (LIFO) order — matching the normal ``NewScopeManager``
+    exit path which iterates ``reversed(self._restore_actions)``.
 
     Entry formats (same as runtime.helpers._unwind_one_new_entry):
         ('all', saved_dict) - Argumentless NEW: restore full snapshot
@@ -1483,10 +1491,15 @@ def _unwind_pending_news(_rt: "MUMPSRuntime", _scope: Dict[str, Any]) -> None:
         dict - Legacy: treat as argumentless NEW (full snapshot)
     """
     pending = _rt._pending_new_entries
-    if not pending:
+    if len(pending) <= mark:
         return
-    while pending:
-        entry = pending.pop()
+    # Process entries in LIFO (reverse) order from mark to end.
+    # Within a single GOTO chain, entries are appended innermost-first
+    # (exception propagation order), but each NewScopeManager's
+    # restore_actions are saved in forward order while they need LIFO
+    # unwinding.  Reversing the entire slice matches the normal exit
+    # behavior of reversed(self._restore_actions).
+    for entry in reversed(pending[mark:]):
         if isinstance(entry, dict):
             _scope.clear()
             _scope.update(entry)
@@ -1506,6 +1519,7 @@ def _unwind_pending_news(_rt: "MUMPSRuntime", _scope: Dict[str, Any]) -> None:
                 _scope[name] = saved_value
             else:
                 _scope.pop(name, None)
+    del pending[mark:]
 
 
 def run_with_goto_support(
@@ -1513,6 +1527,7 @@ def run_with_goto_support(
     _rt: "MUMPSRuntime",
     _scope: Optional[Dict[str, Any]] = None,
     _args: Optional[list[Any]] = None,
+    _pending_mark: Optional[int] = None,
 ) -> Any:
     """Execute a routine entry point with external GOTO support.
 
@@ -1535,6 +1550,12 @@ def run_with_goto_support(
         _scope: Optional shared scope for cross-routine variable visibility
         _args: Optional list of positional arguments to pass to entry_func
                (used by JOB command to pass actuallist values)
+        _pending_mark: Optional baseline index into _rt._pending_new_entries.
+               When set, only entries at index >= this mark are unwound on
+               normal return.  Used by GotoExternal handlers to include
+               entries added during exception propagation.  When None
+               (the default), the mark is set to the current length of
+               the pending list at entry time.
 
     Returns:
         The return value of the final routine that QUITs normally
@@ -1568,16 +1589,19 @@ def run_with_goto_support(
     extra_args: list[Any] = _args if _args else []
     _goto_iterations = 0
     _max_goto_iterations = 10_000
+    # Mark the current pending-entries depth so nested rwgs calls only
+    # unwind entries accumulated during *this* invocation.
+    # When called from a GotoExternal handler, _pending_mark is passed
+    # explicitly to include entries added during exception propagation.
+    if _pending_mark is None:
+        _pending_mark = len(_rt._pending_new_entries)
     try:
         while True:
             try:
                 _result = current_func(current_rt, *extra_args, _scope=_scope)
-                # Unwind any pending NEW entries saved by entry functions
-                # that re-raised GotoExternal instead of calling rwgs
-                # recursively.  These represent NEWs from routines that
-                # GOTOed to another routine; now that the chain has QUITted,
-                # the NEWs must be unwound (LIFO) against _scope.
-                _unwind_pending_news(_rt, _scope)
+                # Unwind pending NEW entries accumulated during this
+                # invocation (entries at index >= _pending_mark).
+                _unwind_pending_news(_rt, _scope, _pending_mark)
                 _rt._in_extrinsic = _rt._extrinsic_stack.pop()
                 return _result
             except GotoExternal as goto:
