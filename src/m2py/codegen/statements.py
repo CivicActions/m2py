@@ -305,10 +305,13 @@ def _emit_goto_external_handler(ctx: "GeneratorContext") -> None:
 
 
 def _emit_pending_mark_save(ctx: "GeneratorContext") -> None:
-    """Emit ``_pm = len(_rt._pending_new_entries)`` to capture the pending
+    """Emit ``_pm = _rt._pending_new_entries.__len__()`` to capture the pending
     mark before a DO call so the GotoExternal handler can pass it to
-    run_with_goto_support."""
-    ctx.emitter.line("_pm = len(_rt._pending_new_entries)")
+    run_with_goto_support.
+
+    Uses ``__len__()`` instead of ``len()`` because MUMPS routines may have
+    a parameter named ``len`` that shadows the Python builtin."""
+    ctx.emitter.line("_pm = _rt._pending_new_entries.__len__()")
 
 
 # =============================================================================
