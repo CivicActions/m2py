@@ -7938,9 +7938,11 @@ class MUMPSRuntime:
         # This allows DO/GOTO to labels in the calling routine
         # Add callables AFTER scope so labels override variables
         if caller_globals:
-            # Only include callable items (functions) to avoid polluting namespace
+            # Include callable items (functions/classes) but skip Python dunders.
+            # Translated label names like _a_O, _pct_ut, _n_01 must pass through
+            # so they override any same-named MArray entries from _scope.
             for name, value in caller_globals.items():
-                if callable(value) and not name.startswith("_"):
+                if callable(value) and not name.startswith("__"):
                     namespace[name] = value
 
         try:

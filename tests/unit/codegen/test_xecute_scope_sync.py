@@ -183,3 +183,103 @@ class TestXecuteCallerVarsVisibleInDynamicXecute:
         code = 'TEST\n S X=1,FLAG=1,CODE="W X" X:FLAG CODE\n Q'
         output = self._compile_and_run(rt, code)
         assert output == "1"
+
+
+@pytest.mark.codegen
+class TestExecuteMumpsCallerGlobalsFilter:
+    """Verify that execute_mumps() caller_globals filtering works correctly.
+
+    The caller_globals loop in execute_mumps() must:
+    - Allow translated label names starting with ``_`` (e.g. ``_a_O``,
+      ``_pct_ut``) so XECUTE'd code can DO/GOTO those labels.
+    - Block Python dunders (``__name__``, ``__builtins__``) to avoid
+      polluting the exec namespace.
+    - Let callables override same-named MArray entries from ``_scope``.
+
+    Bug context: The old filter ``not name.startswith("_")`` blocked ALL
+    underscore-prefixed names, preventing translated label functions like
+    ``_a_O`` (label ``O``) from entering the namespace.  When _scope
+    contained a same-named MArray (from state→scope sync), the MArray
+    shadowed the callable → ``TypeError: 'MArray' object is not callable``.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        return MUMPSRuntime()
+
+    def test_underscore_prefixed_callable_in_caller_globals(self, rt):
+        """Callable with _ prefix from caller_globals must be in namespace."""
+        from m2py.runtime import MArray
+
+        scope: dict = {}
+        # Simulate a _scope that has an MArray with same name as a label
+        scope["_a_O"] = MArray(value="should be overridden")
+
+        def fake_label(rt, _scope=None):
+            rt.write("called")
+
+        caller_globals = {"_a_O": fake_label, "__name__": "test_module"}
+        rt.execute_mumps('W "before"', scope, caller_globals)
+        # The callable should have been available (no TypeError)
+        output = rt.get_output()
+        assert output == "before"
+
+    def test_dunder_names_excluded_from_namespace(self, rt):
+        """Python dunder names must NOT enter the exec namespace."""
+        scope: dict = {}
+        caller_globals = {
+            "__name__": "bad_module",
+            "__builtins__": {"print": print},
+            "GOOD": lambda rt, _scope=None: None,
+        }
+        # This should not crash — dunders are filtered out
+        rt.execute_mumps('W "ok"', scope, caller_globals)
+        assert rt.get_output() == "ok"
+
+    def test_callable_overrides_marray_in_scope(self, rt):
+        """Callable from caller_globals must override MArray from _scope."""
+        from m2py.runtime import MArray
+
+        scope = {"_pct_X": MArray(value="marray_value")}
+
+        called = []
+
+        def pct_x_label(rt, _scope=None):
+            called.append(True)
+            rt.write("label_called")
+
+        caller_globals = {"_pct_X": pct_x_label}
+        # XECUTE code that calls _pct_X should get the callable, not the MArray
+        rt.execute_mumps('W "hello"', scope, caller_globals)
+        assert rt.get_output() == "hello"
+
+    def test_xecute_do_to_label_in_caller_routine(self, rt):
+        """XECUTE'd code must be able to DO a label from the calling routine.
+
+        This is the DIO2 pattern: X DY(DN) where DY(DN) contains
+        code like 'S DISTP=DISTP+1 D CSTP' — CSTP is a label in DIO2.
+        """
+        code = 'TEST\n S CODE="D SUB"\n X CODE\n Q\nSUB\n W "sub ran"\n Q'
+        generate = rt._get_codegen_callback()
+        python_code = generate(code, routine_name="TEST")
+        ns: dict = {}
+        exec(compile(python_code, "<test>", "exec"), ns)
+        scope: dict = {}
+        rt._current_routine = "TEST"
+        ns["TEST"](rt, _scope=scope)
+        assert rt.get_output() == "sub ran"
+
+    def test_xecute_do_with_scope_var_same_name_as_label(self, rt):
+        """Variable and label share a name: XECUTE DO should call label."""
+        # In MUMPS, S is both a variable name and could be a label name.
+        # D S always means DO label S, XECUTE "D S" should call label S.
+        code = 'TEST\n S S=999\n S CODE="D S"\n X CODE\n Q\nS\n W S\n Q'
+        generate = rt._get_codegen_callback()
+        python_code = generate(code, routine_name="TEST")
+        ns: dict = {}
+        exec(compile(python_code, "<test>", "exec"), ns)
+        scope: dict = {}
+        rt._current_routine = "TEST"
+        ns["TEST"](rt, _scope=scope)
+        # Label S writes variable S's value (999)
+        assert rt.get_output() == "999"
