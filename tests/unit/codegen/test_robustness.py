@@ -209,6 +209,62 @@ class TestPhase11UnresolvedGotoPatterns:
         assert result
         ast.parse(result)
 
+    def test_unresolved_goto_trampoline_uses_label_not_found(self):
+        """Unresolved GOTO in TRAMPOLINE emits LabelNotFoundError.
+
+        Intra-function GOTOs to dot-level sub-labels cannot use the
+        return-to-trampoline approach because that would exit the function
+        and lose FOR loop / DO block context. Instead, emit LabelNotFoundError
+        which gets caught by $ETRAP error handling.
+        """
+        import ast
+        import warnings
+
+        # Pattern from DICOMP1: ST has a FOR loop, dotted block with G OV
+        # OV is a label at dot level 1 inside ST's dotted block
+        source = "TEST\n D ST Q\nST F  Q:1  D\n .G OV\nOV .W 1\n Q\n"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source)
+        assert result
+        ast.parse(result)
+        # Should emit LabelNotFoundError for unresolved intra-function GOTO
+        assert "LabelNotFoundError" in result
+
+    def test_unresolved_goto_postconditioned_emits_error(self):
+        """Postconditioned unresolved GOTO emits LabelNotFoundError."""
+        import ast
+        import warnings
+
+        source = "TEST\n S X=1 G:X OV\nST\n . S Y=1\nOV\n . W Y\n Q\n"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source)
+        assert result
+        ast.parse(result)
+        assert "LabelNotFoundError" in result
+
+    def test_trampoline_handles_integer_targets(self, generate_python):
+        """Trampoline loop handles int targets for dot-level label dispatch.
+
+        The trampoline codegen emits isinstance(target, int) handling so
+        that _label_lines-based dispatch (returning line numbers) can be
+        resolved via _line_map at runtime.
+        """
+        import ast
+        import warnings
+
+        # A routine with cross-label GOTO triggers the TRAMPOLINE strategy
+        source = "TEST\n G SUB\n Q\nSUB\n W 1\n Q\n"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = generate_python(source)
+        assert result
+        ast.parse(result)
+        # Trampoline must handle integer targets via _line_map dispatch
+        assert "isinstance(target, int)" in result
+        assert "_line_map[target]" in result
+
 
 # Cached parser singleton (commit 14026e58)
 

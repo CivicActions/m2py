@@ -143,7 +143,9 @@ class TestExternalDOLabelCall:
         # T029: External DO calls pass _rt and _scope for cross-routine variable visibility
         # Phase 13 (T079): _rt is now passed as first parameter
         # T075e: External DO calls use run_with_goto_support to handle external GOTOs
-        assert "run_with_goto_support(getattr(ext2, 'HELPER'), _rt, _scope)" in code
+        # resolve_label_func handles labels at dot level > 0 via _line_map fallback
+        assert "resolve_label_func(ext2, 'HELPER')" in code
+        assert "run_with_goto_support(_target_func, _rt, _scope)" in code
 
     def test_d_label_routine_calls_label(self, external_fixtures_path):
         """D HELPER^ext2 should call the HELPER label (not entry label)."""

@@ -1093,12 +1093,23 @@ class RoutineGenerator:
                                     "target, state = func(_rt, state, _scope)"
                                 )
                         else:
-                            # No offsets: simple label dispatch
-                            # Assert narrowing for type checker - target is str here
-                            ctx.emitter.line("assert isinstance(target, str)")
-                            ctx.emitter.line("func = _labels[target]")
-                            # Pass _rt and _scope to inner functions
-                            ctx.emitter.line("target, state = func(_rt, state, _scope)")
+                            # Handle int targets from unresolved GOTOs to
+                            # dot-level labels (dispatched via _label_lines)
+                            ctx.emitter.line("if isinstance(target, int):")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(
+                                    "label_name, offset = _line_map[target]"
+                                )
+                                ctx.emitter.line("func = _globals['_' + label_name]")
+                                ctx.emitter.line(
+                                    "target, state = func(_rt, state, _scope, _start_offset=offset)"
+                                )
+                            ctx.emitter.line("else:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("func = _labels[target]")
+                                ctx.emitter.line(
+                                    "target, state = func(_rt, state, _scope)"
+                                )
                     # Handle GotoExternal — re-raise to let the outer
                     # run_with_goto_support handle it iteratively (avoids
                     # recursive rwgs depth growth that causes segfaults in
@@ -1244,9 +1255,23 @@ class RoutineGenerator:
                                     "target, state = func(_rt, state, _scope)"
                                 )
                         else:
-                            ctx.emitter.line("assert isinstance(target, str)")
-                            ctx.emitter.line("func = _labels[target]")
-                            ctx.emitter.line("target, state = func(_rt, state, _scope)")
+                            # Handle int targets from unresolved GOTOs to
+                            # dot-level labels (dispatched via _label_lines)
+                            ctx.emitter.line("if isinstance(target, int):")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line(
+                                    "label_name, offset = _line_map[target]"
+                                )
+                                ctx.emitter.line("func = _globals['_' + label_name]")
+                                ctx.emitter.line(
+                                    "target, state = func(_rt, state, _scope, _start_offset=offset)"
+                                )
+                            ctx.emitter.line("else:")
+                            with ctx.emitter.indented():
+                                ctx.emitter.line("func = _labels[target]")
+                                ctx.emitter.line(
+                                    "target, state = func(_rt, state, _scope)"
+                                )
                 # Handle GotoExternal — re-raise to let the outer
                 # run_with_goto_support handle it iteratively (avoids
                 # recursive rwgs depth growth)

@@ -1327,13 +1327,33 @@ def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
         # G LABEL^ROUTINE - call specific label
         # Translate label name to Python function name (handles digits, %, etc.)
         func_name = translate_name(label)
-        if not hasattr(module, func_name):
-            raise LabelNotFoundError(
-                label,
-                module._routine_name,
-                list(getattr(module, "_label_lines", {}).keys()),
-            )
-        return getattr(module, func_name)
+        if hasattr(module, func_name):
+            return getattr(module, func_name)
+
+        # Label exists in _label_lines but not as a standalone function
+        # (e.g., labels at dot level > 0).  Resolve via _line_map with offset 0.
+        label_lines = getattr(module, "_label_lines", {})
+        if label in label_lines:
+            target_line = label_lines[label] + 1  # 0-indexed → 1-based
+            line_map = getattr(module, "_line_map", {})
+            if target_line in line_map:
+                parent_label, line_offset = line_map[target_line]
+                parent_func_name = translate_name(parent_label)
+                if line_offset > 0:
+                    internal_func_name = "_" + parent_func_name
+                    if hasattr(module, internal_func_name):
+                        internal_func = getattr(module, internal_func_name)
+                        return _create_offset_entry_wrapper(
+                            internal_func, line_offset, module, use_dataclass_sync=True
+                        )
+                if hasattr(module, parent_func_name):
+                    return getattr(module, parent_func_name)
+
+        raise LabelNotFoundError(
+            label,
+            module._routine_name,
+            list(getattr(module, "_label_lines", {}).keys()),
+        )
     else:
         # G ^ROUTINE - call entry label (same name as routine)
         entry_name = translate_name(module._routine_name)
@@ -1341,6 +1361,57 @@ def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
             # Fall back to lowercase
             entry_name = translate_name(module._routine_name.lower())
         return getattr(module, entry_name)
+
+
+def resolve_label_func(module: Any, label: str) -> Callable[..., Any]:
+    """Resolve a label in a module to a callable function.
+
+    Handles labels that exist as standalone functions AND labels that
+    only exist in _label_lines (e.g., labels at dot level > 0).
+    For the latter, uses _line_map to find the parent function and
+    creates an offset wrapper.
+
+    Args:
+        module: The imported module for the routine
+        label: The MUMPS label name (not translated)
+
+    Returns:
+        Callable function for the label
+
+    Raises:
+        LabelNotFoundError: If label doesn't exist at all
+    """
+    from m2py.core.names import translate_name
+
+    func_name = translate_name(label)
+
+    # Direct function lookup (most common case)
+    if hasattr(module, func_name):
+        return getattr(module, func_name)
+
+    # Fallback: label exists in _label_lines but not as a standalone function
+    label_lines = getattr(module, "_label_lines", {})
+    if label in label_lines:
+        target_line = label_lines[label] + 1  # 0-indexed → 1-based
+        line_map = getattr(module, "_line_map", {})
+        if target_line in line_map:
+            parent_label, line_offset = line_map[target_line]
+            parent_func_name = translate_name(parent_label)
+            if line_offset > 0:
+                internal_func_name = "_" + parent_func_name
+                if hasattr(module, internal_func_name):
+                    internal_func = getattr(module, internal_func_name)
+                    return _create_offset_entry_wrapper(
+                        internal_func, line_offset, module, use_dataclass_sync=True
+                    )
+            if hasattr(module, parent_func_name):
+                return getattr(module, parent_func_name)
+
+    raise LabelNotFoundError(
+        label,
+        module._routine_name,
+        list(label_lines.keys()),
+    )
 
 
 def call_external_with_offset(
@@ -3559,17 +3630,26 @@ class MUMPSRuntime:
                 self._freeze_stack_snapshot()
             # If $ECODE already set, this is a re-fire during unwind — don't re-accumulate
 
+            # Resolve caller_globals from the current routine so that
+            # $ETRAP/$ZTRAP code like "D ERRTRAP" can find labels defined
+            # in the routine where the error occurred.
+            caller_globals = None
+            if self._current_routine:
+                module = self._routines.get(self._current_routine.upper())
+                if module is not None:
+                    caller_globals = module.__dict__
+
             # Try $ETRAP first, then $ZTRAP fallback
             if self._etrap:
                 try:
-                    self.execute_mumps(self._etrap, _scope)
+                    self.execute_mumps(self._etrap, _scope, caller_globals)
                 except Exception:
                     # Error in $ETRAP itself - propagate original error
                     return False
             elif self._ztrap:
                 # $ZTRAP fallback
                 try:
-                    self._dispatch_ztrap(_scope)
+                    self._dispatch_ztrap(_scope, caller_globals)
                 except Exception:
                     return False
 
@@ -3591,7 +3671,7 @@ class MUMPSRuntime:
         r"^[A-Za-z%][A-Za-z0-9]*(?:\+\d+)?(?:\^[A-Za-z%][A-Za-z0-9]*)?$"
     )
 
-    def _dispatch_ztrap(self, _scope: dict) -> None:
+    def _dispatch_ztrap(self, _scope: dict, caller_globals: dict | None = None) -> None:
         """Dispatch $ZTRAP error handler.
 
         Handles $ZTRAP with GOTO vs XECUTE semantics:
@@ -3604,6 +3684,7 @@ class MUMPSRuntime:
 
         Args:
             _scope: Current variable scope
+            caller_globals: Optional caller's globals() for label access
 
         Raises:
             Exception: If $ZTRAP execution fails
@@ -3616,13 +3697,13 @@ class MUMPSRuntime:
         # Check for explicit GOTO syntax: "G label" or "GOTO label"
         if self._ZTRAP_GOTO_RE.match(ztrap):
             # GOTO semantics — execute the full GOTO command
-            self.execute_mumps(ztrap, _scope)
+            self.execute_mumps(ztrap, _scope, caller_globals)
         elif self._ZTRAP_LABEL_RE.match(ztrap):
             # Bare label reference — implicit GOTO semantics
-            self.execute_mumps(f"G {ztrap}", _scope)
+            self.execute_mumps(f"G {ztrap}", _scope, caller_globals)
         else:
             # XECUTE semantics — execute as inline MUMPS code
-            self.execute_mumps(ztrap, _scope)
+            self.execute_mumps(ztrap, _scope, caller_globals)
 
     def _extract_error_code(self, ecode: str) -> str:
         """Extract the primary error code from $ECODE format.

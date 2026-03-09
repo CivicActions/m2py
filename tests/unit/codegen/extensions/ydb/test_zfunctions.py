@@ -76,6 +76,26 @@ class TestYdbSpecialVariablesCodegen:
         result = generate_python(code)
         assert "_rt.zstatus()" in result
 
+    def test_zs_abbreviation_generates_zstatus(self):
+        """$ZS abbreviation maps to $ZSTATUS, not $ZSEARCH.
+
+        In MUMPS, $ZS without parentheses is the abbreviation for $ZSTATUS.
+        $ZSEARCH requires parentheses: $ZS(expr).
+        This was a bug where $ZS was parsed as IntrinsicFunctionNoArgs
+        and mapped to $ZSEARCH instead of SpecialVariable $ZSTATUS.
+        """
+        code = "TEST\n W $ZS\n Q"
+        result = generate_python(code)
+        assert "_rt.zstatus()" in result
+        assert "zsearch" not in result.lower()
+
+    def test_zs_lowercase_abbreviation_generates_zstatus(self):
+        """$zs (lowercase) maps to $ZSTATUS — grammar is case-insensitive."""
+        code = "TEST\n W $zs\n Q"
+        result = generate_python(code)
+        assert "_rt.zstatus()" in result
+        assert "zsearch" not in result.lower()
+
     def test_zsystem_variable_generates_exit_code(self):
         """$ZSYSTEM generates zsystem_exit() call."""
         code = "TEST\n W $ZSYSTEM\n Q"

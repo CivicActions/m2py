@@ -3767,12 +3767,17 @@ def _generate_single_target_goto(
             postcond_ctx.__exit__(None, None, None)
         return
 
-    # UNRESOLVED GOTO: target label doesn't exist in this routine.
-    # Generate a runtime error instead of a compile-time rejection so that
-    # routines with dead-code GOTOs to missing labels still compile.
+    # UNRESOLVED GOTO: target label doesn't exist as a resolved reference.
+    # This happens for:
+    # 1. Truly missing labels (dead code) → runtime error
+    # 2. Dot-level sub-labels within the same parent label (e.g., G OV where
+    #    OV is at dot level > 0 inside the current label's function)
+    # Case 2 cannot use `return (line_number, state)` because that exits the
+    # entire function, losing FOR loop / DO block context.  These intra-function
+    # GOTOs need structured code transformation (future work).
+    # For now, emit LabelNotFoundError which gets caught by $ETRAP.
     # Skip this check inside inline XECUTE blocks — the target may exist
-    # in the enclosing routine's module globals (e.g., X "G B" where B is
-    # a label in the outer routine, not the XECUTE scope).
+    # in the enclosing routine's module globals.
     if (
         not target.is_resolved
         and target.target is None
@@ -4695,28 +4700,22 @@ def _generate_do_target(target: "MCall", ctx: "GeneratorContext") -> None:
         elif target.name:
             # D LABEL^ROUTINE - call specific label
             label_name = translate_name(target.name)
-            # Generate LabelNotFoundError check
-            ctx.emitter.line(f"if not hasattr({routine_name}, {label_name!r}):")
-            with ctx.emitter.indented():
-                ctx.emitter.line("from m2py.runtime import LabelNotFoundError")
-                ctx.emitter.line(
-                    f"raise LabelNotFoundError({target.name!r}, {routine_name!r}, "
-                    f"list({routine_name}._label_lines.keys()))"
-                )
+            # Use resolve_label_func which handles labels at dot level > 0
+            # by falling back to _label_lines + _line_map resolution
+            ctx.emitter.line("from m2py.runtime import resolve_label_func")
+            ctx.emitter.line(
+                f"_target_func = resolve_label_func({routine_name}, {target.name!r})"
+            )
             # Pass _rt and _scope for cross-routine variable visibility
             # Wrap in run_with_goto_support to handle GotoExternal from subroutine
-            # Use getattr() instead of direct attribute access so the type checker
-            # doesn't flag cross-module label references that may not be statically visible.
             args = _generate_call_arguments(target.arguments, ctx)
             if args:
                 ctx.emitter.line(
                     f"run_with_goto_support(lambda _rt, _scope=_scope: "
-                    f"getattr({routine_name}, {label_name!r})(_rt, {args}, _scope=_scope), _rt, _scope)"
+                    f"_target_func(_rt, {args}, _scope=_scope), _rt, _scope)"
                 )
             else:
-                ctx.emitter.line(
-                    f"run_with_goto_support(getattr({routine_name}, {label_name!r}), _rt, _scope)"
-                )
+                ctx.emitter.line("run_with_goto_support(_target_func, _rt, _scope)")
         else:
             # D ^ROUTINE - call entry function (may be _preamble for labelless first lines)
             # Use the module's _entry_function attribute which is set correctly at codegen time

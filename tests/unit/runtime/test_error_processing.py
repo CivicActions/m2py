@@ -529,3 +529,44 @@ class TestHandleEtrap:
         scope = {}
         result = rt._handle_etrap(ZeroDivisionError(), scope)
         assert result is False
+
+    def test_etrap_resolves_caller_globals_for_label_access(self):
+        """$ETRAP handler can find labels in the error-originating routine.
+
+        When $ETRAP is set to "D ERRTRAP" and the error occurs in routine FOO,
+        _handle_etrap must resolve caller_globals from FOO's module so that
+        execute_mumps can find the ERRTRAP label. Without this fix, the
+        execute_mumps call would get KeyError for the label.
+        """
+        import types
+
+        rt = MUMPSRuntime()
+        # Register a mock routine module
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0}
+        module._line_map = {1: ("TESTRTN", 0)}
+        rt._routines["TESTRTN"] = module
+        rt._current_routine = "TESTRTN"
+
+        # Set $ETRAP to clear $ECODE (simple handler that works)
+        rt.set_etrap('S $ECODE=""')
+        scope = {}
+        result = rt._handle_etrap(ValueError("test"), scope)
+        assert result is True
+        # Verify the handler ran successfully (cleared $ECODE)
+        assert rt.ecode() == ""
+
+    def test_dispatch_ztrap_passes_caller_globals(self):
+        """_dispatch_ztrap accepts and uses caller_globals parameter.
+
+        $ZTRAP handlers need caller_globals just like $ETRAP ones, so
+        labels from the error-originating routine are accessible.
+        """
+        rt = MUMPSRuntime()
+        # Set $ZTRAP to XECUTE semantics (clear errors)
+        rt.set_ztrap('S $ECODE=""')
+        scope = {}
+        # Should not raise — caller_globals is optional
+        rt._dispatch_ztrap(scope, caller_globals=None)
+        assert rt.ecode() == ""

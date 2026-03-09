@@ -107,7 +107,7 @@ class TestDoCommandCodegen:
 
         D LABEL^ROUTINE generates:
         1. Import statement for the external routine module
-        2. Label existence check with helpful error
+        2. Label resolution via resolve_label_func (handles dot-level labels)
         3. Call via run_with_goto_support for external GOTO handling (T075e)
         """
         code = generate_python("TEST D LABEL^EXTRTN Q")
@@ -115,12 +115,11 @@ class TestDoCommandCodegen:
         # Should import the external routine module
         assert "import EXTRTN" in code
 
-        # Should check if label exists with helpful error
-        assert "hasattr(EXTRTN, 'LABEL')" in code
-        assert "LabelNotFoundError" in code
+        # Should resolve label via resolve_label_func
+        assert "resolve_label_func(EXTRTN, 'LABEL')" in code
 
         # Should call via run_with_goto_support for external GOTO handling
-        assert "run_with_goto_support(getattr(EXTRTN, 'LABEL'), _rt, _scope)" in code
+        assert "run_with_goto_support(_target_func, _rt, _scope)" in code
 
 
 @pytest.mark.codegen
@@ -1313,21 +1312,12 @@ class TestDoExternalRoutineEntryFunction:
     def test_d_label_routine_does_not_use_entry_function(self, generate_python):
         """D LABEL^EXTRTN still uses named label, not _entry_function."""
         code = generate_python("TEST D LABEL^EXTRTN Q")
-        # Uses getattr() for type-safe cross-module label access
-        assert "getattr(EXTRTN, 'LABEL')" in code
+        # Uses resolve_label_func for label resolution (handles dot-level labels)
+        assert "resolve_label_func(EXTRTN, 'LABEL')" in code
         # The DO call should reference the label directly, not _entry_function
-        # (Note: _entry_function is always declared at module level, so just
-        # check the call site doesn't use it)
-        for line in code.splitlines():
-            if (
-                "EXTRTN" in line
-                and "import" not in line
-                and "_entry_function" not in line
-            ):
-                if "getattr(EXTRTN, 'LABEL')" in line:
-                    break
-        else:
-            pytest.fail("Expected getattr(EXTRTN, 'LABEL') call, not _entry_function")
+        assert (
+            "_entry_function" not in code.split("resolve_label_func")[1].split("\n")[0]
+        )
 
 
 @pytest.mark.codegen

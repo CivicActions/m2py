@@ -1696,6 +1696,116 @@ class TestResolveGotoTarget:
         # The wrapper has a docstring indicating it's an offset wrapper
         assert "offset" in result.__doc__.lower()
 
+    def test_resolve_goto_dot_level_label(self):
+        """G DOTLABEL^ROUTINE resolves dot-level label via _label_lines fallback.
+
+        Dot-level labels (e.g., OV at dot level 1 inside parent ST) don't get
+        standalone Python functions. resolve_goto_target must fall back to
+        _label_lines + _line_map to find the parent function and create an
+        offset wrapper.
+        """
+        from m2py.runtime import GotoExternal, resolve_goto_target
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        # ST at line 10 (0-indexed), OV at line 15 (0-indexed, dot level 1 inside ST)
+        module._label_lines = {"TESTRTN": 0, "ST": 10, "OV": 15}
+        # _line_map: 1-based line → (parent_label, offset_within_parent)
+        module._line_map = {
+            1: ("TESTRTN", 0),
+            11: ("ST", 0),
+            12: ("ST", 1),
+            13: ("ST", 2),
+            14: ("ST", 3),
+            15: ("ST", 4),
+            16: ("ST", 5),  # OV is at offset 5 within ST
+        }
+
+        def st_internal(_rt, state, _scope, _start_offset=0):
+            return (None, state)
+
+        def st_entry(_rt, _scope=None):
+            pass
+
+        module.ST = st_entry
+        module._ST = st_internal
+        # OV has NO standalone function — it's a dot-level label
+
+        goto = GotoExternal(module=module, label="OV", offset=None)
+        result = resolve_goto_target(goto)
+
+        # Should return an offset wrapper (not LabelNotFoundError)
+        assert callable(result)
+        assert result is not module.ST
+        assert "offset" in result.__doc__.lower()
+
+
+@pytest.mark.runtime
+class TestResolveLabelFunc:
+    """Tests for resolve_label_func() helper.
+
+    resolve_label_func resolves a MUMPS label name to a callable function
+    in a module, handling both direct label functions and dot-level labels
+    that only exist in _label_lines.
+    """
+
+    def test_direct_label_lookup(self):
+        """Label that has a standalone function resolves directly."""
+        from m2py.runtime import resolve_label_func
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0, "SUB": 5}
+
+        def sub_func(_rt, _scope=None):
+            pass
+
+        module.SUB = sub_func
+
+        result = resolve_label_func(module, "SUB")
+        assert result is sub_func
+
+    def test_dot_level_label_fallback(self):
+        """Dot-level label resolves via _label_lines + _line_map fallback."""
+        from m2py.runtime import resolve_label_func
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0, "PARENT": 5, "CHILD": 8}
+        module._line_map = {
+            1: ("TESTRTN", 0),
+            6: ("PARENT", 0),
+            7: ("PARENT", 1),
+            8: ("PARENT", 2),
+            9: ("PARENT", 3),  # CHILD at offset 3 within PARENT
+        }
+
+        def parent_internal(_rt, state, _scope, _start_offset=0):
+            return (None, state)
+
+        module.PARENT = lambda _rt, _scope=None: None
+        module._PARENT = parent_internal
+        # CHILD has no standalone function
+
+        result = resolve_label_func(module, "CHILD")
+        assert callable(result)
+        assert result is not module.PARENT
+
+    def test_missing_label_raises(self):
+        """Label that doesn't exist at all raises LabelNotFoundError."""
+        from m2py.runtime import resolve_label_func, LabelNotFoundError
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0}
+
+        with pytest.raises(LabelNotFoundError):
+            resolve_label_func(module, "NOTEXIST")
+
 
 @pytest.mark.runtime
 class TestCallExternalWithOffset:
