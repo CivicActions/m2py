@@ -158,19 +158,24 @@ def gen_subscripts_tuple(
 
 
 def emit_state_to_scope_sync(ctx: "GeneratorContext") -> None:
-    """Emit state._locals → _scope synchronization code.
+    """Emit state → _scope synchronization code.
 
-    Copies all entries from ``state._locals`` into ``_scope`` so that
-    subroutines and external calls see the current variable values.
+    Copies state variables into ``_scope`` so that subroutines, external
+    calls, and XECUTE see the current variable values.
 
-    Only emits if ``ctx.uses_dynamic_locals`` is True (no-op otherwise).
+    - ``uses_dynamic_locals=True``: bulk copy ``state._locals`` → ``_scope``
+    - TRAMPOLINE with static state vars: per-variable ``state.X`` → ``_scope['X']``
+    - Otherwise: no-op (SIMPLE_FUNCTIONS uses ``_scope`` directly)
 
     Args:
         ctx: Current generator context with emitter.
     """
-    if not ctx.uses_dynamic_locals:
-        return
-    ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
+    if ctx.uses_dynamic_locals:
+        ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
+    elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.state_vars:
+        for var_name in sorted(ctx.state_vars):
+            python_name = translate_name(var_name)
+            emit_state_var_to_scope(ctx, var_name, python_name)
 
 
 def emit_state_var_to_scope(
@@ -214,29 +219,33 @@ def emit_state_var_to_scope(
 
 
 def emit_scope_to_state_sync(ctx: "GeneratorContext") -> None:
-    """Emit _scope → state._locals synchronization code.
+    """Emit _scope → state synchronization code.
 
-    Wraps non-MArray values in MArray containers before storing into
-    ``state._locals``, ensuring consistent data model after callee
-    returns (callees using static state may produce plain values).
+    Copies ``_scope`` entries back into state so that the calling routine
+    sees modifications made by callees or XECUTE'd code.
 
-    Only emits if ``ctx.uses_dynamic_locals`` is True (no-op otherwise).
+    - ``uses_dynamic_locals=True``: bulk copy, wrapping non-MArray values
+    - TRAMPOLINE with static state vars: per-variable ``_scope['X']`` → ``state.X``
+    - Otherwise: no-op
 
     Args:
         ctx: Current generator context with emitter.
     """
-    if not ctx.uses_dynamic_locals:
-        return
-    ctx.emitter.line("for _k, _v in _scope.items():")
-    with ctx.emitter.indented():
-        ctx.emitter.line("if isinstance(_v, MArray):")
+    if ctx.uses_dynamic_locals:
+        ctx.emitter.line("for _k, _v in _scope.items():")
         with ctx.emitter.indented():
-            ctx.emitter.line("state._locals[_k] = _v")
-        ctx.emitter.line("else:")
-        with ctx.emitter.indented():
-            ctx.emitter.line("_m = MArray()")
-            ctx.emitter.line("_m.value = _v")
-            ctx.emitter.line("state._locals[_k] = _m")
+            ctx.emitter.line("if isinstance(_v, MArray):")
+            with ctx.emitter.indented():
+                ctx.emitter.line("state._locals[_k] = _v")
+            ctx.emitter.line("else:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("_m = MArray()")
+                ctx.emitter.line("_m.value = _v")
+                ctx.emitter.line("state._locals[_k] = _m")
+    elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.state_vars:
+        for var_name in sorted(ctx.state_vars):
+            python_name = translate_name(var_name)
+            emit_scope_var_to_state(ctx, var_name, python_name)
 
 
 def emit_scope_var_to_state(
@@ -284,11 +293,11 @@ def _emit_goto_external_handler(ctx: "GeneratorContext") -> None:
     """Emit the body of a standard ``except GotoExternal`` handler.
 
     Emits three steps:
-    1. state→scope sync (no-op when ``ctx.uses_dynamic_locals`` is False)
+    1. state→scope sync
     2. ``run_with_goto_support(resolve_goto_target(_goto), _rt, _scope,
        _pending_mark=_pm)`` — using the pre-DO mark so entries added during
        exception propagation are included in the handler's unwind scope
-    3. scope→state sync (no-op when ``ctx.uses_dynamic_locals`` is False)
+    3. scope→state sync
 
     The caller is responsible for emitting the ``except GotoExternal as _goto:``
     line and managing indentation.  The variable ``_pm`` must have been emitted
@@ -6905,6 +6914,10 @@ def _generate_xecute_args_with_postconds(
     from m2py.codegen.expressions import generate_expr
     from m2py.asg.expressions import MLiteral
     from m2py.asg.enums import LiteralType
+
+    # Sync state → _scope before processing arguments so XECUTE'd code
+    # sees the caller's current variable values.
+    emit_state_to_scope_sync(ctx)
 
     # Group consecutive arguments by whether they have postconditions
     # and whether they contain control flow

@@ -453,8 +453,8 @@ def fileman_bootstrap(munit_runtime):
     2. VistA-M ZWR globals — ``DD.zwr`` and ``1+FILE.zwr``
     3. Skip if neither is available
 
-    Note: ``^%ZOSF`` is not loaded here because it requires a live
-    MUMPS instance to generate (see ``utils/export_globals.py``).
+    Also bootstraps ``^%ZOSF`` (kernel OS-specific infrastructure)
+    from ZOSFGUX.m values — see ``_bootstrap_zosf()``.
     Loading the full ^DD (765K lines) takes a few seconds at session start.
     """
     from m2py.runtime.zwr import import_zwr
@@ -467,6 +467,7 @@ def fileman_bootstrap(munit_runtime):
         total += import_zwr(munit_runtime.globals, combined)
         logger.info("Loaded %d FileMan globals from combined fileman.zwr", total)
         _bootstrap_package_file(munit_runtime)
+        _bootstrap_zosf(munit_runtime)
         _load_dmu_fixtures(munit_runtime)
         return munit_runtime
 
@@ -536,6 +537,11 @@ def fileman_bootstrap(munit_runtime):
     # returns "22.2".  DMUDIC00 gates its tests behind this version check.
     _bootstrap_package_file(munit_runtime)
 
+    # Bootstrap ^%ZOSF kernel infrastructure (OS type, routine existence
+    # test, UCI/PROD, terminal control, etc.).  Without this, FileMan
+    # routines that X ^%ZOSF("TEST") or read ^%ZOSF("OS") will error.
+    _bootstrap_zosf(munit_runtime)
+
     # Load DMUDIC00 test fixture data (files 1009.801/1009.802) if available.
     # This ZWR was captured from YDB running the real DMUFINIT chain — it
     # contains ^DD, ^DIC, and ^DMU entries for the Broken File and Shadow
@@ -582,6 +588,98 @@ def _bootstrap_package_file(rt) -> None:
     # Header node (needed if any code does $D(^DIC(9.4,13,0)))
     g.set("DIC", ("9.4", "13", "0"), "VA FILEMAN^DI^FM INIT")
     logger.info("Bootstrapped Package file: ^DIC(9.4,13) = VA FileMan 22.2")
+
+
+def _bootstrap_zosf(rt) -> None:
+    """Seed ^%ZOSF kernel infrastructure global.
+
+    ^%ZOSF is normally populated by running ZOSFGUX (GT.M/Unix) at VistA
+    installation time.  Values are MUMPS code strings that get XECUTE'd at
+    runtime (e.g. ``X ^%ZOSF("TEST")`` checks if routine X exists).
+
+    Without ^%ZOSF, FileMan routines that reference it either error out or
+    take the wrong code path:
+    - DII.m ``OS`` label reads ``^%ZOSF("OS")`` to set DISYS (system type)
+    - DMUFINIT uses ``^%ZOSF("TEST")`` to check routine existence
+    - DMUFINIS/DIINIS check ``^%ZOSF("UCI")`` / ``^%ZOSF("PROD")``
+    - DDGLIBP uses ``^%ZOSF("RM")`` for terminal width
+
+    Values sourced from ZOSFGUX.m (GT.M for Unix, the YDB-compatible
+    variant).  Only entries referenced by FileMan and commonly-used Kernel
+    routines are included — esoteric magtape/device entries are omitted.
+    """
+    # All values from ZOSFGUX.m Z-section $TEXT table, with "OS" from the
+    # explicit SET after the table loop.
+    #
+    # Format: Each value is the literal string that VistA stores in the
+    # global.  Many are MUMPS code intended for XECUTE (e.g. TEST, UCI,
+    # TRAP).  Some are plain data values (e.g. OS, PROD, VOL, MGR, TMP).
+    zosf_entries = {
+        # --- Critical for FileMan ---
+        # DII.m OS label: I $D(^%ZOSF("OS"))#2 S DISYS=+$P(^("OS"),"^",2)
+        # DISYS=19 selects GT.M/Unix code paths throughout FileMan
+        "OS": "GT.M (Unix)^19",
+        # Routine existence test: I X]"",$T(^@X)]""
+        # Used by DMUFINIT, DIINIT, DINTEG, DMUFINIS, etc.
+        "TEST": 'I X]"",$T(^@X)]""',
+        # UCI (User Class Identifier): S Y=^%ZOSF("PROD")
+        # Referenced by DMUFINIS, DIINIS, DIDC, DMSQP6, DIDH1, DIWE4
+        "UCI": 'S Y=^%ZOSF("PROD")',
+        # UCI validation — always returns true (Y=1)
+        "UCICHECK": "S Y=1",
+        # Production UCI,VOL — referenced by UCI code above and DMUFINIS
+        "PROD": "VAH,ROU",
+        # Volume set name
+        "VOL": "ROU",
+        # Manager UCI,VOL
+        "MGR": "VAH,ROU",
+        # Terminal width: U $I:WIDTH=$S(X<256:X,1:0)
+        # Referenced by DDGLIBP (FileMan screen library)
+        "RM": "U $I:WIDTH=$S(X<256:X,1:0)",
+        # Error trap setup: $ZT="G "_X
+        "TRAP": '$ZT="G "_X',
+        # Error routine name
+        "ERRTN": "^%ZTER",
+        # Uppercase conversion
+        "UPPERCASE": 'S Y=$TR(X,"abcdefghijklmnopqrstuvwxyz",'
+        '"ABCDEFGHIJKLMNOPQRSTUVWXYZ")',
+        # --- I/O control ---
+        "EOFF": "U $I:(NOECHO)",
+        "EON": "U $I:(ECHO)",
+        "TRMOFF": 'U $I:(TERMINATOR="")',
+        "TRMON": "U $I:(TERMINATOR=$C(0,1,2,3,4,5,6,7,8,9,10,11,12,13,"
+        "14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,127))",
+        # --- Routine management ---
+        # Routine load (used by LOAD command in FileMan)
+        "LOAD": "D LOAD^%ZOSV2(X)",
+        # Routine checksum — used by DINTEG
+        "RSUM": 'S Y=0 F %=1,3:1 S %1=$T(+%^@X),%3=$F(%1," ") '
+        'Q:\'%3  S %3=$S($E(%1,%3)\'=";":$L(%1),$E(%1,%3+1)=";":'
+        "$L(%1),1:%3-2) F %2=1:1:%3 S Y=$A(%1,%2)*%2+Y",
+        # Routine selection
+        "RSEL": 'K ^UTILITY($J) D ^%RSEL S X="" '
+        'X "F  S X=$O(%ZR(X)) Q:X=""""  '
+        'S ^UTILITY($J,X)=""""" K %ZR',
+        # --- Misc ---
+        "TMP": "/tmp/",
+        "XY": "S $X=DX,$Y=DY",
+        "SAVE": "D SAVE^%ZOSV2(X)",
+        "PROGMODE": "S Y=$$PROGMODE^%ZOSV()",
+        "PRIORITY": "Q",
+        "LPC": 'S Y=""',
+        "MAXSIZ": "Q",
+        "ETRP": "Q",
+        "BRK": "U $I:(CENABLE)",
+        "NBRK": "U $I:(NOCENABLE)",
+        "TYPE-AHEAD": "U $I:(TYPEAHEAD)",
+        "NO-TYPE-AHEAD": "U $I:(NOTYPEAHEAD)",
+    }
+
+    g = rt.globals
+    for key, value in zosf_entries.items():
+        g.set("%ZOSF", (key,), value)
+
+    logger.info("Bootstrapped ^%%ZOSF with %d entries", len(zosf_entries))
 
 
 @pytest.fixture(scope="session")
