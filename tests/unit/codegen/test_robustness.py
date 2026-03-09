@@ -208,3 +208,54 @@ class TestPhase11UnresolvedGotoPatterns:
             result = generate_python(source)
         assert result
         ast.parse(result)
+
+
+# Cached parser singleton (commit 14026e58)
+
+
+@pytest.mark.codegen
+class TestCachedParserSingleton:
+    """_cached_parser singleton in codegen/__init__.py avoids re-creating
+    textX metamodel + arpeggio grammar objects on every generate_python() call.
+
+    Before this fix, each call to _generate_python_inner() created a new
+    MUMPSParser() → metamodel_from_file() → ~18 KB of permanently retained
+    arpeggio parse tree nodes in module-level textX class caches.
+    """
+
+    def test_cached_parser_is_reused(self):
+        """Successive generate_python calls reuse the same parser instance."""
+        import m2py.codegen as codegen_mod
+
+        # First call initializes the parser
+        generate_python('TEST1\n W "a" Q\n')
+        parser_after_first = codegen_mod._cached_parser
+        assert parser_after_first is not None
+
+        # Second call reuses the same parser
+        generate_python('TEST2\n W "b" Q\n')
+        parser_after_second = codegen_mod._cached_parser
+        assert parser_after_second is parser_after_first
+
+    def test_cached_parser_produces_correct_output(self):
+        """Different routines produce distinct, correct Python via same parser."""
+        code1 = generate_python('FIRST\n W "hello" Q\n')
+        code2 = generate_python('SECOND\n W "world" Q\n')
+
+        assert "hello" in code1
+        assert "world" in code2
+        assert "FIRST" in code1 or "_routine_name" in code1
+        assert "SECOND" in code2 or "_routine_name" in code2
+
+    def test_cached_parser_produces_valid_python(self):
+        """Multiple generate_python calls all produce valid Python AST."""
+        import ast
+
+        sources = [
+            "A\n S X=1 Q\n",
+            'B\n W "hello" Q\n',
+            "C\n F I=1:1:3 W I Q\n",
+        ]
+        for src in sources:
+            result = generate_python(src)
+            ast.parse(result)  # Must not raise SyntaxError

@@ -25,7 +25,7 @@ import types
 import pytest
 
 from m2py.codegen import generate_python
-from m2py.runtime import MUMPSRuntime, run_with_goto_support
+from m2py.runtime import MUMPSRuntime, run_with_goto_support, _unwind_pending_news
 
 
 @pytest.fixture
@@ -1205,3 +1205,326 @@ class TestGotoFromWithinNewScope:
             assert runtime.get_output() == "AB"
         finally:
             _cleanup("LGNEW", "LGNEWB", "LGNEWC")
+
+
+# =========================================================================
+# Codegen tests — verify _pm (pending mark) emission
+# Commits 141d9dbe + 6138428b
+# =========================================================================
+
+
+@pytest.mark.codegen
+class TestPendingMarkEmission:
+    """Generated code emits _pm = _rt._pending_new_entries.__len__() before
+    DO try blocks and passes _pending_mark=_pm to run_with_goto_support
+    in GotoExternal handlers.
+
+    Commit 141d9dbe introduced mark-based scoping so nested
+    run_with_goto_support calls only unwind entries from their own
+    invocation.  Commit 6138428b changed len() to __len__() to avoid
+    shadowing by MUMPS parameters named 'len'.
+    """
+
+    def test_do_external_emits_pending_mark_save(self):
+        """DO SUB where SUB has external GOTO emits _pm before try."""
+        code = generate_python('TEST\n D SUB W "after" Q\nSUB\n G ^EXT\n Q\n')
+        assert "_rt._pending_new_entries.__len__()" in code
+
+    def test_pending_mark_uses_dunder_len_not_len(self):
+        """Uses __len__() instead of len() to avoid shadowing by MUMPS 'len' param.
+
+        Commit 6138428b: MUMPS routines may have a parameter named 'len'
+        that shadows the Python builtin.
+        """
+        code = generate_python('TEST\n D SUB W "done" Q\nSUB\n G ^EXT\n Q\n')
+        # Must use __len__(), not len()
+        assert ".__len__()" in code
+        # Should NOT use bare len() on _pending_new_entries
+        assert "len(_rt._pending_new_entries)" not in code
+
+    def test_goto_handler_passes_pending_mark(self):
+        """GotoExternal handler passes _pending_mark=_pm to run_with_goto_support."""
+        code = generate_python('TEST\n D SUB W "done" Q\nSUB\n G ^EXT\n Q\n')
+        assert "_pending_mark=_pm" in code
+
+    def test_do_internal_label_with_trampoline_emits_pending_mark(self):
+        """DO LABEL in TRAMPOLINE strategy emits pending mark."""
+        # Routine with internal GOTO (triggers TRAMPOLINE) + internal DO
+        code = generate_python("TEST\n G NEXT\n Q\nNEXT\n D SUB\n Q\nSUB\n W 1 Q\n")
+        assert "_rt._pending_new_entries.__len__()" in code
+
+    def test_xecute_with_trampoline_emits_pending_mark(self):
+        """XECUTE in trampoline context with external gotos emits pending mark."""
+        # Routine with internal gotos (triggers TRAMPOLINE) + XECUTE with external GOTO
+        code = generate_python('TEST\n G NEXT\n Q\nNEXT\n X "G ^EXT" Q\n')
+        # Should have at least one _pm emission
+        assert "_rt._pending_new_entries.__len__()" in code
+
+    def test_pending_mark_before_try_block(self):
+        """_pm assignment appears before the try: block, not inside it."""
+        code = generate_python('TEST\n D SUB W "x" Q\nSUB\n G ^EXT\n Q\n')
+        lines = code.split("\n")
+        pm_line = None
+        try_line = None
+        for i, line in enumerate(lines):
+            if "_pending_new_entries.__len__()" in line:
+                pm_line = i
+            if pm_line is not None and try_line is None and line.strip() == "try:":
+                try_line = i
+                break
+        assert pm_line is not None, "_pm assignment not found"
+        assert try_line is not None, "try: block not found after _pm"
+        assert pm_line < try_line, "_pm must be emitted before try:"
+
+    def test_routine_with_len_parameter_still_works(self):
+        """A routine whose formal parameter is named 'len' doesn't break _pm.
+
+        This is the bug that commit 6138428b fixed: if len() were used
+        instead of __len__(), a formal param 'len' would shadow the builtin.
+        """
+        # Routine with param called 'len' + byref DO (triggers _pm emission)
+        code = generate_python("TEST(len)\n D SUB(.len) Q\nSUB(a)\n S a=1 Q\n")
+        # The generated code uses __len__() which is safe
+        assert ".__len__()" in code
+        assert "len(_rt._pending_new_entries)" not in code
+
+    def test_byref_do_emits_pending_mark(self):
+        """DO with by-reference argument emits pending mark."""
+        code = generate_python("TEST(x)\n D SUB(.x) Q\nSUB(a)\n S a=1 Q\n")
+        assert "_rt._pending_new_entries.__len__()" in code
+        assert "_pending_mark=_pm" in code
+
+
+# =========================================================================
+# Runtime tests — _unwind_pending_news with mark parameter
+# Commit 141d9dbe
+# =========================================================================
+
+
+@pytest.mark.codegen
+class TestUnwindPendingNewsWithMark:
+    """_unwind_pending_news(mark) only unwinds entries at index >= mark.
+
+    Commit 141d9dbe changed _unwind_pending_news to accept a mark
+    parameter so nested run_with_goto_support calls don't accidentally
+    unwind entries belonging to an outer invocation.
+    """
+
+    def test_mark_zero_unwinds_all(self):
+        """mark=0 (default) unwinds all pending entries."""
+        rt = MUMPSRuntime()
+        scope = {"X": "current"}
+        rt._pending_new_entries.append(("var", "X", "original"))
+        rt._pending_new_entries.append(("var", "Y", None))
+
+        _unwind_pending_news(rt, scope, mark=0)
+
+        assert scope.get("Y") is None  # Y removed
+        assert scope["X"] == "original"  # X restored
+        assert len(rt._pending_new_entries) == 0
+
+    def test_mark_skips_earlier_entries(self):
+        """Entries before mark are preserved untouched."""
+        rt = MUMPSRuntime()
+        scope = {"X": "current", "Y": "current"}
+        # Entry 0: belongs to outer invocation
+        rt._pending_new_entries.append(("var", "X", "outer-saved"))
+        # Entry 1: belongs to inner invocation
+        rt._pending_new_entries.append(("var", "Y", "inner-saved"))
+
+        _unwind_pending_news(rt, scope, mark=1)
+
+        # Only entry at index >= 1 unwound
+        assert scope["Y"] == "inner-saved"
+        # Entry 0 still pending and scope["X"] unchanged
+        assert scope["X"] == "current"
+        assert len(rt._pending_new_entries) == 1
+        assert rt._pending_new_entries[0] == ("var", "X", "outer-saved")
+
+    def test_mark_at_end_is_noop(self):
+        """mark == len(pending) means nothing to unwind."""
+        rt = MUMPSRuntime()
+        scope = {"X": "val"}
+        rt._pending_new_entries.append(("var", "X", "saved"))
+
+        _unwind_pending_news(rt, scope, mark=1)  # mark == len
+
+        assert scope["X"] == "val"  # Unchanged
+        assert len(rt._pending_new_entries) == 1  # Still there
+
+    def test_mark_beyond_end_is_noop(self):
+        """mark > len(pending) is a no-op."""
+        rt = MUMPSRuntime()
+        scope = {}
+        rt._pending_new_entries.append(("var", "A", "saved"))
+
+        _unwind_pending_news(rt, scope, mark=99)
+
+        assert len(rt._pending_new_entries) == 1
+
+    def test_lifo_order_within_mark_slice(self):
+        """Entries at index >= mark are unwound in LIFO (reverse) order."""
+        rt = MUMPSRuntime()
+        scope = {}
+        # Append entries after mark=0: first sets X=1, second sets X=2
+        rt._pending_new_entries.append(("var", "X", "first"))
+        rt._pending_new_entries.append(("var", "X", "second"))
+
+        _unwind_pending_news(rt, scope, mark=0)
+
+        # LIFO: "second" is processed first (sets X="second"),
+        # then "first" overwrites (sets X="first")
+        assert scope["X"] == "first"
+
+    def test_all_entry_type(self):
+        """('all', saved_dict) entry type restores full scope."""
+        rt = MUMPSRuntime()
+        scope = {"X": "new", "Y": "new"}
+        saved = {"A": "1", "B": "2"}
+        rt._pending_new_entries.append(("all", saved))
+
+        _unwind_pending_news(rt, scope, mark=0)
+
+        assert scope == {"A": "1", "B": "2"}
+
+    def test_excl_entry_type(self):
+        """('excl', keep_set, saved_dict) restores non-kept vars."""
+        rt = MUMPSRuntime()
+        scope = {"X": "new-x", "Y": "new-y", "Z": "new-z"}
+        saved = {"X": "old-x", "Y": "old-y", "W": "old-w"}
+        # Exclusive NEW: keep Y, restore everything else from saved
+        rt._pending_new_entries.append(("excl", {"Y"}, saved))
+
+        _unwind_pending_news(rt, scope, mark=0)
+
+        # Y kept from current scope, everything else from saved
+        assert scope["Y"] == "new-y"
+        assert scope["X"] == "old-x"
+        assert scope["W"] == "old-w"
+        assert "Z" not in scope  # Not in saved, not kept
+
+    def test_var_entry_restore(self):
+        """('var', name, saved_value) restores a single variable."""
+        rt = MUMPSRuntime()
+        scope = {"X": "modified"}
+        rt._pending_new_entries.append(("var", "X", "original"))
+
+        _unwind_pending_news(rt, scope, mark=0)
+
+        assert scope["X"] == "original"
+
+    def test_var_entry_delete_when_none(self):
+        """('var', name, None) removes the variable from scope."""
+        rt = MUMPSRuntime()
+        scope = {"X": "to-delete"}
+        rt._pending_new_entries.append(("var", "X", None))
+
+        _unwind_pending_news(rt, scope, mark=0)
+
+        assert "X" not in scope
+
+    def test_dict_legacy_entry(self):
+        """Plain dict entry (legacy format) restores full scope."""
+        rt = MUMPSRuntime()
+        scope = {"X": "new"}
+        rt._pending_new_entries.append({"A": "1", "B": "2"})
+
+        _unwind_pending_news(rt, scope, mark=0)
+
+        assert scope == {"A": "1", "B": "2"}
+
+    def test_empty_pending_with_mark_zero(self):
+        """No entries to unwind is a no-op."""
+        rt = MUMPSRuntime()
+        scope = {"X": "val"}
+
+        _unwind_pending_news(rt, scope, mark=0)
+
+        assert scope == {"X": "val"}
+
+    def test_mixed_entry_types_with_mark(self):
+        """Multiple entry types with mark > 0."""
+        rt = MUMPSRuntime()
+        scope = {"X": "current", "Y": "current"}
+
+        # Index 0: outer invocation entry (should be preserved)
+        rt._pending_new_entries.append(("var", "X", "outer"))
+        # Index 1-2: inner invocation entries
+        rt._pending_new_entries.append(("var", "Y", "inner-y"))
+        rt._pending_new_entries.append(("var", "X", "inner-x"))
+
+        _unwind_pending_news(rt, scope, mark=1)
+
+        # Inner entries unwound in LIFO order:
+        # ("var", "X", "inner-x") processed first → X="inner-x"
+        # ("var", "Y", "inner-y") processed second → Y="inner-y"
+        assert scope["Y"] == "inner-y"
+        assert scope["X"] == "inner-x"
+        # Outer entry preserved
+        assert len(rt._pending_new_entries) == 1
+        assert rt._pending_new_entries[0] == ("var", "X", "outer")
+
+
+# =========================================================================
+# Runtime tests — run_with_goto_support _pending_mark parameter
+# Commit 141d9dbe
+# =========================================================================
+
+
+@pytest.mark.codegen
+class TestRunWithGotoSupportPendingMark:
+    """run_with_goto_support auto-sets _pending_mark when None."""
+
+    def test_pending_mark_auto_set(self, runtime):
+        """When _pending_mark is None, it auto-sets to current pending length."""
+        # Pre-populate some pending entries (simulating outer invocation)
+        runtime._pending_new_entries.append(("var", "X", "outer"))
+
+        try:
+            mod = _load('PMTEST\n W "ok" Q\n', "PMTEST")
+            scope: dict = {}
+            run_with_goto_support(mod.PMTEST, runtime, scope)
+            assert runtime.get_output() == "ok"
+            # The outer entry should NOT have been unwound
+            assert len(runtime._pending_new_entries) == 1
+        finally:
+            _cleanup("PMTEST")
+
+    def test_explicit_pending_mark_respected(self, runtime):
+        """Explicit _pending_mark=0 unwinds from the beginning."""
+        runtime._pending_new_entries.append(("var", "X", "saved"))
+
+        try:
+            mod = _load('PMTEST2\n W "ok" Q\n', "PMTEST2")
+            scope: dict = {"X": "current"}
+            run_with_goto_support(mod.PMTEST2, runtime, scope, _pending_mark=0)
+            assert runtime.get_output() == "ok"
+            # With explicit mark=0, all entries should be unwound
+            assert len(runtime._pending_new_entries) == 0
+            assert scope["X"] == "saved"
+        finally:
+            _cleanup("PMTEST2")
+
+    def test_nested_rwgs_isolates_pending_entries(self, runtime):
+        """Nested run_with_goto_support calls don't unwind outer entries.
+
+        DO SUB → SUB GOTOs ^EXT → EXT QUITs.
+        Meanwhile, the outer rwgs had pre-existing pending entries.
+        """
+        runtime._pending_new_entries.append(("var", "OUTER", "preserved"))
+
+        try:
+            mod = _load(
+                'NRWGS\n D SUB^NRWGS W "after" Q\nSUB\n W "sub" G ^NRWGSEXT\n Q\n',
+                "NRWGS",
+            )
+            _load('NRWGSEXT\n W "ext" Q\n', "NRWGSEXT")
+
+            scope: dict = {}
+            run_with_goto_support(mod.NRWGS, runtime, scope)
+            assert runtime.get_output() == "subextafter"
+            # Outer pending entry preserved
+            assert len(runtime._pending_new_entries) == 1
+            assert runtime._pending_new_entries[0] == ("var", "OUTER", "preserved")
+        finally:
+            _cleanup("NRWGS", "NRWGSEXT")

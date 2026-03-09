@@ -129,3 +129,128 @@ class TestXecuteCache:
 
         val = rt.globals.get("TMP", ("TEST", "1"))
         assert val == "A"
+
+
+@pytest.mark.runtime
+class TestXecuteCacheLRUEviction:
+    """Validate LRU eviction when _xecute_cache exceeds _xecute_cache_max.
+
+    Commit 14026e58: each XECUTE cache entry retains ~29 KB; unbounded
+    caching caused OOM on large routines like DMUDIC00.  LRU eviction
+    discards the oldest 25% when the cache reaches _xecute_cache_max.
+    """
+
+    def test_cache_max_default(self):
+        """Default _xecute_cache_max is 1024."""
+        rt = MUMPSRuntime()
+        assert rt._xecute_cache_max == 1024
+
+    def test_eviction_triggers_at_max(self):
+        """Cache evicts oldest 25% when it reaches max size."""
+        rt = MUMPSRuntime()
+        rt._xecute_cache_max = 8  # Small limit for testing
+        scope: dict = {}
+
+        # Fill cache to exactly max
+        for i in range(8):
+            rt.execute_mumps(f"S X={i}", scope)
+        assert len(rt._xecute_cache) == 8
+
+        # One more entry triggers eviction of oldest 25% (2) then adds 1
+        rt.execute_mumps("S X=99", scope)
+        assert len(rt._xecute_cache) <= 8
+        # Oldest entries evicted, newest is present
+        cache_keys = list(rt._xecute_cache.keys())
+        # The last inserted code should be in cache
+        assert any("99" in k for k in cache_keys)
+
+    def test_eviction_removes_oldest_entries(self):
+        """Eviction removes the oldest (first-inserted) entries."""
+        rt = MUMPSRuntime()
+        rt._xecute_cache_max = 4
+        scope: dict = {}
+
+        # Insert 4 unique entries
+        for i in range(4):
+            rt.execute_mumps(f"S Z={i * 100}", scope)
+        first_keys = list(rt._xecute_cache.keys())
+
+        # Insert one more — triggers eviction of oldest 25% (1 entry)
+        rt.execute_mumps("S Z=999", scope)
+        remaining_keys = list(rt._xecute_cache.keys())
+        # First key should have been evicted
+        assert first_keys[0] not in remaining_keys
+        # Last keys and new key should remain
+        assert any("999" in k for k in remaining_keys)
+
+    def test_cache_still_works_after_eviction(self):
+        """Cache hits still function correctly after eviction."""
+        rt = MUMPSRuntime()
+        rt._xecute_cache_max = 4
+        scope: dict = {}
+
+        # Fill and trigger eviction
+        for i in range(5):
+            rt.execute_mumps(f"S A={i}", scope)
+
+        # Re-execute one of the remaining cached entries
+        scope2: dict = {}
+        rt.execute_mumps("S A=4", scope2)
+        assert _get_scope_var(scope2, "A") == "4"
+
+    def test_eviction_preserves_cache_correctness(self):
+        """All cache entries produce correct results after eviction cycles."""
+        rt = MUMPSRuntime()
+        rt._xecute_cache_max = 4
+
+        # Run 12 unique codes — several eviction cycles
+        for i in range(12):
+            scope_i: dict = {}
+            rt.execute_mumps(f"S V={i + 10}", scope_i)
+            assert _get_scope_var(scope_i, "V") == str(i + 10)
+
+        # Cache should not have grown beyond max
+        assert len(rt._xecute_cache) <= rt._xecute_cache_max
+
+
+@pytest.mark.runtime
+class TestNamespaceCycleBreaking:
+    """Verify execute_mumps namespace.clear() prevents reference cycles.
+
+    Commit 14026e58: exec() sets XECUTE.__globals__ = namespace and
+    namespace["XECUTE"] = XECUTE, creating a cycle.  namespace.clear()
+    in the finally block breaks this immediately.
+    """
+
+    def test_execute_mumps_produces_correct_result(self):
+        """Basic execute_mumps still works with namespace.clear()."""
+        rt = MUMPSRuntime()
+        scope: dict = {}
+        rt.execute_mumps("S X=42", scope)
+        assert _get_scope_var(scope, "X") == "42"
+
+    def test_multiple_executes_independent(self):
+        """Sequential execute_mumps calls don't share namespace state."""
+        rt = MUMPSRuntime()
+        scope: dict = {}
+        rt.execute_mumps("S A=1", scope)
+        rt.execute_mumps("S B=2", scope)
+        assert _get_scope_var(scope, "A") == "1"
+        assert _get_scope_var(scope, "B") == "2"
+
+    def test_write_output_after_namespace_clear(self):
+        """WRITE output survives namespace.clear() (output is on runtime)."""
+        rt = MUMPSRuntime()
+        scope: dict = {}
+        rt.execute_mumps('W "hello"', scope)
+        rt.execute_mumps('W "world"', scope)
+        output = rt.get_output()
+        assert "hello" in output
+        assert "world" in output
+
+    def test_exception_still_propagates(self):
+        """Errors in XECUTE still propagate despite namespace.clear()."""
+        rt = MUMPSRuntime()
+        scope: dict = {}
+        with pytest.raises(SyntaxError, match="XECUTE parse error"):
+            rt.execute_mumps("(((", scope)
