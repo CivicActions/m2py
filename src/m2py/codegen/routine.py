@@ -129,6 +129,12 @@ class GeneratorContext:
     # Prevents nested FOR loops from clobbering each other's _for_start/_for_step/_for_end.
     _for_loop_counter: int = 0
 
+    # Dot-level GOTO targets within the current DO block.
+    # Maps label name → statement index in the DO body.
+    # Set by _generate_do_block_body when the block has forward GOTOs to
+    # dot-level labels, and read by _generate_goto to emit _DotGoto exceptions.
+    dot_goto_targets: Dict[str, int] = field(default_factory=dict)
+
     def next_for_loop_id(self) -> int:
         """Return a unique ID for FOR loop variable names and increment counter."""
         loop_id = self._for_loop_counter
@@ -648,6 +654,22 @@ class RoutineGenerator:
             )
             ctx.emitter.line("pass")
         ctx.emitter.blank()
+
+        # _DotGoto exception for forward GOTO to dot-level labels within DO blocks.
+        # In MUMPS, labels at dot level (e.g., VP, OV inside a DO block) can be
+        # GOTO targets.  Since these are inline code (not separate functions),
+        # _DotGoto unwinds nested control structures and restarts the DO block
+        # from the target statement index.
+        if self._routine._dotted_labels:
+            ctx.emitter.line("class _DotGoto(Exception):")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    '"""Exception for forward GOTO to dot-level label in DO block."""'
+                )
+                ctx.emitter.line("def __init__(self, target_idx):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("self.target_idx = target_idx")
+            ctx.emitter.blank()
 
     def _generate_label_docstring(self, label: MLabel, ctx: GeneratorContext) -> None:
         """Generate Python docstring with MUMPS source info.

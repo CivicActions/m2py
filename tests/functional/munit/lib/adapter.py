@@ -595,12 +595,17 @@ def transpile_and_execute(
         scope["U"] = _u
 
         # Optional timeout via signal.alarm (Unix only)
+        # Use a BaseException subclass so that broad `except Exception:`
+        # handlers in the runtime/codegen layer cannot swallow it.
         _prev_handler = None
         if timeout > 0:
             import signal
 
+            class _AlarmTimeout(BaseException):
+                """Uncatchable timeout raised by SIGALRM."""
+
             def _alarm_handler(signum, frame):
-                raise TimeoutError(f"{routine_name} exceeded {timeout}s timeout")
+                raise _AlarmTimeout(f"{routine_name} exceeded {timeout}s timeout")
 
             _prev_handler = signal.signal(signal.SIGALRM, _alarm_handler)
             signal.alarm(int(timeout))
@@ -641,6 +646,19 @@ def transpile_and_execute(
         output = runtime.get_output()
         logger.debug("Exception running %s: %s", routine_name, e)
         # Try to parse partial output
+        result = parse_munit_output(output, routine_name, config.package_name)
+        if result.status == "skip":
+            result.status = "error"
+        result.error_message = f"Runtime exception: {type(e).__name__}: {e}"
+        result.duration_seconds = elapsed
+        result.raw_output = output
+        return result
+    except BaseException as e:
+        # _AlarmTimeout (or KeyboardInterrupt) — not catchable by MUMPS
+        # error handlers.  Treat like a regular exception for test purposes.
+        elapsed = time.monotonic() - start
+        output = runtime.get_output()
+        logger.debug("BaseException running %s: %s", routine_name, e)
         result = parse_munit_output(output, routine_name, config.package_name)
         if result.status == "skip":
             result.status = "error"

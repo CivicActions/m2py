@@ -3772,10 +3772,8 @@ def _generate_single_target_goto(
     # 1. Truly missing labels (dead code) → runtime error
     # 2. Dot-level sub-labels within the same parent label (e.g., G OV where
     #    OV is at dot level > 0 inside the current label's function)
-    # Case 2 cannot use `return (line_number, state)` because that exits the
-    # entire function, losing FOR loop / DO block context.  These intra-function
-    # GOTOs need structured code transformation (future work).
-    # For now, emit LabelNotFoundError which gets caught by $ETRAP.
+    # Case 2: if the target is in ctx.dot_goto_targets, emit _DotGoto to
+    # skip forward to that label's statement index within the DO block.
     # Skip this check inside inline XECUTE blocks — the target may exist
     # in the enclosing routine's module globals.
     if (
@@ -3785,6 +3783,19 @@ def _generate_single_target_goto(
         and not ctx.in_inline_xecute
     ):
         target_name = target.name or "unknown"
+
+        # Check if target is a dot-level label in the current DO block
+        if target_name in ctx.dot_goto_targets:
+            target_idx = ctx.dot_goto_targets[target_name]
+            if target.postcondition is not None:
+                cond_expr = generate_expr(target.postcondition, ctx)
+                ctx.emitter.line(f"if m_truth({cond_expr}):")
+                with ctx.emitter.indented():
+                    ctx.emitter.line(f"raise _DotGoto({target_idx})")
+            else:
+                ctx.emitter.line(f"raise _DotGoto({target_idx})")
+            return
+
         routine_name = ctx.routine.name or "unknown"
         ctx.emitter.line(f'raise LabelNotFoundError("{target_name}", "{routine_name}")')
         return
@@ -4426,6 +4437,63 @@ def _unique_dot_mgr_var(ctx: "GeneratorContext") -> str:
     return f"_dot_mgr_{_dot_mgr_counter}"
 
 
+def _find_goto_targets_in_stmts(stmts) -> set:
+    """Recursively find all GOTO target names within a list of statements."""
+    targets = set()
+    for s in stmts:
+        if isinstance(s, MGotoStatement):
+            for t in s.targets:
+                if t.name and not t.routine:
+                    targets.add(t.name)
+        # Recurse into nested scopes (IF/ELSE/FOR/DO bodies)
+        if hasattr(s, "then_scope") and s.then_scope:
+            targets |= _find_goto_targets_in_stmts(s.then_scope.statements)
+        if hasattr(s, "else_scope") and s.else_scope:
+            targets |= _find_goto_targets_in_stmts(s.else_scope.statements)
+        if hasattr(s, "body") and s.body and hasattr(s.body, "statements"):
+            # Don't recurse into nested DO blocks — they have their own scope
+            if not isinstance(s, MDoStatement) or not s.is_inline_block:
+                targets |= _find_goto_targets_in_stmts(s.body.statements)
+    return targets
+
+
+def _compute_dot_goto_targets(stmt: MDoStatement, ctx: "GeneratorContext") -> dict:
+    """Compute forward GOTO targets to dot-level labels within a DO block.
+
+    Returns a dict mapping label_name → statement_index for dot-level labels
+    in this DO body that are targeted by GOTOs within the same body.
+    Returns an empty dict if no such GOTOs exist.
+    """
+    if not stmt.body or not stmt.body.statements:
+        return {}
+
+    # Build set of dotted label names and their line numbers
+    dotted_by_line = {}
+    for dl in ctx.routine._dotted_labels:
+        dotted_by_line[dl.line_number] = dl.name
+
+    if not dotted_by_line:
+        return {}
+
+    # Map dotted label names to statement indices in this DO body
+    label_to_idx = {}
+    for i, s in enumerate(stmt.body.statements):
+        ln = getattr(s, "line_number", None)
+        if ln in dotted_by_line:
+            name = dotted_by_line[ln]
+            if name not in label_to_idx:
+                label_to_idx[name] = i
+
+    if not label_to_idx:
+        return {}
+
+    # Find all GOTO target names in the body
+    goto_targets = _find_goto_targets_in_stmts(stmt.body.statements)
+
+    # Return only labels that are actually targeted by GOTOs in this body
+    return {name: idx for name, idx in label_to_idx.items() if name in goto_targets}
+
+
 def _generate_do_block_body(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
     """Generate the inner body of a DO block (while True: ... break).
 
@@ -4433,10 +4501,49 @@ def _generate_do_block_body(stmt: MDoStatement, ctx: "GeneratorContext") -> None
     DO blocks.  When $ETRAP is set inside the block, wraps the body in
     try/except so errors are caught at DOT level (Fix C), allowing
     enclosing FOR loops to continue after error handling.
+
+    When the block contains GOTOs to dot-level labels (e.g., G VP where VP
+    is a label at dot level 1 within this DO body), generates segment-based
+    code with _DotGoto exception handling.  Each statement gets an index guard
+    (if _dot_start <= N:) so that on restart after _DotGoto, earlier statements
+    are skipped.
     """
     has_etrap = _dot_block_has_etrap(stmt)
+    dot_targets = _compute_dot_goto_targets(stmt, ctx)
 
-    if has_etrap:
+    if dot_targets:
+        # Save previous dot_goto_targets and install ours
+        prev_dot_goto = ctx.dot_goto_targets
+        ctx.dot_goto_targets = dot_targets
+
+        ctx.emitter.line("_dot_start = 0")
+        ctx.emitter.line("while True:  # DO block")
+        with ctx.emitter.indented():
+            ctx.emitter.line("try:")
+            with ctx.emitter.indented():
+                for i, body_stmt in enumerate(stmt.body.statements):
+                    ctx.emitter.line(f"if _dot_start <= {i}:")
+                    with ctx.emitter.indented():
+                        generate_statement(body_stmt, ctx)
+            ctx.emitter.line("except _DotGoto as _dg:")
+            with ctx.emitter.indented():
+                ctx.emitter.line("_dot_start = _dg.target_idx")
+                ctx.emitter.line("continue")
+            if has_etrap:
+                ctx.emitter.line("except Exception as _e:")
+                with ctx.emitter.indented():
+                    ctx.emitter.line("if _rt._handle_etrap(_e, _scope):")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(
+                            "break  # $ETRAP handled; exit DOT block, continue loop"
+                        )
+                    ctx.emitter.line("raise  # Propagate unhandled error")
+            ctx.emitter.line("break")
+
+        # Restore previous dot_goto_targets
+        ctx.dot_goto_targets = prev_dot_goto
+
+    elif has_etrap:
         # $ETRAP set inside this DOT block → catch errors at DOT level
         # so the enclosing FOR loop can continue after error handling.
         ctx.emitter.line("while True:  # DO block")
