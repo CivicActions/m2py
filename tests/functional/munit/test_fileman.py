@@ -74,6 +74,14 @@ _INVOCATIONS = {
     "DMUDIQ00": "D ^DMUDIQ00",
 }
 
+# TEMPORARY: DMUDIC00's FINDC test triggers O(n log n) $ORDER scans over ~10K
+# county records.  Without a timeout the CI job hangs for 10+ minutes, which
+# obscures the status of the other munit tests.  Remove once $ORDER performance
+# is addressed (see the xfail marker on DMUDIC00 above).
+_TIMEOUTS: dict[str, float] = {
+    "DMUDIC00": 120,
+}
+
 
 def _make_config(routine_name: str) -> TestRoutineConfig:
     """Build a TestRoutineConfig for a Tier 3 routine."""
@@ -110,7 +118,8 @@ class TestVAFileMan:
     ):
         """Transpile and execute one VA FileMan test routine."""
         config = _make_config(routine_name)
-        result = transpile_and_execute(config, munit_runtime)
+        timeout = _TIMEOUTS.get(routine_name, 0)
+        result = transpile_and_execute(config, munit_runtime, timeout=timeout)
 
         assert result.status != "error", (
             f"{routine_name} crashed: {result.error_message}"
