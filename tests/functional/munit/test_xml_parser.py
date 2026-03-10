@@ -11,7 +11,7 @@ Test routines and their status:
   DDIOL, DICRW, DIALOG, etc.)
 - **MXMLPATT** (25 tests): XML Path — fully passing.
   Dependencies loaded (MXMLPATH, %ZOSV, DIALOG globals).
-- **MXMLDOMT** (8 tests): XML DOM Parser — fully passing.
+- **MXMLDOMT** (9 tests): XML DOM Parser — fully passing.
   File I/O via ``%ZISH`` provided by a Python implementation
   (zish_impl.py) since ZISHGUX.m's ZEXCEPT scoping isn't yet supported.
 

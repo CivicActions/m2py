@@ -4,7 +4,7 @@ Transpiles each Scheduling SDK test routine via m2py, executes it through
 ``EN^%ut``, and classifies the result.  All 6 pass on the osehravista baseline.
 
 - **ZZUTSDIMO** (4 assertions): SDAMA203 IMO check
-- **ZZUTPATAPPT** (6 assertions): SDAMA204 patient appointments
+- **ZZUTPATAPPT** (7 assertions): SDAMA204 patient appointments
 - **ZZUTNEXTAPPT** (32 assertions): SDAMA201 next appointment
 - **ZZUTGETAPPT** (37 assertions): SDAMA201 get appointment
 - **ZZUTGETPLIST** (37 assertions): SDAMA202 patient list

@@ -225,8 +225,9 @@ class TestMashUtilities:
         result = transpile_and_execute(config, munit_runtime)
 
         # --- Crash: no summary line parsed ---
-        if result.status == "error":
-            pytest.xfail(f"{routine_name} crashed: {result.error_message}")
+        assert result.status != "error", (
+            f"{routine_name} crashed: {result.error_message}"
+        )
 
         # --- Intentional-fail routines: validate expected failures ---
         if routine_name in _EXPECTED_FAILURES:
@@ -234,16 +235,8 @@ class TestMashUtilities:
             return  # All expected failures present, no surprises → PASS
 
         # --- Routine completed (summary line found) ---
-
-        # Clean pass: 0 failures, 0 errors
-        if result.failures == 0 and result.errors == 0:
-            assert result.total_tests > 0, (
-                f"{routine_name}: summary line found but 0 tests"
-            )
-            return
-
-        # Unexpected failures/errors in a routine that should pass
-        pytest.xfail(
+        assert result.total_tests > 0, f"{routine_name}: summary line found but 0 tests"
+        assert result.failures == 0 and result.errors == 0, (
             f"{routine_name}: "
             f"{result.failures} failures, {result.errors} errors "
             f"(tests={result.total_tests})"

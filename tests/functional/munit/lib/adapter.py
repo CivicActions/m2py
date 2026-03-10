@@ -2,12 +2,10 @@
 
 Provides:
 - ``transpile_and_execute()``: Transpile a MUMPS routine and run it via M-Unit
-- ``MUnitTestItem``: Custom pytest.Item for one M-Unit routine
-- ``MUnitCollector``: Custom pytest.Collector that discovers routines from TestList files
 
 The adapter loads all MASH Utilities routines (framework + self-tests) and any
 package-specific routines into a shared MUMPSRuntime, then invokes ``EN^%ut``
-for each test routine and compares output to the osehravista baseline.
+for each test routine and parses the output.
 """
 
 from __future__ import annotations
@@ -19,10 +17,7 @@ import types
 from collections.abc import Callable
 from pathlib import Path
 
-import pytest
-
 from .models import (
-    BaselineData,
     MUnitResult,
     TestRoutineConfig,
 )
@@ -52,22 +47,6 @@ class MUnitDependencyError(Exception):
         self.routine = routine
         self.missing_dep = missing_dep
         super().__init__(f"{routine} requires {missing_dep} which could not be loaded")
-
-
-class MUnitExecutionError(Exception):
-    """Raised when M-Unit execution encounters an error."""
-
-    def __init__(self, message: str, raw_output: str = "") -> None:
-        self.raw_output = raw_output
-        super().__init__(message)
-
-
-class MUnitAssertionError(Exception):
-    """Raised when M-Unit assertions fail."""
-
-    def __init__(self, message: str, failure_details: list | None = None) -> None:
-        self.failure_details = failure_details or []
-        super().__init__(message)
 
 
 # =============================================================================
@@ -674,117 +653,3 @@ def transpile_and_execute(
     result.duration_seconds = elapsed
     result.raw_output = output
     return result
-
-
-# =============================================================================
-# pytest Integration
-# =============================================================================
-
-
-class MUnitTestItem(pytest.Item):
-    """Custom pytest Item representing one M-Unit test routine."""
-
-    def __init__(
-        self,
-        name: str,
-        parent: pytest.Collector,
-        config_obj: TestRoutineConfig,
-        baseline_result: MUnitResult | None,
-        runtime: "MUMPSRuntime",  # noqa: F821
-    ) -> None:
-        super().__init__(name, parent)
-        self.config_obj = config_obj
-        self.baseline_result = baseline_result
-        self.runtime = runtime
-
-    def runtest(self) -> None:
-        """Transpile, execute, parse, and compare to baseline."""
-        result = transpile_and_execute(self.config_obj, self.runtime)
-
-        # If the baseline shows this routine fails/errors on the real VistA,
-        # mark as xfail — we only need to match VistA behavior, not exceed it.
-        if self.baseline_result and self.baseline_result.status in ("fail", "error"):
-            pytest.xfail(
-                f"Baseline {self.baseline_result.status} on VistA: "
-                f"{self.baseline_result.failures} failures, "
-                f"{self.baseline_result.errors} errors"
-            )
-
-        if result.status == "error":
-            raise MUnitExecutionError(
-                result.error_message or "Unknown error",
-                result.raw_output,
-            )
-
-        if result.failures > 0 or result.errors > 0:
-            raise MUnitAssertionError(
-                f"{result.failures} failure(s), {result.errors} error(s) "
-                f"in {self.config_obj.routine_name}",
-                result.failure_details,
-            )
-
-    def repr_failure(self, excinfo, style=None):
-        """Custom failure representation with M-Unit context."""
-        if isinstance(excinfo.value, MUnitAssertionError):
-            lines = [str(excinfo.value)]
-            for fd in excinfo.value.failure_details:
-                if fd.kind == "failure" and fd.expected is not None:
-                    lines.append(
-                        f"  {fd.entry_tag}^{fd.routine}: "
-                        f"expected <{fd.expected}> got <{fd.actual}> — {fd.message}"
-                    )
-                else:
-                    lines.append(f"  {fd.entry_tag}^{fd.routine}: {fd.message}")
-            return "\n".join(lines)
-
-        if isinstance(excinfo.value, MUnitExecutionError):
-            lines = [str(excinfo.value)]
-            if excinfo.value.raw_output:
-                lines.append("--- Raw output (first 500 chars) ---")
-                lines.append(excinfo.value.raw_output[:500])
-            return "\n".join(lines)
-
-        return str(excinfo.value)
-
-    def reportinfo(self):
-        return (
-            str(self.config_obj.source_path or ""),
-            None,
-            f"munit:{self.config_obj.package_name}/{self.config_obj.routine_name}",
-        )
-
-
-class MUnitCollector(pytest.Collector):
-    """Discovers M-Unit test routines from TestList files or package configs."""
-
-    def __init__(
-        self,
-        name: str,
-        parent: pytest.Collector,
-        configs: list[TestRoutineConfig],
-        baseline: BaselineData | None,
-        runtime: "MUMPSRuntime",  # noqa: F821
-    ) -> None:
-        super().__init__(name, parent)
-        self._configs = configs
-        self._baseline = baseline
-        self._runtime = runtime
-
-    def collect(self):
-        """Yield one MUnitTestItem per configured routine."""
-        for cfg in self._configs:
-            # Look up baseline result for this routine
-            baseline_result = None
-            if self._baseline:
-                pkg = self._baseline.packages.get(cfg.package_name)
-                if pkg:
-                    baseline_result = pkg.routines.get(cfg.routine_name)
-
-            item_name = f"test_munit_{cfg.routine_name.replace('%', 'pct_')}"
-            yield MUnitTestItem.from_parent(
-                self,
-                name=item_name,
-                config_obj=cfg,
-                baseline_result=baseline_result,
-                runtime=self._runtime,
-            )

@@ -13,9 +13,11 @@ Test routines and their status:
   — PASS (92 tests, 0 failures, 0 errors)
 - **DMUDT000** (61 assertions): date/time validation via ``%DT``
   — PASS (61 tests, 0 failures, 0 errors)
-- **DMUDIC00** (54 tests): dictionary lookup via ``DIC``
-  — xfail: LISTX1/X2/X3 DIC "X" flag computed field sort not fully supported
-- **DMUDIQ00** (8 assertions): data retrieval via ``DIQ`` — PASS
+- **DMUDIC00** (14 tests baseline): dictionary lookup via ``DIC``
+  — xfail (timeout): FINDC computed-field evaluation triggers O(n log n)
+  ``$ORDER`` scans over ~10K county records; transpilation is correct but
+  too slow to complete within CI timeout
+- **DMUDIQ00** (7 assertions): data retrieval via ``DIQ`` — PASS
 
 Dependencies are auto-loaded from VistA-M via the
 ``MumpsAutoImporter`` and ``fileman_library`` session fixture in conftest.py.
@@ -50,7 +52,16 @@ TIER3_ROUTINES = [
     "ZZUTDIDT",
     "DMUDT000",
     "DMUDTC00",
-    "DMUDIC00",
+    pytest.param(
+        "DMUDIC00",
+        marks=pytest.mark.xfail(
+            reason=(
+                "FINDC computed-field evaluation triggers O(n log n) $ORDER "
+                "scans over ~10K county records — too slow for CI"
+            ),
+            strict=False,
+        ),
+    ),
     "DMUDIQ00",
 ]
 
@@ -61,31 +72,6 @@ _INVOCATIONS = {
     "DMUDTC00": "D ^DMUDTC00",
     "DMUDIC00": "D ^DMUDIC00",
     "DMUDIQ00": "D ^DMUDIQ00",
-}
-
-# ---------------------------------------------------------------------------
-# Known failures / expected behavior per routine
-# ---------------------------------------------------------------------------
-
-# Routines expected to xfail with reason
-_XFAIL_ROUTINES: dict[str, str] = {}
-
-# Timeout (seconds) for routines known to potentially hang.
-_XFAIL_TIMEOUTS: dict[str, int] = {
-    # DMUDIC00's FINDC test evaluates computed fields via DICOMP1._ST which
-    # triggers expensive $ORDER scans over ~10K county records.  The evaluation
-    # is correct but our Python $ORDER implementation is O(n log n) per call
-    # (vs. B-tree walk in native MUMPS), making this very slow.
-    "DMUDIC00": 90,
-}
-
-# Routines that run but have known partial failures (not full xfail)
-_KNOWN_ERRORS: dict[str, dict] = {
-    # DMUDIC00: DIC lookup tests.  _DotGoto fix (forward GOTO to dot-level
-    # labels VP/OV in DICOMP1._ST) eliminated the "Label 'OV' not found"
-    # errors but the correct code path triggers slow computed-field evaluation.
-    # With a 90s timeout the test may complete partially or time out entirely.
-    "DMUDIC00": {"min_tests": 0, "max_errors": 20, "max_failures": 10},
 }
 
 
@@ -122,70 +108,15 @@ class TestVAFileMan:
         munit_runtime,
         munit_baseline,
     ):
-        """Transpile and execute one VA FileMan test routine.
-
-        Classification:
-        - Crashed (no summary line)              → xfail if in _XFAIL_ROUTINES
-        - Completed with 0 fail/err              → pass
-        - Known partial errors within tolerance   → pass (with note)
-        - Completed with unexpected failures      → xfail
-        """
+        """Transpile and execute one VA FileMan test routine."""
         config = _make_config(routine_name)
+        result = transpile_and_execute(config, munit_runtime)
 
-        # Execute through the adapter (with timeout for known-hanging routines)
-        t = _XFAIL_TIMEOUTS.get(routine_name, 0)
-        result = transpile_and_execute(config, munit_runtime, timeout=t)
-
-        # --- Known xfail routines ---
-        if routine_name in _XFAIL_ROUTINES:
-            if result.status == "error":
-                pytest.xfail(
-                    f"{routine_name} crashed (expected): "
-                    f"{result.error_message or _XFAIL_ROUTINES[routine_name]}"
-                )
-            if result.failures > 0 or result.errors > 0:
-                pytest.xfail(
-                    f"{routine_name}: {result.failures} failures, "
-                    f"{result.errors} errors — {_XFAIL_ROUTINES[routine_name]}"
-                )
-            # If it unexpectedly passes, that's great — let it pass
-
-        # --- Known partial-error routines (pass with tolerance) ---
-        # Check *before* the generic crash handler so that a routine with
-        # a configured timeout that times out (status="error") can still
-        # pass when its partial results are within tolerance.
-        if routine_name in _KNOWN_ERRORS:
-            spec = _KNOWN_ERRORS[routine_name]
-            if result.total_tests >= spec["min_tests"]:
-                if result.errors <= spec["max_errors"] and result.failures <= spec.get(
-                    "max_failures", 0
-                ):
-                    return  # Within known tolerance → PASS
-            # Timed out or worse than expected
-            if result.status == "error":
-                pytest.xfail(
-                    f"{routine_name} crashed/timed out: {result.error_message} "
-                    f"(tests={result.total_tests})"
-                )
-            pytest.xfail(
-                f"{routine_name}: {result.failures} failures, "
-                f"{result.errors} errors (expected <= {spec['max_errors']} errors)"
-            )
-
-        # --- Crash: no summary line parsed ---
-        if result.status == "error":
-            pytest.xfail(f"{routine_name} crashed: {result.error_message}")
-
-        # --- Clean pass: 0 failures, 0 errors ---
-        if result.failures == 0 and result.errors == 0:
-            assert result.total_tests > 0, (
-                f"{routine_name}: summary line found but 0 tests"
-            )
-            return
-
-        # Unexpected failures in a routine that should pass
-        pytest.xfail(
-            f"{routine_name}: "
-            f"{result.failures} failures, {result.errors} errors "
+        assert result.status != "error", (
+            f"{routine_name} crashed: {result.error_message}"
+        )
+        assert result.total_tests > 0, f"{routine_name}: summary line found but 0 tests"
+        assert result.failures == 0 and result.errors == 0, (
+            f"{routine_name}: {result.failures} failures, {result.errors} errors "
             f"(tests={result.total_tests})"
         )

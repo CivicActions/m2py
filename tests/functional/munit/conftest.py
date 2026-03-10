@@ -26,13 +26,11 @@ from pathlib import Path
 import pytest
 
 from .lib.adapter import (
-    MUnitCollector,
     _load_routine,
     load_mash_routines,
     load_package_routines,
 )
 from .lib.models import BaselineData, TestRoutineConfig
-from .lib.parser import parse_testlist
 
 logger = logging.getLogger(__name__)
 
@@ -905,42 +903,6 @@ def pytest_collection_modifyitems(
                             f"(current: {current})"
                         )
                     )
-
-
-# ---------------------------------------------------------------------------
-# Test collection
-# ---------------------------------------------------------------------------
-
-
-def pytest_collect_file(parent, file_path):
-    """Hook: discover OSEHRA TestList files in VistA dependency directory."""
-    if file_path.name != "TestList":
-        return None
-
-    # Only process TestList files under a *MUnit* directory inside VistA/
-    if "MUnit" not in str(file_path):
-        return None
-
-    # Derive package name from directory structure:
-    # VistA/Packages/<PackageName>/Testing/MUnit/TestList
-    parts = file_path.parts
-    try:
-        pkg_idx = parts.index("Packages")
-        package_name = parts[pkg_idx + 1]
-    except (ValueError, IndexError):
-        return None
-
-    configs = parse_testlist(str(file_path), package_name)
-    if not configs:
-        return None
-
-    return MUnitCollector.from_parent(
-        parent,
-        name=f"munit_{package_name}",
-        configs=configs,
-        baseline=None,  # Will be patched in by the fixture if available
-        runtime=None,  # Will be patched in by the fixture if available
-    )
 
 
 # ---------------------------------------------------------------------------
