@@ -5,8 +5,11 @@ Transpiles the Registration test routine via m2py, executes it through
 
 - **ZZDGPTCO1** (10 assertions): patient combine via ``CHKCUR^DGPTCO1``
 
-Dependencies (``DGPTCO1``, ``DICRW``) are auto-loaded from VistA-M via the
-``MumpsAutoImporter`` and ``registration_library`` session fixture in conftest.py.
+Dependencies (``DGPTCO1``, ``DICRW``, ``DIE``) are auto-loaded from VistA-M
+via the ``MumpsAutoImporter`` and ``registration_library`` session fixture in
+conftest.py.  ZZDGPTCO1's STARTUP calls ``DT^DICRW`` to set today's date,
+which triggers the ``ADDREC`` path in ``CHKCUR^DGPTCO1`` — this exercises
+the full FileMan ``DIE`` / ``UPDATE^DIE`` edit chain.
 """
 
 from __future__ import annotations
@@ -36,14 +39,6 @@ _TESTING_DIR = _VISTA_DIR / "Packages" / "Registration" / "Testing" / "MUnit"
 ROUTINES = ["ZZDGPTCO1"]
 
 _INVOCATIONS = {r: f"D ^{r}" for r in ROUTINES}
-
-# Timeout (seconds) for routines that may run slowly in the transpiled
-# environment.  Before _AlarmTimeout(BaseException) the signal.alarm was
-# silently caught by ``except Exception:`` handlers, so these routines
-# appeared to complete.  Now the timeout is enforced; give them headroom.
-_XFAIL_TIMEOUTS: dict[str, int] = {
-    "ZZDGPTCO1": 90,
-}
 
 
 def _make_config(routine_name: str) -> TestRoutineConfig:
@@ -81,17 +76,11 @@ class TestRegistration:
     ):
         """Transpile and execute one Registration test routine."""
         config = _make_config(routine_name)
-        t = _XFAIL_TIMEOUTS.get(routine_name, 30)
-        result = transpile_and_execute(config, munit_runtime, timeout=t)
+        result = transpile_and_execute(config, munit_runtime)
 
-        # Timeout / crash: xfail for routines with known timeout issues
-        if result.status == "error":
-            if routine_name in _XFAIL_TIMEOUTS:
-                pytest.xfail(
-                    f"{routine_name} timed out/crashed: {result.error_message}"
-                )
-            pytest.fail(f"{routine_name} crashed: {result.error_message}")
-
+        assert result.status != "error", (
+            f"{routine_name} crashed: {result.error_message}"
+        )
         assert result.total_tests > 0, f"{routine_name}: summary line found but 0 tests"
         assert result.failures == 0 and result.errors == 0, (
             f"{routine_name}: {result.failures} failures, {result.errors} errors "
