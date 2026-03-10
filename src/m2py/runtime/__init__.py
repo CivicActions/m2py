@@ -4856,6 +4856,9 @@ class MUMPSRuntime:
             direction = 1
 
         if not name:
+            # $O("") with no extra subscripts → name-level: return first local
+            if additional_subscripts is None:
+                return self._name_level_order("", _scope, direction)
             return ""
 
         # Handle nested indirection: if name starts with @, resolve it first
@@ -4878,6 +4881,17 @@ class MUMPSRuntime:
             else:
                 evaluated_subs = list(additional_subscripts)
 
+        # Name-level $ORDER: when the resolved name is a bare local variable
+        # (no subscripts, no additional subscripts, not global), iterate the
+        # local symbol table names.  In GT.M/YDB, $O(X) where X is
+        # unsubscripted returns the next local variable name after "X".
+        if (
+            not evaluated_subs
+            and not additional_subscripts
+            and not base_name.startswith("^")
+        ):
+            return self._name_level_order(base_name, _scope, direction)
+
         subs = tuple(evaluated_subs) if evaluated_subs else ("",)
 
         if base_name.startswith("^"):
@@ -4895,6 +4909,44 @@ class MUMPSRuntime:
         if not isinstance(arr, MArray):
             return ""
         return m_order(arr, subs, direction)
+
+    def _name_level_order(
+        self, after_name: str, _scope: Dict[str, Any], direction: int
+    ) -> str:
+        """Name-level $ORDER: iterate local variable names in scope.
+
+        In GT.M/YDB, ``$ORDER(X)`` where X is an unsubscripted local
+        variable returns the next local variable name in ASCII collation
+        order.  This is used by CHKLEAKS^%utcover (M-Unit leak detection)
+        to enumerate variables in the symbol table.
+
+        Args:
+            after_name: MUMPS variable name to start after (e.g. "%")
+            _scope: Current scope dictionary (Python-safe keys)
+            direction: 1 for forward, -1 for reverse
+
+        Returns:
+            Next MUMPS variable name, or "" if no more
+        """
+        from m2py.core.names import NameTranslator
+
+        mumps_names = []
+        for key in _scope:
+            mname = NameTranslator.from_python(key)
+            if mname and NameTranslator.is_valid_varname(mname):
+                mumps_names.append(mname)
+
+        mumps_names.sort()
+
+        if direction >= 0:
+            for name in mumps_names:
+                if name > after_name:
+                    return name
+        else:
+            for name in reversed(mumps_names):
+                if name < after_name:
+                    return name
+        return ""
 
     def m_next_local(
         self,

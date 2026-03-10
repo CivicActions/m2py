@@ -58,12 +58,19 @@ TIER1_ROUTINES = [
 #                %utt4 coverage errors from unsupported GT.M features)
 # ---------------------------------------------------------------------------
 _EXPECTED_FAILURES: dict[str, dict] = {
+    # GT.M baseline: 10 tests, 5 failures, 1 error.
+    # m2py produces: 9 tests, 5 failures, 0 errors.
+    # BADERROR (1 error in baseline) is missing: intentional syntax error
+    # (`S X=`) that GT.M catches via $ETRAP as %YDB-E-EXPR.  m2py's parser
+    # can't represent the invalid line, so it's dropped and the label runs
+    # without error.
     "%utt5": {
-        "min_tests": 8,
+        "min_tests": 9,
         "entries": [
             ("BADCHKEQ", "%utt5", "UNEQUAL ON PURPOSE"),
             ("BADCHKTF", "%utt5", "FALSE (0) ON PURPOSE"),
             ("CALLFAIL", "%utt5", "Called FAIL to test it"),
+            ("LEAKSBAD", "%utt5", "VARIABLE LEAK: X"),
             ("NVLDARG1", "%utt5", "NO VALUES INPUT TO CHKEQ"),
         ],
     },
@@ -86,6 +93,11 @@ _EXPECTED_FAILURES: dict[str, dict] = {
         # MAIN produces multiple error/failure entries from retried $ETRAP handling
         "allowed_extra_tags": [("MAIN", "%utt4")],
     },
+    # GT.M baseline: 109 tests, 7 failures, 1 error.
+    # m2py produces: ~113 tests, ~11 failures, 1 error.
+    # The extra tests/failures come from %utt4 MAIN entries (covered by
+    # allowed_extra_tags).  BADERROR is the only remaining %utt5 delta
+    # (syntax error not representable in Python).
     "%utt1": {
         "min_tests": 80,
         "entries": [
@@ -96,6 +108,7 @@ _EXPECTED_FAILURES: dict[str, dict] = {
             ("BADCHKEQ", "%utt5", "UNEQUAL ON PURPOSE"),
             ("BADCHKTF", "%utt5", "FALSE (0) ON PURPOSE"),
             ("CALLFAIL", "%utt5", "Called FAIL to test it"),
+            ("LEAKSBAD", "%utt5", "VARIABLE LEAK: X"),
             ("NVLDARG1", "%utt5", "NO VALUES INPUT TO CHKEQ"),
         ],
         # %utt4 coverage errors are expected but not "intentional" — they
