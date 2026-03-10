@@ -74,15 +74,16 @@ _EXPECTED_FAILURES: dict[str, dict] = {
             ("T5", "%utt7", "Intentionally throwing a failure"),
         ],
     },
-    # %utt4 MAIN calls COV^%ut which requires GT.M VIEW "TRACE" profiling.
-    # Python can't emulate hardware-level line profiling, so MAIN always
-    # errors.  The errors are caught by %ut's $ETRAP handler.
+    # %utt4 MAIN calls COV^%ut which requires GT.M VIEW "TRACE" profiling
+    # and %RSEL (transpiled as _pct_RSEL).  Python can't emulate hardware-level
+    # line profiling, so MAIN always errors.  The parser strips the "Error:"
+    # prefix, leaving the raw MUMPS error text — match on the missing module.
     "%utt4": {
         "min_tests": 2,
         "entries": [
-            ("MAIN", "%utt4", "Error"),
+            ("MAIN", "%utt4", "_pct_RSEL"),
         ],
-        # MAIN produces 2 error entries (from retried $ETRAP handling)
+        # MAIN produces multiple error/failure entries from retried $ETRAP handling
         "allowed_extra_tags": [("MAIN", "%utt4")],
     },
     "%utt1": {

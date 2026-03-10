@@ -196,6 +196,128 @@ class TestParseMUnitOutputEdgeCases:
         assert result.failure_details[0].actual == "world"
 
 
+class TestErrorLineMessageStripping:
+    """Tests for error message extraction and 'Error:' prefix stripping.
+
+    The M-Unit parser strips the 'Error:' prefix when parsing error lines,
+    leaving only the raw MUMPS error text.  Expected-failure specs must match
+    on substrings of the *stripped* message, not the original prefix.
+    """
+
+    def test_error_prefix_stripped_from_message(self):
+        """Verify 'Error:' prefix is stripped; message is just the error text."""
+        raw = (
+            "MAIN^%utt4 - Coverage - Error: 150373210,+0^,%YDB-E-ERRNAME, "
+            "No module named '_pct_RSEL'\n"
+            "Checked 1 test, with 0 failures and encountered 1 error."
+        )
+        result = parse_munit_output(raw, "%utt4", "MASH Utilities")
+        assert len(result.failure_details) == 1
+        fd = result.failure_details[0]
+        assert fd.kind == "error"
+        assert fd.entry_tag == "MAIN"
+        assert fd.routine == "%utt4"
+        # 'Error:' prefix should be stripped
+        assert not fd.message.startswith("Error:")
+        assert "No module named" in fd.message
+        assert "_pct_RSEL" in fd.message
+
+    def test_error_message_does_not_contain_error_word(self):
+        """An error about a missing module does NOT contain 'Error' in the
+        stripped message — this was the root cause of the %utt4 CI failure."""
+        raw = (
+            "MAIN^%utt4 - Coverage - Error: 150373210,+0^,%YDB-E-ERRNAME, "
+            "No module named '_pct_RSEL'\n"
+            "Checked 1 test, with 0 failures and encountered 1 error."
+        )
+        result = parse_munit_output(raw, "%utt4", "MASH Utilities")
+        fd = result.failure_details[0]
+        assert "error" not in fd.message.lower(), (
+            f"After stripping 'Error:' prefix, the word 'error' should not "
+            f"appear in the message: {fd.message!r}"
+        )
+
+    def test_rsel_substring_matches(self):
+        """The updated spec uses '_pct_RSEL' as the expected substring."""
+        raw = (
+            "MAIN^%utt4 - Coverage - Error: 150373210,+0^,%YDB-E-ERRNAME, "
+            "No module named '_pct_RSEL'\n"
+            "Checked 1 test, with 0 failures and encountered 1 error."
+        )
+        result = parse_munit_output(raw, "%utt4", "MASH Utilities")
+        fd = result.failure_details[0]
+        assert "_pct_RSEL".lower() in fd.message.lower()
+
+    def test_multiple_error_entries_with_extra_failures(self):
+        """Simulate %utt4 output: 1 error + multiple failures from MAIN."""
+        raw = (
+            "MAIN^%utt4 - Coverage - Error: No module named '_pct_RSEL'\n"
+            "MAIN^%utt4 - T1 - <14/19> vs <> - no failure message provided\n"
+            "MAIN^%utt4 - T2 - <2/5> vs <> - no failure message provided\n"
+            "MAIN^%utt4 - T3 - no failure message provided\n"
+            "Checked 5 tests, with 3 failures and encountered 1 error."
+        )
+        result = parse_munit_output(raw, "%utt4", "MASH Utilities")
+        assert result.errors == 1
+        assert result.failures == 3
+        assert len(result.failure_details) == 4
+        # First detail is the error
+        assert result.failure_details[0].kind == "error"
+        assert "_pct_RSEL" in result.failure_details[0].message
+        # Remaining are failures
+        for fd in result.failure_details[1:]:
+            assert fd.kind == "failure"
+            assert fd.entry_tag == "MAIN"
+            assert fd.routine == "%utt4"
+
+
+class TestAlarmTimeoutEscapesExceptionHandler:
+    """Verify that _AlarmTimeout(BaseException) escapes 'except Exception:'.
+
+    This is the core behavioral property behind the ZZDGPTCO1 fix.
+    Previously, signal.alarm raised TimeoutError (an Exception subclass),
+    which was silently caught by broad ``except Exception:`` handlers in
+    the MUMPS runtime.  Now _AlarmTimeout extends BaseException, making
+    it uncatchable by those handlers.
+    """
+
+    def test_base_exception_escapes_except_exception(self):
+        """A BaseException subclass must NOT be caught by 'except Exception:'."""
+
+        class _AlarmTimeout(BaseException):
+            pass
+
+        caught_by_exception = False
+        caught_by_base = False
+        try:
+            try:
+                raise _AlarmTimeout("timeout!")
+            except Exception:
+                caught_by_exception = True
+        except BaseException:
+            caught_by_base = True
+
+        assert not caught_by_exception, (
+            "_AlarmTimeout should NOT be caught by 'except Exception:'"
+        )
+        assert caught_by_base, (
+            "_AlarmTimeout should be caught by 'except BaseException:'"
+        )
+
+    def test_timeout_error_is_caught_by_except_exception(self):
+        """TimeoutError IS caught by 'except Exception:' — this was the old bug."""
+        caught = False
+        try:
+            raise TimeoutError("timeout!")
+        except Exception:
+            caught = True
+
+        assert caught, (
+            "TimeoutError is an Exception subclass and gets caught — "
+            "this is why _AlarmTimeout(BaseException) was needed"
+        )
+
+
 class TestParseTestList:
     """Tests for OSEHRA TestList file parsing."""
 
