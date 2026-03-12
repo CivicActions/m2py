@@ -1528,3 +1528,117 @@ class TestRunWithGotoSupportPendingMark:
             assert runtime._pending_new_entries[0] == ("var", "OUTER", "preserved")
         finally:
             _cleanup("NRWGS", "NRWGSEXT")
+
+
+# =========================================================================
+# Extrinsic GOTO — pending NEW entries from formal parameters
+# should be unwound within the extrinsic scope, not leaked to the caller
+# =========================================================================
+
+
+@pytest.mark.codegen
+class TestExtrinsicGotoNewUnwinding:
+    """Extrinsic function that GOTOs externally must unwind pending NEWs.
+
+    When $$FUNC^R(args) is called as an extrinsic and FUNC's
+    implementation does G ^OTHER, the formal parameters are implicitly
+    NEWed.  The GotoExternal handler pushes those NEWs to
+    _rt._pending_new_entries.  After _call_extrinsic resolves the GOTO
+    chain, it must unwind those entries so they don't leak to the caller,
+    which would corrupt the caller's variables.
+
+    This was the root cause of the PXRMOUT test failure: GET1^DIQ does
+    G DDENTRY^DIQG, and its formal param save for DA leaked out to
+    CREATE^GMPLUTL, causing DA to be removed from the caller's scope.
+    """
+
+    def test_extrinsic_goto_preserves_caller_vars(self, runtime):
+        """$$FUNC^B(X) where FUNC GOTOs ^C — caller's DA survives.
+
+        Scenario: A sets DA=42, calls $$FUNC^B(99), FUNC GOTOs ^C,
+        C returns 5 via $$, A reads DA → should still be 42.
+        """
+        try:
+            # A: Set DA, call extrinsic, check DA is still available
+            mod_a = _load(
+                'EFGA\n S DA=42 S R=$$FUNC^EFGB(99) W DA,"-",R Q\n',
+                "EFGA",
+            )
+            # B: FUNC has formal param X (implicitly NEWs X), then GOTOs ^EFGC
+            _load(
+                "EFGB\n Q\nFUNC(X)\n G ^EFGC\n Q\n",
+                "EFGB",
+            )
+            # C: Returns a value
+            _load(
+                "EFGC\n Q 5\n",
+                "EFGC",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_a.EFGA, runtime, scope)
+            assert runtime.get_output() == "42-5"
+            # No leftover pending entries
+            assert len(runtime._pending_new_entries) == 0
+        finally:
+            _cleanup("EFGA", "EFGB", "EFGC")
+
+    def test_extrinsic_goto_with_multiple_formals(self, runtime):
+        """$$FUNC^B(A,B,C) where FUNC GOTOs ^D — 3 formal params don't leak.
+
+        Multiple formal parameters all get implicitly NEWed.  After the
+        extrinsic GOTO chain completes, none of the formal param saves
+        should leak to the outer caller's scope.
+        """
+        try:
+            mod_a = _load(
+                'MFGA\n S X="hello" S R=$$FUNC^MFGB(1,2,3) W X,"-",R Q\n',
+                "MFGA",
+            )
+            _load(
+                "MFGB\n Q\nFUNC(A,B,C)\n G ^MFGC\n Q\n",
+                "MFGB",
+            )
+            _load(
+                "MFGC\n Q A+B+C\n",
+                "MFGC",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_a.MFGA, runtime, scope)
+            assert runtime.get_output() == "hello-6"
+            assert len(runtime._pending_new_entries) == 0
+        finally:
+            _cleanup("MFGA", "MFGB", "MFGC")
+
+    def test_extrinsic_goto_undefined_sentinel_not_leaked(self, runtime):
+        """Formal param NEW saves _UNDEFINED sentinel — must not leak as object().
+
+        When the caller doesn't have a variable with the same name as the
+        formal param, the saved value is the _UNDEFINED sentinel (object()).
+        _unwind_pending_news must recognize this and remove the variable
+        from scope rather than setting it to a bare object().
+        """
+        try:
+            # A does NOT have variable X; calls $$FUNC^B(99) where FUNC has formal X
+            mod_a = _load(
+                "USGA\n S R=$$FUNC^USGB(99) W R Q\n",
+                "USGA",
+            )
+            _load(
+                "USGB\n Q\nFUNC(X)\n G ^USGC\n Q\n",
+                "USGB",
+            )
+            _load(
+                "USGC\n Q X*2\n",
+                "USGC",
+            )
+
+            scope: dict = {}
+            run_with_goto_support(mod_a.USGA, runtime, scope)
+            assert runtime.get_output() == "198"
+            # X should NOT be in scope (it was undefined before the extrinsic)
+            assert "X" not in scope
+            assert len(runtime._pending_new_entries) == 0
+        finally:
+            _cleanup("USGA", "USGB", "USGC")

@@ -898,12 +898,20 @@ def problem_list_library(scheduling_library, munit_runtime):
         count = import_zwr(g, pl_fixtures)
         logger.info("Loaded %d Problem List fixture globals (ICD/LEX/AUTNPOV)", count)
 
-    # Note: OUTPUT^PXRMPROB calls $$CSYS^LEXU("10D") and $$CSDATA^LEXU("E23.0")
-    # to populate clinical maintenance text.  Without full Lexicon data (757.02,
-    # 757.03), FORMAT^PXRMTEXT produces different line counts that cause the
-    # PXRMOUT entry tag to fail.  Adding partial 757.02/757.03 data breaks
-    # CREATE^GMPLUTL validation, so we leave it out and accept PXRMOUT as a
-    # known limitation requiring full Lexicon data.
+    # OUTPUT^PXRMPROB calls $$CSYS^LEXU("10D") and $$CSDATA^LEXU("E23.0")
+    # to populate clinical maintenance text.  The full Lexicon data (757.02,
+    # 757.03) is now included in problem_list_fixtures.zwr.  NEW^GMPLSAVE
+    # also calls $$IMPDATE^LEXU("10D") which reaches GET1^DIQ(757.03,30,11)
+    # so ^DD(757.03) and ^DIC(757.03) metadata must be present.
+    g.set("DD", ("757.03", "0"), "FIELD^^12^11")
+    g.set(
+        "DD",
+        ("757.03", "11", "0"),
+        'IMPLEMENTATION DATE^D^^2;1^S %DT="E" D ^%DT S X=Y K:X<1 X',
+    )
+    g.set("DD", ("757.03", "GL", "2", "1", "11"), "")
+    g.set("DIC", ("757.03", "0"), "CODING SYSTEMS^757.03I")
+    g.set("DIC", ("757.03", "0", "GL"), "^LEX(757.03,")
 
     # Seed ^SC — ZZRGUTEX STARTUP does:
     #   S GMPCLIN=$O(^SC("B","VISTA HEALTH CARE",""))_"^VISTA HEALTH CARE"

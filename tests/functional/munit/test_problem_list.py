@@ -94,18 +94,8 @@ class TestProblemList:
             f"{routine_name} crashed: {result.error_message}"
         )
         assert result.total_tests > 0, f"{routine_name}: summary line found but 0 tests"
-        # PXRMOUT requires full Lexicon data (757.02/757.03) which conflicts
-        # with CREATE^GMPLUTL validation.  Allow this 1 known data-dependency
-        # failure.
-        known_failures = {"PXRMOUT"}
-        unknown = [
-            line
-            for line in result.raw_output.splitlines()
-            if " vs " in line and not any(f"{k}^" in line for k in known_failures)
-        ]
-        assert result.errors == 0 and not unknown, (
+        assert result.errors == 0 and result.failures == 0, (
             f"{routine_name}: {result.failures} failures, {result.errors} errors "
             f"(tests={result.total_tests})\n"
-            f"Unexpected failures:\n" + "\n".join(unknown) + "\n"
             f"Raw output:\n{result.raw_output}"
         )

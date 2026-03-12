@@ -1586,10 +1586,12 @@ def _unwind_pending_news(
             _scope.update(current_kept)
         elif entry[0] == "var":
             name, saved_value = entry[1], entry[2]
-            if saved_value is not None:
-                _scope[name] = saved_value
-            else:
+            # saved_value of None or the _UNDEFINED sentinel (a bare object())
+            # means the variable was undefined — remove it from scope.
+            if saved_value is None or type(saved_value) is object:
                 _scope.pop(name, None)
+            else:
+                _scope[name] = saved_value
     del pending[mark:]
 
 
@@ -8403,6 +8405,7 @@ __all__ = [
     "LabelNotFoundError",
     "run_with_goto_support",
     "resolve_goto_target",
+    "_unwind_pending_news",
     "call_external_with_offset",
     # Data structures
     "StackFrame",

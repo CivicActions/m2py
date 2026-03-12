@@ -458,7 +458,7 @@ class RoutineGenerator:
         # run_with_goto_support is needed for any D ^ROUTINE call
         # GotoExternal is needed for cross-routine GOTO and indirect GOTO
         ctx.emitter.line(
-            "from m2py.runtime import MUMPSRuntime, MArray, run_with_goto_support, resolve_goto_target, LabelNotFoundError, GotoExternal"
+            "from m2py.runtime import MUMPSRuntime, MArray, run_with_goto_support, resolve_goto_target, LabelNotFoundError, GotoExternal, _unwind_pending_news"
         )
         # Import runtime helpers: LHS functions, $DATA, $ORDER, $QUERY, $SELECT,
         # $PIECE, $EXTRACT, $GET, $FIND, $NAME/$QLENGTH/$QSUBSCRIPT, $FNUMBER,
@@ -576,6 +576,13 @@ class RoutineGenerator:
                 # extrinsic context and its QUIT value becomes the return.
                 ctx.emitter.line("_current_ef = _ef")
                 ctx.emitter.line("_current_args = args")
+                # Mark pending NEW entries before the GOTO loop so we can
+                # unwind entries from intermediate GotoExternal redirects
+                # (e.g., GET1^DIQ GOTOs DDENTRY^DIQG — the formal params
+                # must be unwound within this extrinsic, not at a higher level).
+                ctx.emitter.line(
+                    "_extrinsic_pending_mark = _rt._pending_new_entries.__len__()"
+                )
                 ctx.emitter.line("while True:")
                 with ctx.emitter.indented():
                     ctx.emitter.line("try:")
@@ -598,6 +605,12 @@ class RoutineGenerator:
                         ctx.emitter.line(
                             "_current_args = ()  # GOTO target receives args via _scope"
                         )
+                # Unwind pending NEW entries from intermediate GotoExternal
+                # redirects within this extrinsic call (e.g., formal parameter
+                # saves from the source function that GOTOed).
+                ctx.emitter.line(
+                    "_unwind_pending_news(_rt, _scope if _scope is not None else {}, _extrinsic_pending_mark)"
+                )
                 # Handle by-ref unpacking
                 ctx.emitter.line("# Unpack by-ref values if result is a tuple")
                 ctx.emitter.line("if isinstance(_result, tuple) and len(_result) > 1:")
