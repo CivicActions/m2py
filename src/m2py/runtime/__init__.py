@@ -5778,8 +5778,19 @@ class MUMPSRuntime:
         else:
             name_part = name_str
 
-        # Parse subscripts from name_part
-        base_name, subscripts = _parse_subscripted_name(name_part)
+        # Parse subscripts from name_part.
+        # LOCK targets may contain unresolvable references (e.g., when
+        # ^DD metadata is incomplete and DIROOT is malformed), so handle
+        # parse failures gracefully.  In single-process mode all locks
+        # succeed unconditionally, matching MUMPS behaviour.
+        try:
+            base_name, subscripts = _parse_subscripted_name(name_part)
+        except IndirectionError:
+            # Treat as successful lock.  The original LOCK likely had a
+            # timeout (embedded in the malformed string that we couldn't
+            # fully parse), so set $TEST=1 to indicate success.
+            self._test = True
+            return
         subs = tuple(str(s) for s in subscripts) if subscripts else ()
 
         # For exclusive lock (no + or -), release all locks first

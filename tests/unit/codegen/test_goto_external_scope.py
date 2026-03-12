@@ -158,3 +158,38 @@ class TestGotoExternalScopePreservation:
         # On QUIT, scope should restore X to "outer"
         mod_a.WRAP(runtime, "param_val", _scope=scope)
         assert scope["X"].value == "outer"
+
+    def test_goto_external_without_args_preserves_scope_var(self, runtime):
+        """GotoExternal entry without explicit args preserves existing scope vars.
+
+        Pattern: S X=42 D WRAP^A  (no args)
+        WRAP(X) internally does implicit NEW on X.  When entered via
+        GotoExternal without explicit params (param=None), the _pv
+        restore path should keep X=42 visible in the target scope.
+        """
+        from m2py.runtime import MArray
+
+        # Routine A: WRAP takes param X but GOTOs to TARGET^B
+        mod_a = _load(
+            "A Q\nWRAP(X) G TARGET^B\n",
+            "A",
+        )
+        # Routine B: TARGET writes X and quits
+        _load(
+            "B Q\nTARGET W X Q\n",
+            "B",
+        )
+
+        scope: dict = {}
+        x_val = MArray()
+        x_val.value = "42"
+        scope["X"] = x_val
+
+        # simulate: X was set in caller scope, then D WRAP^A
+        # The GOTO from WRAP to TARGET^B should still see X=42
+        run_with_goto_support(
+            lambda _rt, _scope=None: mod_a.WRAP(_rt, "42", _scope=_scope),
+            runtime,
+            scope,
+        )
+        assert runtime.get_output() == "42"

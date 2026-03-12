@@ -92,6 +92,22 @@ _SCHED_TESTING_DIR = _VISTA_SUBMODULE / "Packages" / "Scheduling" / "Testing" / 
 # Registration Testing/MUnit directory (Tier 4c test routines)
 _REG_TESTING_DIR = _VISTA_SUBMODULE / "Packages" / "Registration" / "Testing" / "MUnit"
 
+# Problem List Testing/MUnit directory (Tier 5 test routines)
+_PROBLEM_LIST_TESTING_DIR = (
+    _VISTA_SUBMODULE / "Packages" / "Problem List" / "Testing" / "MUnit"
+)
+
+# Package routine directories used by Problem List dependencies
+_VISTA_M_PROBLEM_LIST_DIR = _VISTA_M_PACKAGES_DIR / "Problem List" / "Routines"
+_VISTA_M_CCR_DIR = _VISTA_M_PACKAGES_DIR / "Clinical Case Registries" / "Routines"
+_VISTA_M_PCE_DIR = _VISTA_M_PACKAGES_DIR / "PCE Patient Care Encounter" / "Routines"
+_VISTA_M_CLIN_REMINDERS_DIR = _VISTA_M_PACKAGES_DIR / "Clinical Reminders" / "Routines"
+_VISTA_M_QUASAR_DIR = _VISTA_M_PACKAGES_DIR / "Quasar" / "Routines"
+_VISTA_M_AICS_DIR = (
+    _VISTA_M_PACKAGES_DIR / "Automated Information Collection System" / "Routines"
+)
+_VISTA_M_ODS_DIR = _VISTA_M_PACKAGES_DIR / "ODS" / "Routines"
+
 
 # ---------------------------------------------------------------------------
 # Auto-importer: transpile MUMPS routines on demand
@@ -841,6 +857,153 @@ def registration_library(scheduling_library, munit_runtime):
     g.set("DG", ("45.86", "22", "0"), "22^^^1^")
     g.set("DG", ("45.86", "AC", "1", "22"), "")
     g.set("DG", ("45.86", "B", "22", "22"), "")
+
+
+@pytest.fixture(scope="session")
+def problem_list_library(scheduling_library, munit_runtime):
+    """Load Problem List dependency routines (Tier 5).
+
+    Extends the auto-importer with ALL VistA-VEHU-M package Routines
+    directories.  ZZRGUTEX's STARTUP creates a patient via UPDATE^DIE which
+    triggers cross-references spanning dozens of VistA packages (Income
+    Verification Match, ODS, Scheduling, etc.).  Adding all package
+    directories ensures every transitive dependency resolves on demand.
+
+    Seeds minimal ``^SC`` (hospital location) and ``^VA(200,...)`` (user)
+    globals so STARTUP's ``CHECKAV^XUSRB`` and clinic lookup work.
+    """
+    assert _auto_importer is not None
+
+    # Add all VistA-VEHU-M package Routines directories plus the testing dir.
+    all_package_routine_dirs = sorted(
+        d
+        for d in _VISTA_M_PACKAGES_DIR.iterdir()
+        if d.is_dir() and (d / "Routines").is_dir()
+    )
+    _auto_importer.add_dirs(
+        [_PROBLEM_LIST_TESTING_DIR] + [d / "Routines" for d in all_package_routine_dirs]
+    )
+
+    g = munit_runtime.globals
+
+    # Load ICD, Lexicon, and Provider Narrative fixture data.
+    # ZZRGUTEX uses ICD-10-CM code E23.0 (Hypopituitarism, IEN 503192)
+    # and Lexicon term 7133461.  CREATE^GMPLUTL validates both via
+    # $$ICDDATA^ICDXCODE and $D(^LEX(757.01,...)).  Without this data,
+    # the validation fails with "Invalid ICD Diagnosis".
+    from m2py.runtime.zwr import import_zwr
+
+    pl_fixtures = _GLOBALS_DIR / "problem_list_fixtures.zwr"
+    if pl_fixtures.exists():
+        count = import_zwr(g, pl_fixtures)
+        logger.info("Loaded %d Problem List fixture globals (ICD/LEX/AUTNPOV)", count)
+
+    # Note: OUTPUT^PXRMPROB calls $$CSYS^LEXU("10D") and $$CSDATA^LEXU("E23.0")
+    # to populate clinical maintenance text.  Without full Lexicon data (757.02,
+    # 757.03), FORMAT^PXRMTEXT produces different line counts that cause the
+    # PXRMOUT entry tag to fail.  Adding partial 757.02/757.03 data breaks
+    # CREATE^GMPLUTL validation, so we leave it out and accept PXRMOUT as a
+    # known limitation requiring full Lexicon data.
+
+    # Seed ^SC — ZZRGUTEX STARTUP does:
+    #   S GMPCLIN=$O(^SC("B","VISTA HEALTH CARE",""))_"^VISTA HEALTH CARE"
+    # Needs a "B" cross-reference entry pointing to an IEN.
+    # Piece 3 = "C" marks it as a clinic (LOCATION^GMPLUTL1 checks this).
+    g.set("SC", ("1", "0"), "VISTA HEALTH CARE^^C")
+    g.set("SC", ("B", "VISTA HEALTH CARE", "1"), "")
+
+    # Seed ^VA(200,...) — CHECKAV^XUSRB does an access/verify code lookup.
+    # CHECKAV^XUS uppercases the input, then hashes via $$EN^XUSHSH.
+    # In the OSEHRA release, XUSHSH's KE subroutine is redacted (identity
+    # function), so the "hash" is just the uppercase plaintext.
+    #
+    # Input: "fakedoc1;1Doc!@#$" → UP → "FAKEDOC1;1DOC!@#$"
+    # Access = "FAKEDOC1", Verify = "1DOC!@#$"
+    #
+    # CHECKAV looks up: ^VA(200,"A",accessHash,IEN) for the "A" xref,
+    # then checks $P(^VA(200,IEN,.1),"^",2) = verifyHash.
+    g.set("VA", ("200", "0"), "NEW PERSON^200^1^1")
+    g.set("VA", ("200", "1", "0"), "FAKEDOC,ONE^FD1")
+    g.set("VA", ("200", "1", ".1"), "FAKEDOC1^1DOC!@#$")
+    g.set("VA", ("200", "1", "2"), "FD1")
+    g.set("VA", ("200", "B", "FAKEDOC,ONE", "1"), "")
+    # Access code "A" cross-reference (hashed uppercase access code)
+    g.set("VA", ("200", "A", "FAKEDOC1", "1"), "")
+    # DUZ^XUS1A reads piece 17 of XOPT for division (DUZ(2)).
+    # XOPT starts from ^XTV(8989.3,1,"XUS"), then overlays pieces 4-7,9,10,19
+    # from ^VA(200,DUZ,200).  Piece 17 only comes from ^XTV.
+    # Seed institution IEN 1 as the default division.
+    # ^XTV piece 17 = division/institution IEN
+    xus_val = "^" * 16 + "1"  # piece 17 = "1"
+    g.set("XTV", ("8989.3", "1", "XUS"), xus_val)
+    # ^DIC(4,1,...) — Institution file (for DUZ("AG") lookup)
+    g.set("DIC", ("4", "0"), "INSTITUTION^4^1^1")
+    g.set("DIC", ("4", "1", "0"), "TEST FACILITY^1")
+    g.set("DIC", ("4", "1", "99"), "^^^^VA")
+
+    # ^DIC(2,...) — Patient file header (needed by UPDATE^DIE for file 2)
+    g.set("DIC", ("2", "0"), "PATIENT^2^0^0")
+    g.set("DIC", ("2", "0", "GL"), "^DPT(")
+
+    # ^DIC(9000011,...) — Problem file header (for AUPNPROB references)
+    g.set("DIC", ("9000011", "0"), "PROBLEM^9000011^0^0")
+    g.set("DIC", ("9000011", "0", "GL"), "^AUPNPROB(")
+
+    # ^AUPNPROB(0) — File header for problem file.
+    # NEWPROB^GMPLSAVE reads this: pieces 3=LAST IEN, 4=TOTAL count.
+    g.set("AUPNPROB", ("0",), "PROBLEM^9000011^0^0")
+
+    # ^GMPL(125.99,1,0) — Problem List site parameters.
+    # Piece 2: verification (1=require),  Piece 5: sort order,
+    # Piece 6: duplicate checking (1=on).  Keep simple defaults.
+    g.set("GMPL", ("125.99", "1", "0"), "^1")
+
+    # Person class data for provider validation.
+    # $$ACTIVPRV^PXAPI → $$PRVCLASS^PXAPIUTL → $$GET^XUA4A72 → GETUE
+    # checks ^VA(200,DUZ,"USC1",...) and ^USC(8932.1,...).
+    # Without this, PROBLEM^PXCAPL and DIAG^PXCAPOV error with
+    # "Provider is not active or valid".
+    g.set("VA", ("200", "1", "USC1", "1", "0"), "1^3120101^")
+    g.set("VA", ("200", "1", "USC1", "AD", "3120101", "1"), "")
+    g.set("USC", ("8932.1", "1", "0"), "PHYSICIAN^MEDICAL^")
+
+    # ^DD(9000011,...) — Data Dictionary for PROBLEM file.
+    # FILE^DIE (EN^GMPLSAVE) needs ^DD to locate field storage (node;piece)
+    # and validate SET-OF-CODES values.  $$EXTERNAL^DILFD also uses ^DD
+    # to convert internal codes to external display (e.g. "A" → "ACTIVE").
+    g.set("DD", ("9000011", "0"), "FIELD^^80300^39")
+    g.set("DD", ("9000011", "0", "NM", "PROBLEM"), "")
+    # .01 field (DIAGNOSIS) — VFILE^DIEFU checks ^DD(F,.01,0) piece 2 is
+    # not empty; without this, FILE^DIE skips the entire file.
+    g.set(
+        "DD",
+        ("9000011", ".01", "0"),
+        "DIAGNOSIS^R*P80'^ICD9(^0;1^Q",
+    )
+    # STATUS field (.12): SET-OF-CODES A:ACTIVE;I:INACTIVE, stored node 0 piece 12
+    g.set("DD", ("9000011", ".12", "0"), "STATUS^RS^A:ACTIVE;I:INACTIVE;^0;12^Q")
+    # ACTIVE cross-reference trigger (fired by FILE^DIE on STATUS change)
+    g.set("DD", ("9000011", ".12", "1", "0"), "^.1")
+    g.set("DD", ("9000011", ".12", "1", "1", "0"), "9000011^ACTIVE^MUMPS")
+    g.set(
+        "DD",
+        ("9000011", ".12", "1", "1", "1"),
+        'S:$P(^AUPNPROB(DA,0),U,2) ^AUPNPROB("ACTIVE",+$P(^(0),U,2),X,DA)=""',
+    )
+    g.set(
+        "DD",
+        ("9000011", ".12", "1", "1", "2"),
+        'K ^AUPNPROB("ACTIVE",+$P(^AUPNPROB(DA,0),U,2),X,DA)',
+    )
+    # CONDITION field (1.02): SET-OF-CODES, stored node 1 piece 2
+    g.set(
+        "DD",
+        ("9000011", "1.02", "0"),
+        "CONDITION^S^T:TRANSCRIBED;P:PERMANENT;H:HIDDEN;^1;2^Q",
+    )
+    # PRIORITY field (1.14): SET-OF-CODES, stored node 1 piece 14
+    # Used by $$EXTERNAL^DILFD in OUTPUT^PXRMPROB
+    g.set("DD", ("9000011", "1.14", "0"), "PRIORITY^S^A:ACUTE;C:CHRONIC;^1;14^Q")
 
 
 @pytest.fixture(scope="session")

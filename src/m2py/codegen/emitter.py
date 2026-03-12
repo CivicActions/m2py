@@ -35,6 +35,7 @@ class CodeEmitter:
         self._indent = indent
         self._level = 0
         self._lines: list[str] = []
+        self._deferred_functions: list[str] = []
 
     def line(self, code: str) -> None:
         """Emit a line of code at current indent level.
@@ -91,6 +92,17 @@ class CodeEmitter:
             IndexError: If no lines have been emitted yet
         """
         self._lines[-1] += text
+
+    def emit_deferred_functions(self) -> None:
+        """Emit all deferred function definitions at module level.
+
+        Call this at indent level 0, before the ``if __name__`` block,
+        so that helper functions are defined before they may be called.
+        """
+        for func_code in self._deferred_functions:
+            self._lines.append("")
+            self._lines.extend(func_code.rstrip("\n").split("\n"))
+        self._deferred_functions.clear()
 
     def get_code(self) -> str:
         """Get the complete generated code.

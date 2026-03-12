@@ -1213,9 +1213,12 @@ def _generate_extrinsic_arguments_with_byref(
             # descendants and param(sub) accesses caller's tree.
             has_byref = True
             if arg.variable_name:
-                # Direct by-ref (.X): pass the MArray object from scope
+                # Direct by-ref (.X): pass the MArray object from scope.
+                # Must use setdefault so the MArray is stored in _scope —
+                # the callee modifies subscripts on this same object and
+                # those mutations must be visible to the caller after return.
                 var_name = translate_name(arg.variable_name)
-                parts.append(f"_scope.get({var_name!r}, MArray())")
+                parts.append(f"_scope.setdefault({var_name!r}, MArray())")
                 byref_names.append(var_name)
             elif arg.expression and isinstance(arg.expression, MIndirection):
                 # Indirected by-ref (.@IX): resolve indirection to MArray.

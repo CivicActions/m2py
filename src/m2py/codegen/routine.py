@@ -129,6 +129,9 @@ class GeneratorContext:
     # Prevents nested FOR loops from clobbering each other's _for_start/_for_step/_for_end.
     _for_loop_counter: int = 0
 
+    # Counter for extracted DO-block helper functions at module level.
+    _dot_helper_counter: int = 0
+
     # Dot-level GOTO targets within the current DO block.
     # Maps label name → statement index in the DO body.
     # Set by _generate_do_block_body when the block has forward GOTOs to
@@ -405,6 +408,10 @@ class RoutineGenerator:
         # Generate _entry_function for D ^ROUTINE semantics
         # This points to the first label (line 1), which may be preamble or named label
         self._generate_entry_function(ctx)
+
+        # Emit module-level helper functions extracted from deeply nested DO blocks.
+        # Must come before __main__ so helpers are defined before first call.
+        self._emitter.emit_deferred_functions()
 
         # Generate if __name__ == "__main__" entry point block
         self._generate_main_block(ctx)
@@ -1429,9 +1436,13 @@ class RoutineGenerator:
             # MArray from being mutated when we assign the parameter value.
             if ctx.uses_dynamic_locals and formal_params:
                 for param in formal_params:
-                    # Implicit NEW — save and remove caller's value
+                    # Implicit NEW — save and remove caller's value.
+                    # When param is None (GotoExternal entry without explicit
+                    # args), preserve the existing scope value so variables
+                    # set by the GOTO source remain visible.
+                    ctx.emitter.line(f"_pv = state._locals.pop({param!r}, None)")
                     ctx.emitter.line(
-                        f"state._new_stack.append(('var', {param!r}, state._locals.pop({param!r}, None)))"
+                        f"state._new_stack.append(('var', {param!r}, _pv))"
                     )
                     ctx.emitter.line(f"if {param} is not None:")
                     with ctx.emitter.indented():
@@ -1443,6 +1454,9 @@ class RoutineGenerator:
                             ctx.emitter.line(
                                 f"state._locals.setdefault({param!r}, MArray()).value = {param}"
                             )
+                    ctx.emitter.line("elif _pv is not None:")
+                    with ctx.emitter.indented():
+                        ctx.emitter.line(f"state._locals[{param!r}] = _pv")
 
             # Fallback: formal params NOT in state_vars and NOT in dynamic_locals
             # must be placed into _scope so the body can read them via _scope[].

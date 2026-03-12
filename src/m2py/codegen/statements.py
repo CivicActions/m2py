@@ -1592,8 +1592,12 @@ def _build_lhs_getter_setter(
             )
         else:
             # Unsubscripted variable — 3-way strategy dispatch
-            if ctx.strategy == GotoStrategy.TRAMPOLINE and var_name in ctx.state_vars:
-                # TRAMPOLINE with state_vars
+            if (
+                ctx.strategy == GotoStrategy.TRAMPOLINE
+                and var_name in ctx.state_vars
+                and not ctx.uses_dynamic_locals
+            ):
+                # TRAMPOLINE with state_vars (static locals)
                 base_get = f"getattr(state, {translated_name!r}, '') or ''"
                 if str_wrap_getter:
                     getter = f"lambda: str({base_get})"
@@ -4386,6 +4390,13 @@ def _generate_external_goto(target: "MCall", ctx: "GeneratorContext") -> None:
 # Counter for unique DOT-level scope manager variable names
 _dot_mgr_counter: int = 0
 
+# Maximum emitter indent level at which inline DO block code is generated.
+# Beyond this, the DO block body is extracted into a module-level helper
+# function to avoid Python's "too many statically nested blocks" limit (~20).
+# Each conditional DO block adds ~3-4 Python nesting levels (try + with + while),
+# so deeply nested MUMPS dot levels can easily exceed the limit.
+_NESTING_EXTRACTION_THRESHOLD: int = 14
+
 
 def _dot_block_has_new(stmt: MDoStatement) -> bool:
     """Check if a DOT block body contains any NEW statements (recursively).
@@ -4435,6 +4446,100 @@ def _unique_dot_mgr_var(ctx: "GeneratorContext") -> str:
     global _dot_mgr_counter
     _dot_mgr_counter += 1
     return f"_dot_mgr_{_dot_mgr_counter}"
+
+
+def _generate_extracted_do_block(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
+    """Extract a deeply nested DO block body into a module-level helper function.
+
+    When the emitter's indent level exceeds ``_NESTING_EXTRACTION_THRESHOLD``,
+    continuing to generate inline code would risk hitting Python's ~20 limit on
+    statically nested blocks.  Instead, we generate the DO block body inside a
+    standalone helper function defined at module scope (indent level 0), which
+    resets the nesting counter.  The call-site emits the same setup/teardown
+    (save $TEST, push stack frame, try/finally, restore) but delegates the
+    actual body to the helper via a simple function call.
+
+    The helper receives ``_rt``, ``_scope``, ``_globals``, ``_test`` (and
+    ``state`` in trampoline mode) as parameters, so all runtime state is shared.
+    """
+    from m2py.codegen.emitter import CodeEmitter
+
+    helper_name = f"_dot_helper_{ctx._dot_helper_counter}"
+    ctx._dot_helper_counter += 1
+
+    # --- Build helper function using a temporary emitter at level 0 ---
+    temp_emitter = CodeEmitter()
+
+    params = ["_rt", "_scope", "_globals", "_test"]
+    if ctx.uses_dynamic_locals:
+        params.append("state")
+    temp_emitter.line(f"def {helper_name}({', '.join(params)}):")
+
+    dot_has_new = _dot_block_has_new(stmt)
+    _needs_ns_unwind = dot_has_new and ctx.uses_dynamic_locals
+    _ns_mark_var = ""
+
+    # Swap emitter so body generation writes into temp_emitter
+    orig_emitter = ctx.emitter
+    ctx.emitter = temp_emitter
+
+    with temp_emitter.indented():
+        if _needs_ns_unwind:
+            _ns_mark_var = _unique_dot_mgr_var(ctx).replace("_dot_mgr_", "_ns_mark_")
+            temp_emitter.line(f"{_ns_mark_var} = len(state._new_stack)")
+
+        # Wrap in try/finally inside helper for ns_mark unwind if needed
+        if _needs_ns_unwind:
+            temp_emitter.line("try:")
+            temp_emitter.indent()
+
+        if dot_has_new:
+            _dot_mgr_var = _unique_dot_mgr_var(ctx)
+            temp_emitter.line(f"with NewScopeManager(_scope) as {_dot_mgr_var}:")
+            _saved_scope_mgr = ctx.new_scope_manager_var
+            ctx.new_scope_manager_var = _dot_mgr_var
+            with temp_emitter.indented():
+                _generate_do_block_body(stmt, ctx)
+            ctx.new_scope_manager_var = _saved_scope_mgr
+        else:
+            _generate_do_block_body(stmt, ctx)
+
+        if _needs_ns_unwind:
+            temp_emitter.dedent()
+            temp_emitter.line("finally:")
+            with temp_emitter.indented():
+                temp_emitter.line(f"unwind_new_stack_to_mark(state, {_ns_mark_var})")
+
+    # Restore original emitter
+    ctx.emitter = orig_emitter
+
+    # Propagate any recursively-extracted helpers (must be defined before this one)
+    orig_emitter._deferred_functions.extend(temp_emitter._deferred_functions)
+    # Add this helper's code
+    orig_emitter._deferred_functions.append("\n".join(temp_emitter._lines))
+
+    # --- Emit call-site code (setup → call → teardown) ---
+    _routine_name = ctx.routine.name or ""
+    _label_name_str = ctx.current_label.name if ctx.current_label else ""
+
+    ctx.emitter.line("_saved_test = _test")
+    ctx.emitter.line("_rt._extrinsic_stack.append(_rt._in_extrinsic)")
+    ctx.emitter.line("_rt._in_extrinsic = False")
+    ctx.emitter.line(
+        f'_rt.push_stack_frame("DO", routine={_routine_name!r}, label={_label_name_str!r})'
+    )
+    ctx.emitter.line("try:")
+    with ctx.emitter.indented():
+        args = ["_rt", "_scope", "_globals", "_test"]
+        if ctx.uses_dynamic_locals:
+            args.append("state")
+        ctx.emitter.line(f"{helper_name}({', '.join(args)})")
+    ctx.emitter.line("finally:")
+    with ctx.emitter.indented():
+        ctx.emitter.line("_rt.pop_stack_frame()")
+    ctx.emitter.line("_test = _saved_test")
+    ctx.emitter.line("_rt._test = _test")
+    ctx.emitter.line("_rt._in_extrinsic = _rt._extrinsic_stack.pop()")
 
 
 def _find_goto_targets_in_stmts(stmts) -> set:
@@ -4598,6 +4703,12 @@ def _generate_do(stmt: MDoStatement, ctx: "GeneratorContext") -> None:
     # This is the ONLY case where $TEST is stacked
     # The is_inline_block field is set by the parser when dot-indented lines are collected
     if stmt.is_inline_block:
+        # When nesting is deep, extract body into a module-level helper
+        # to avoid CPython's "too many statically nested blocks" limit.
+        if ctx.emitter._level >= _NESTING_EXTRACTION_THRESHOLD:
+            _generate_extracted_do_block(stmt, ctx)
+            return
+
         # Save $TEST before block (spec §6.2.6)
         ctx.emitter.line("_saved_test = _test")
 

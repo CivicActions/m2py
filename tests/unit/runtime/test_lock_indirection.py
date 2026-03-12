@@ -15,6 +15,64 @@ the lock instead of silently skipping. Tests cover:
 from m2py.runtime import MUMPSRuntime, MArray
 
 
+class TestLockIndirectedErrorHandling:
+    """Tests for graceful handling of malformed lock targets."""
+
+    def test_malformed_subscripts_sets_test_true(self):
+        """LOCK with unparseable indirected target sets $TEST=1 and returns.
+
+        When ^DD metadata is incomplete, lock targets may resolve to
+        malformed strings like '^GLO(1,2' (missing closing paren) that
+        _parse_subscripted_name cannot parse.  In single-process mode
+        all locks succeed, so the runtime should set $TEST=1 and return.
+        """
+        rt = MUMPSRuntime()
+        rt._test = False
+        scope = {"X": MArray("^GLO(1,2")}
+
+        # Should not raise — catches the parse error internally
+        rt.lock_indirected("X", scope, lockop="+", timeout=5)
+
+        # $TEST should be set to True (lock success in single-process)
+        assert rt._test is True
+
+    def test_empty_subscripts_sets_test_true(self):
+        """LOCK with empty subscripts in resolved name sets $TEST=1."""
+        rt = MUMPSRuntime()
+        rt._test = False
+        scope = {"X": MArray("GLO()")}
+
+        rt.lock_indirected("X", scope, lockop="+", timeout=5)
+
+        assert rt._test is True
+
+    def test_malformed_lock_does_not_acquire(self):
+        """Malformed lock target should not add anything to lock table."""
+        rt = MUMPSRuntime()
+        scope = {"X": MArray("^GLO(1,2")}
+        initial_locks = set(rt.globals._lock_table.keys())
+
+        rt.lock_indirected("X", scope, lockop="+", timeout=5)
+
+        # No new locks should be acquired
+        assert set(rt.globals._lock_table.keys()) == initial_locks
+
+    def test_valid_lock_after_malformed_still_works(self):
+        """After a malformed lock, valid locks still work normally."""
+        rt = MUMPSRuntime()
+        scope = {
+            "X": MArray("^GLO(1,2"),
+            "Y": MArray("^GOODLOCK"),
+        }
+
+        # First: malformed lock (should not raise)
+        rt.lock_indirected("X", scope, lockop="+", timeout=5)
+
+        # Second: valid lock (should succeed)
+        rt.lock_indirected("Y", scope, lockop="+")
+        assert ("GOODLOCK", ()) in rt.globals._lock_table
+
+
 class TestLockIndirectedBasic:
     """Tests for basic lock indirection resolution."""
 
