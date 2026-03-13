@@ -698,6 +698,9 @@ from m2py.runtime.helpers import (  # noqa: E402
     m_sorts_after,
 )
 
+# Optimized MUMPS numeric coercion (module-level to avoid per-call import overhead)
+from m2py.codegen.helpers import m_num as _m_num  # noqa: E402
+
 
 class MArray:
     """MUMPS array with hierarchical subscript support.
@@ -2005,6 +2008,16 @@ class MUMPSRuntime:
         self._xecute_cache: Dict[str, Any] = {}
         self._xecute_cache_max = 1024
 
+        # Function-object cache for XECUTE: mumps_code -> (fn, globals_dict)
+        # When caller_globals is absent (the common case), we cache the compiled
+        # Python *function* extracted from the first exec() and reuse it on
+        # subsequent calls — completely bypassing exec() overhead.
+        # exec(code_obj, namespace) redefines all module-level items on every
+        # call even when code_obj is cached; skipping it saves ~30–100 µs/call,
+        # which is significant for n=3000+ XECUTE loops (e.g. FileMan COUNT).
+        self._xecute_fn_cache: Dict[str, Any] = {}
+        self._xecute_fn_cache_max = 4096
+
         # Depth counter for run_with_goto_support (prevents segfault from
         # infinite GOTO recursion cycles like DIP2 <-> DIP22 in FileMan PRINT)
         self._rwgs_depth: int = 0
@@ -2472,9 +2485,6 @@ class MUMPSRuntime:
         Returns:
             Formatted string suitable for SET @ input
         """
-        from m2py.runtime.helpers import m_format_output
-        import re
-
         if value is None or value == "":
             return '""'
 
@@ -2544,9 +2554,6 @@ class MUMPSRuntime:
         Returns:
             Formatted subscript (quoted if string, unquoted if numeric)
         """
-        from m2py.runtime.helpers import m_format_output
-        import re
-
         # If it's already a Decimal, format it directly
         if isinstance(sub, Decimal):
             return m_format_output(sub)
@@ -3106,9 +3113,7 @@ class MUMPSRuntime:
         Args:
             value: New column position (coerced to int via MUMPS numeric rules)
         """
-        from m2py.codegen.helpers import m_num
-
-        self._current_device.x_pos = int(m_num(value))
+        self._current_device.x_pos = int(_m_num(value))
 
     def set_y(self, value) -> None:
         """Set cursor line position ($Y).
@@ -3119,9 +3124,7 @@ class MUMPSRuntime:
         Args:
             value: New line position (coerced to int via MUMPS numeric rules)
         """
-        from m2py.codegen.helpers import m_num
-
-        self._current_device.y_pos = int(m_num(value))
+        self._current_device.y_pos = int(_m_num(value))
 
     def device_control(self, keyword: str, *params) -> None:
         """Handle device control mnemonics (W /keyword).
@@ -4846,9 +4849,6 @@ class MUMPSRuntime:
         Returns:
             Next subscript in collation order, or "" if no more
         """
-        from m2py.core.values import m_num as _m_num
-        from m2py.runtime.helpers import m_order, m_order_global
-
         # Coerce direction to int - MUMPS $ORDER direction is always numeric
         # This handles cases where direction comes from a function returning a string
         # e.g., $O(ref, $O(V(""))) where $O(V("")) returns "1" as a string
@@ -4968,8 +4968,6 @@ class MUMPSRuntime:
         Returns:
             Next subscript, or -1 if no more
         """
-        from m2py.runtime.helpers import m_order
-
         if array is None or not subscripts:
             return -1
 
@@ -5001,8 +4999,6 @@ class MUMPSRuntime:
         Returns:
             Next subscript, or -1 if no more
         """
-        from m2py.runtime.helpers import m_order_global
-
         if not subscripts:
             return -1
 
@@ -8039,8 +8035,48 @@ class MUMPSRuntime:
             # Already has structure, use as-is
             wrapped_code = mumps_code
 
-        # Generate Python code (cached to avoid re-parsing identical XECUTE strings)
+        # --- Fast path: reuse a cached function object (no parse/compile/exec overhead) ---
+        # Check fn_cache FIRST before any expensive parse+compile operations.
+        # Critical ordering: _xecute_cache (max 1024) evicts entries before
+        # _xecute_fn_cache (max 4096), so checking fn_cache first avoids
+        # unnecessary recompilation when xecute_cache has evicted an entry
+        # that fn_cache still holds.
         cache_key = wrapped_code
+        fn_cached = self._xecute_fn_cache.get(cache_key)
+        if fn_cached is not None:
+            fn, _fn_globals = fn_cached
+            # The persistent globals dict is shared; _test is per-invocation.
+            _fn_globals["_test"] = _scope.get("_test", False)
+            # Merge caller labels (callable, non-dunder) so DO/GOTO inside
+            # XECUTE can find module-level labels if needed.
+            # Use id-based caching to avoid re-iterating caller_globals when
+            # the dict identity hasn't changed (O(1) amortized per fn per caller).
+            if caller_globals:
+                _cg_id = id(caller_globals)
+                if getattr(fn, "_last_caller_id", None) != _cg_id:
+                    for _n, _v in caller_globals.items():
+                        if callable(_v) and _n[:2] != "__":
+                            _fn_globals[_n] = _v
+                    fn._last_caller_id = _cg_id
+            _saved_routine = self._current_routine
+            _saved_source_lines = self._current_source_lines
+            _saved_label_lines = self._current_label_lines
+            self.push_stack_frame("XECUTE", mcode=mumps_code)
+            try:
+                result = fn(self, _scope=_scope)
+            finally:
+                self.pop_stack_frame()
+                self._current_routine = _saved_routine
+                self._current_source_lines = _saved_source_lines
+                self._current_label_lines = _saved_label_lines
+            # Sync $TEST back
+            _test_val = _fn_globals.get("_test", False)
+            _scope["_test"] = _test_val
+            self._test = _test_val
+            return result
+
+        # --- Get or generate code_obj (only reached when fn_cache misses) ---
+        # Generate Python code (cached to avoid re-parsing identical XECUTE strings)
         cached = self._xecute_cache.get(cache_key)
         if cached is not None:
             python_code, code_obj = cached
@@ -8062,6 +8098,9 @@ class MUMPSRuntime:
                 for k in keys:
                     del self._xecute_cache[k]
             self._xecute_cache[cache_key] = (python_code, code_obj)
+
+        # --- Slow path: exec the compiled code object into a fresh namespace ---
+        # Used on the first call (to populate the function cache).
 
         # Create execution namespace with shared scope
         namespace: Dict[str, Any] = {
@@ -8117,6 +8156,21 @@ class MUMPSRuntime:
                     self._current_routine = _saved_routine
                     self._current_source_lines = _saved_source_lines
                     self._current_label_lines = _saved_label_lines
+
+                # Cache the function for future calls (when no caller_globals).
+                # The function's __globals__ is exactly `namespace` — we keep
+                # that dict alive so subsequent calls share stable module-level
+                # state (imports, _test, …).  We must NOT call namespace.clear()
+                # when caching the function.
+                if len(self._xecute_fn_cache) < self._xecute_fn_cache_max:
+                    self._xecute_fn_cache[cache_key] = (namespace["XECUTE"], namespace)
+                    # Sync $TEST before returning (namespace is now owned by cache,
+                    # so don't clear it, but we still need to propagate _test).
+                    _test_val = namespace.get("_test", False)
+                    _scope["_test"] = _test_val
+                    self._test = _test_val
+                    # Don't clear namespace here — it's now owned by the cache.
+                    return result
             else:
                 result = None
 
@@ -8140,7 +8194,13 @@ class MUMPSRuntime:
             # Break reference cycle: exec() sets XECUTE.__globals__ = namespace,
             # and namespace["XECUTE"] = XECUTE, creating a cycle that prevents
             # prompt GC.  Clearing the dict breaks this immediately.
-            namespace.clear()
+            # Skip clearing if namespace was transferred to the function cache.
+            if (
+                cache_key not in self._xecute_fn_cache
+                or self._xecute_fn_cache.get(cache_key, (None, None))[1]
+                is not namespace
+            ):
+                namespace.clear()
 
     def execute_mumps_indirected(
         self,

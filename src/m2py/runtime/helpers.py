@@ -22,13 +22,26 @@ import os
 import subprocess
 import warnings
 from decimal import Decimal, ROUND_HALF_UP, localcontext
-from typing import TYPE_CHECKING, Any, Callable, Tuple
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, Callable, MutableMapping, Tuple
 
 from m2py.core.subscripts import SubscriptCanonicalizer
 
 if TYPE_CHECKING:
     from m2py.runtime import MArray
     from m2py.runtime.globals import GlobalStorageBackend
+
+# Lazily-initialized type reference for MArray (avoids circular import).
+# After _init_marray_type() is called once, m_var_value uses a direct type
+# check instead of getattr, eliminating the descriptor call overhead.
+_MArray_type = None
+
+
+def _init_marray_type() -> None:
+    global _MArray_type
+    from m2py.runtime import MArray as _MA
+
+    _MArray_type = _MA
 
 
 def m_var_value(val: Any) -> Any:
@@ -56,14 +69,26 @@ def m_var_value(val: Any) -> Any:
         >>> m_var_value(None)
         ''
     """
-    # Handle MArray by extracting .value
-    if hasattr(val, "value"):
-        return val.value
-    # Handle None as empty string (MUMPS undefined = empty string)
+    # Type-based fast paths to avoid hasattr call for common types (~650ns saved)
+    t = type(val)
+    if t is str or t is int or t is float or t is bool or t is Decimal:
+        return val
     if val is None:
         return ""
-    # Plain values pass through
-    return val
+    # MArray fast path: direct _value access avoids getattr descriptor overhead.
+    # MArray is imported lazily to avoid circular imports (helpers ← __init__).
+    global _MArray_type
+    if _MArray_type is None:
+        _init_marray_type()
+    if t is _MArray_type:
+        v = val._value
+        return v if v is not None else ""
+    # Other objects with .value (rare) — getattr with None sentinel
+    _v = getattr(val, "value", None)
+    if _v is not None:
+        return _v
+    # Edge case: value attribute IS None (exotic custom types); still pass through
+    return _v if hasattr(val, "value") else val
 
 
 def _canonicalize_subscript(sub: Any) -> str:
@@ -81,7 +106,8 @@ def _canonicalize_subscript(sub: Any) -> str:
     return SubscriptCanonicalizer.canonicalize(sub)
 
 
-def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
+@lru_cache(maxsize=8192)
+def _mumps_collation_key(value: str) -> Tuple[int, Any]:
     """Generate a sort key for MUMPS collation order.
 
     MUMPS collation order:
@@ -97,32 +123,29 @@ def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
     Non-canonical numeric strings like "-4.", "-4.0", ".0", "01" collate as strings.
 
     Args:
-        value: A subscript value (string, int, float, or Decimal)
+        value: A subscript value (string after canonicalization)
 
     Returns:
         Tuple for comparison in sorted()
     """
-    from m2py.core.subscripts import SubscriptCanonicalizer
-
     # Empty string always sorts first in MUMPS
     if value == "" or value is None:
         return (-1, "")
 
+    t = type(value)
     # Check if value is numeric (can be int, float, Decimal, or numeric string)
-    if isinstance(value, (int, float, Decimal)):
+    if t is int or t is float:
+        return (0, float(value))
+
+    if t is Decimal:
         return (0, float(value))
 
     # For strings, only canonical numeric strings collate as numbers
-    if isinstance(value, str):
-        # Check if string is a CANONICAL numeric form
-        if SubscriptCanonicalizer.is_canonical_numeric_string(value):
-            # It's canonical, collate as number
-            num = Decimal(value)
-            return (0, float(num))
-        # Non-canonical or non-numeric strings collate as strings
-        return (1, value)
-
-    return (1, str(value))
+    if SubscriptCanonicalizer.is_canonical_numeric_string(value):
+        # It's canonical, collate as number
+        return (0, float(Decimal(value)))
+    # Non-canonical or non-numeric strings collate as strings
+    return (1, value)
 
 
 def m_format_output(value: Any) -> str:
@@ -151,9 +174,12 @@ def m_format_output(value: Any) -> str:
     """
     from decimal import Decimal
 
-    # Handle MArray objects by extracting their value
-    # This is needed for TRAMPOLINE strategy where state._locals contains MArrays
-    # and _rt.write(state._locals.get('V', '')) passes MArray objects
+    # Type-based fast paths to avoid hasattr overhead for common types
+    t = type(value)
+    if t is str:
+        return value
+    if t is int or t is bool:
+        return str(int(value))
     if hasattr(value, "value"):
         return m_format_output(value.value)
 
@@ -594,6 +620,7 @@ def _find_next_valued_node(
     current_path: list[str],
     start_path: tuple[str, ...],
     at_start: bool,
+    _sort_cache: "MutableMapping | None" = None,
 ) -> tuple[str, ...] | None:
     """Find the next valued node in depth-first traversal order.
 
@@ -604,12 +631,23 @@ def _find_next_valued_node(
         current_path: Path to this node (for building result)
         start_path: Starting point for search (find nodes after this)
         at_start: True if we should search from beginning of this subtree
+        _sort_cache: Optional WeakKeyDictionary for caching per-node sorted keys.
+            Pass the storage's _sorted_keys_cache to avoid re-sorting across
+            repeated $QUERY calls on the same global.
 
     Returns:
         Tuple of subscripts to next valued node, or None if no more nodes
     """
-    # Get children in collation order
-    keys = sorted(node._children.keys(), key=_mumps_collation_key)
+    # Get children in collation order — use cache when available to avoid
+    # O(N log N) sorting on every $QUERY call for the same parent node.
+    if _sort_cache is not None:
+        cached = _sort_cache.get(node)
+        if cached is None:
+            cached = sorted(node._children.keys(), key=_mumps_collation_key)
+            _sort_cache[node] = cached
+        keys = cached
+    else:
+        keys = sorted(node._children.keys(), key=_mumps_collation_key)
 
     for key in keys:
         str_key = str(key)
@@ -626,7 +664,11 @@ def _find_next_valued_node(
         elif str_key == start_path[0]:
             # This key matches start path - recurse deeper
             result = _find_next_valued_node(
-                child, child_path, start_path[1:], at_start=False
+                child,
+                child_path,
+                start_path[1:],
+                at_start=False,
+                _sort_cache=_sort_cache,
             )
             if result is not None:
                 return result
@@ -645,7 +687,13 @@ def _find_next_valued_node(
                 return tuple(child_path)
 
             # Recursively search children
-            result = _find_next_valued_node(child, child_path, (), at_start=True)
+            result = _find_next_valued_node(
+                child,
+                child_path,
+                (),
+                at_start=True,
+                _sort_cache=_sort_cache,
+            )
             if result is not None:
                 return result
 

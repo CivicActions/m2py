@@ -14,9 +14,8 @@ Test routines and their status:
 - **DMUDT000** (61 assertions): date/time validation via ``%DT``
   — PASS (61 tests, 0 failures, 0 errors)
 - **DMUDIC00** (14 tests baseline): dictionary lookup via ``DIC``
-  — xfail (timeout): FINDC computed-field evaluation triggers O(n log n)
-  ``$ORDER`` scans over ~10K county records; transpilation is correct but
-  too slow to complete within CI timeout
+  — FINDC computed-field evaluation triggers O(n log n) ``$ORDER`` scans
+  over ~10K county records; transpilation is correct, timeout set to 60 min
 - **DMUDIQ00** (7 assertions): data retrieval via ``DIQ`` — PASS
 
 Dependencies are auto-loaded from VistA-M via the
@@ -52,16 +51,7 @@ TIER3_ROUTINES = [
     "ZZUTDIDT",
     "DMUDT000",
     "DMUDTC00",
-    pytest.param(
-        "DMUDIC00",
-        marks=pytest.mark.xfail(
-            reason=(
-                "FINDC computed-field evaluation triggers O(n log n) $ORDER "
-                "scans over ~10K county records — too slow for CI"
-            ),
-            strict=False,
-        ),
-    ),
+    "DMUDIC00",
     "DMUDIQ00",
 ]
 
@@ -74,12 +64,12 @@ _INVOCATIONS = {
     "DMUDIQ00": "D ^DMUDIQ00",
 }
 
-# TEMPORARY: DMUDIC00's FINDC test triggers O(n log n) $ORDER scans over ~10K
-# county records.  Without a timeout the CI job hangs for 10+ minutes, which
-# obscures the status of the other munit tests.  Remove once $ORDER performance
-# is addressed (see the xfail marker on DMUDIC00 above).
+# DMUDIC00's FINDC test iterates ~3,300 county records with computed-field
+# evaluation per entry ($ORDER scan, ~53K execute_mumps/s on aarch64 dev
+# container).  x86_64 CI should finish well under 10 minutes; 60-min ceiling
+# prevents a runaway hang if something regresses.
 _TIMEOUTS: dict[str, float] = {
-    "DMUDIC00": 120,
+    "DMUDIC00": 3600,
 }
 
 

@@ -443,6 +443,24 @@ class SQLiteGlobalStorage:
     # $QUERY
     # =========================================================================
 
+    def iter_keys(
+        self,
+        name: str,
+        prefix_subscripts: tuple[str, ...],
+        direction: int = 1,
+    ):
+        """Yield all subscripts at one level — fallback via repeated order()."""
+        prefix_subscripts = self._canonicalize_subscripts(prefix_subscripts)
+        current = ""
+        while True:
+            nxt = self.order(
+                name, (*prefix_subscripts, current), direction, update_naked=False
+            )
+            if nxt == "":
+                return
+            yield nxt
+            current = nxt
+
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
         """Return full reference of next node with data ($QUERY)."""
         subscripts = self._canonicalize_subscripts(subscripts)

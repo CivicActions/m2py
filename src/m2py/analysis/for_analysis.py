@@ -9,16 +9,18 @@ These functions operate on ASG nodes (MRoutine, MForStatement)
 and do not perform any text parsing.
 """
 
-from typing import TYPE_CHECKING, Dict, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 from ..asg.elements import MCall, MRoutine, MScope
 from ..asg.enums import ForLoopType, ForParamType, PassingMode
-from ..asg.expressions import MActualParameter, MVariable
+from ..asg.expressions import MActualParameter, MGlobal, MIntrinsicFunction, MVariable
 from ..asg.statements import (
     MDoStatement,
     MElseStatement,
     MForStatement,
     MQuitStatement,
+    MSetStatement,
+    OrderIterInfo,
 )
 from ..asg.type_helpers import get_body_scope, get_else_scope, get_then_scope
 from .variables import statement_modifies_variable
@@ -99,6 +101,182 @@ def _classify_for_loop_type(stmt: MForStatement) -> ForLoopType:
             return ForLoopType.STRING_LIST
         # Multiple ranges are still MIXED (need chain)
     return ForLoopType.MIXED
+
+
+def _detect_order_iteration(stmt: MForStatement) -> Optional[OrderIterInfo]:
+    """Detect if a FOR statement implements a canonical $ORDER iteration.
+
+    Recognises the two common MUMPS patterns that iterate all subscripts
+    at one level of a global (or local) array:
+
+    **Pattern A — open-range FOR:**
+
+        F VAR=0:0  S VAR=$O(^GLOBAL(s1,...,VAR)) Q:VAR=""  <body>
+
+    **Pattern B — argumentless FOR (pre-set outside loop):**
+
+        F  S VAR=$O(^GLOBAL(s1,...,VAR)) Q:VAR=""  <body>
+
+    Requirements for detection:
+    - Exactly one loop variable (simple ``MVariable``, no subscripts).
+    - Loop ``is_infinite`` (step=0 open-range or argumentless).
+    - First body statement: SET ``loop_var = $ORDER( ref(..., loop_var) )``
+      where the $ORDER argument is a *named* global or local array (not a
+      naked global) and the last subscript is the loop variable itself.
+    - Second body statement: ``QUIT:loop_var=""`` (unconditional string
+      equality against ``""``).
+    - The loop variable is **not** modified anywhere else in the body (i.e.
+      ``loop_var_modified_in_body`` must be False after the SET/QUIT pair).
+
+    Local-array iteration ($O(K(I))) is supported but less common.
+
+    Args:
+        stmt: The ``MForStatement`` to inspect (``loop_var_modified_in_body``
+              must already be set by the regular ``_analyze_fors_in_scope``
+              pass before this helper is called).
+
+    Returns:
+        ``OrderIterInfo`` when the pattern is matched; ``None`` otherwise.
+    """
+    from ..asg.expressions import MBinaryOp, MLiteral
+    from ..asg.statements import MAssignment
+
+    # --- Guard: loop variable must be a plain named local (no subscripts) ----
+    if not isinstance(stmt.loop_var, MVariable):
+        return None
+    if stmt.loop_var.subscripts:
+        return None  # Subscripted loop var — skip
+    loop_var_name: str = stmt.loop_var.name
+
+    # --- Guard: must be an infinite / open-ended loop -----------------------
+    if not stmt.is_infinite:
+        return None
+
+    # --- Guard: loop var must not be modified elsewhere in the body ---------
+    # (loop_var_modified_in_body is set to True because the SET at position 0
+    # does modify it — we re-check only the *real* body, i.e. stmts[2:])
+    body_stmts = stmt.body.statements
+    if len(body_stmts) < 2:
+        return None
+
+    # --- stmt[0]: must be  S loop_var = $ORDER( ref(..., loop_var) ) ---------
+    first = body_stmts[0]
+    if not isinstance(first, MSetStatement):
+        return None
+    if len(first.assignments) != 1:
+        return None
+    assign: MAssignment = first.assignments[0]
+
+    # LHS must be the loop variable (plain, no subscripts)
+    lhs = assign.target
+    if not isinstance(lhs, MVariable) or lhs.name != loop_var_name or lhs.subscripts:
+        return None
+
+    # RHS must be $ORDER(...)
+    rhs = assign.value
+    if not isinstance(rhs, MIntrinsicFunction):
+        return None
+    if rhs.name.upper() not in ("O", "ORDER"):
+        return None
+
+    # $ORDER can have 1 or 2 arguments: $O(ref) or $O(ref, direction)
+    if not rhs.arguments:
+        return None
+    order_ref = rhs.arguments[0]
+
+    # Determine direction
+    direction = 1
+    if len(rhs.arguments) >= 2:
+        dir_arg = rhs.arguments[1]
+        if isinstance(dir_arg, MLiteral):
+            try:
+                direction = int(dir_arg.value)
+            except (ValueError, TypeError):
+                return None
+        else:
+            # Dynamic direction — can't optimise statically
+            return None
+
+    # order_ref must be a named global or local variable (not naked)
+    is_local = False
+    global_name = ""
+    local_name = ""
+    prefix_exprs: List = []
+
+    if isinstance(order_ref, MGlobal):
+        if not order_ref.name:
+            return None  # Naked global — skip
+        global_name = order_ref.name
+        subscripts = order_ref.subscripts
+    elif isinstance(order_ref, MVariable):
+        is_local = True
+        local_name = order_ref.name
+        subscripts = order_ref.subscripts
+    else:
+        return None  # Indirection, extended ref, etc. — skip
+
+    # Last subscript must be exactly the loop variable
+    if not subscripts:
+        return None
+    last_sub = subscripts[-1]
+    if not isinstance(last_sub, MVariable):
+        return None
+    if last_sub.name != loop_var_name or last_sub.subscripts:
+        return None
+
+    # All prefix subscripts must not reference the loop variable themselves
+    # (they are evaluated once before the loop in our generated code)
+    prefix_exprs = list(subscripts[:-1])
+
+    # --- stmt[1]: must be  Q:loop_var="" --------------------------------
+    second = body_stmts[1]
+    if not isinstance(second, MQuitStatement):
+        return None
+    cond = second.postcondition
+    if cond is None:
+        return None
+
+    # Condition must be an equality against literal ""
+    # Pattern: loop_var = "" expressed as MBinaryOp("=", MVariable(loop_var), MLiteral(""))
+    if not isinstance(cond, MBinaryOp):
+        return None
+    if getattr(cond, "operator", None) != "=":
+        return None
+    left = getattr(cond, "left", None)
+    right = getattr(cond, "right", None)
+
+    # Allow either order: VAR="" or ""=VAR
+    def _is_loop_var(node) -> bool:
+        return (
+            isinstance(node, MVariable)
+            and node.name == loop_var_name
+            and not node.subscripts
+        )
+
+    def _is_empty_string(node) -> bool:
+        return isinstance(node, MLiteral) and str(getattr(node, "value", "__x__")) == ""
+
+    if not (
+        (_is_loop_var(left) and _is_empty_string(right))
+        or (_is_loop_var(right) and _is_empty_string(left))
+    ):
+        return None
+
+    # --- Guard: loop var must not be modified in stmts[2:] ------------------
+    if len(body_stmts) > 2:
+        tail_scope = MScope()
+        tail_scope.statements = body_stmts[2:]
+        if _check_var_modified_in_scope(stmt.loop_var, tail_scope):
+            return None
+
+    return OrderIterInfo(
+        global_name=global_name,
+        prefix_exprs=prefix_exprs,
+        is_local=is_local,
+        local_name=local_name,
+        direction=direction,
+        body_stmt_offset=2,
+    )
 
 
 def analyze_for_loops(
@@ -184,6 +362,13 @@ def _analyze_fors_in_scope(
                 stmt.has_internal_quit = _check_quit_in_scope(stmt.body)
                 # Recurse into nested structures within FOR body
                 _analyze_fors_in_scope(stmt.body, routine, signatures)
+
+            # After regular analysis: try to detect the $ORDER iteration pattern.
+            # Only attempt when the FOR meets the basic structural requirements.
+            # Note: loop_var_modified_in_body will be True (the SET modifies it),
+            # but _detect_order_iteration guards that the tail body doesn't modify it.
+            if stmt.is_infinite and isinstance(stmt.loop_var, MVariable):
+                stmt.order_iter_info = _detect_order_iteration(stmt)
         # Recurse into other nested scopes using type-safe helpers
         then_scope = get_then_scope(stmt)
         if then_scope is not None:

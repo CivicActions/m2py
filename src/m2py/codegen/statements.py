@@ -65,7 +65,6 @@ from m2py.asg.statements import (
     MViewStatement,
     MWriteStatement,
     MXecuteStatement,
-    # Z-commands - Implemented
     MZGotoStatement,
     MZHaltStatement,
     MZKillStatement,
@@ -2364,8 +2363,13 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     # Use ForGenContext for analysis-based dispatch
     for_ctx = ForGenContext.from_statement(stmt, ctx)
 
+    # Optimised $ORDER-iterator pattern: emit a native Python `for` loop.
+    # Check before the general dispatch so it takes priority over ARGUMENTLESS /
+    # OPEN_ENDED paths (which would emit while True / itertools.count()).
+    if stmt.order_iter_info is not None:
+        _generate_for_order_iter(stmt, for_ctx, ctx)
     # Dispatch based on loop type and analysis flags
-    if for_ctx.loop_type == ForLoopType.ARGUMENTLESS:
+    elif for_ctx.loop_type == ForLoopType.ARGUMENTLESS:
         _generate_for_argumentless(stmt, for_ctx, ctx)
     elif for_ctx.loop_type == ForLoopType.OPEN_ENDED:
         # Open-ended loops with body modification need while loop pattern
@@ -2376,10 +2380,6 @@ def _generate_for(stmt: MForStatement, ctx: "GeneratorContext") -> None:
     elif for_ctx.loop_type == ForLoopType.MIXED:
         _generate_for_mixed(stmt, for_ctx, ctx)
     elif for_ctx.loop_var_subscripts and for_ctx.loop_type == ForLoopType.BOUNDED:
-        # Subscripted loop variables (F A(B)=1:1:3) use bounded path which handles
-        # subscripts specially - counter tracked separately from array storage.
-        # Per MUMPS spec, subscripts are evaluated ONCE at start, so loop var
-        # modifications in body don't affect the subscript (no need for while pattern).
         _generate_for_bounded(stmt, for_ctx, ctx)
     elif for_ctx.use_while:
         # BOUNDED or STRING_LIST with loop var modification needs while loop
@@ -2993,6 +2993,79 @@ def _generate_for_open_ended_while(
             ctx.emitter.line(
                 f"_scope.setdefault({translated_loop_key!r}, MArray()).value = {for_ctx.loop_var}"
             )
+
+
+def _generate_for_order_iter(
+    stmt: MForStatement, for_ctx: ForGenContext, ctx: "GeneratorContext"
+) -> None:
+    """Generate optimised native Python ``for`` loop for $ORDER-iteration.
+
+    Recognises the canonical MUMPS pattern::
+
+        F VAR=0:0  S VAR=$O(^GLOBAL(s1,...,VAR)) Q:VAR=""  <body>
+
+    and emits::
+
+        for _ord_N in _rt.globals.iter_keys('GLOBAL', (s1_expr, ...), direction):
+            _scope['VAR'].value = MString(_ord_N)
+            # body statements [offset:]
+
+    This avoids the O(N²·log N) re-sorting that ``order()`` performs on every
+    call when iterating all N children under a node.
+
+    For local-array iteration (``$O(K(VAR))``), the optimisation is not applied
+    and the function falls back to the regular while-loop codegen.
+
+    Args:
+        stmt: The ``MForStatement`` being generated (``order_iter_info`` is set).
+        for_ctx: FOR loop context with analysis results.
+        ctx: Code-generator context.
+    """
+    from m2py.codegen.expressions import generate_expr
+
+    info = stmt.order_iter_info  # OrderIterInfo (guaranteed non-None by caller)
+    assert info is not None  # keep type checker happy
+
+    # Local array iteration is not yet optimised — fall back to while-loop.
+    if info.is_local:
+        # Reuse argumentless or open-ended while-loop path.
+        _generate_for_argumentless(stmt, for_ctx, ctx)
+        return
+
+    # Build the prefix-subscripts tuple expression.
+    # These are the subscripts *before* the loop variable, e.g. for
+    # $O(^GLOBAL(D0,"AB",VAR)) the prefix is (D0, "AB").
+    if info.prefix_exprs:
+        parts = ", ".join(generate_expr(e, ctx) for e in info.prefix_exprs)
+        prefix_str = f"({parts},)"
+    else:
+        prefix_str = "()"
+
+    # Unique key name so nested loops don't shadow each other.
+    key_var = f"_ord_{for_ctx.loop_id}"
+
+    # Translated MUMPS name (used for _scope dictionary key).
+    translated_name = translate_name(for_ctx.loop_var_name)
+
+    ctx.emitter.line(
+        f"for {key_var} in _rt.globals.iter_keys("
+        f"{info.global_name!r}, {prefix_str}, {info.direction!r}):"
+    )
+    with ctx.emitter.indented():
+        # Sync key into the loop variable in _scope so the body can read it.
+        ctx.emitter.line(
+            f"_scope.setdefault({translated_name!r}, MArray()).value = {key_var}"
+        )
+
+        # Generate body statements from body_stmt_offset (skip the SET and QUIT
+        # that formed the pattern — they are replaced by the for-header itself).
+        body_stmts = stmt.body.statements if stmt.body else []
+        real_body = body_stmts[info.body_stmt_offset :]
+        if real_body:
+            for body_stmt in real_body:
+                generate_statement(body_stmt, ctx)
+        else:
+            ctx.emitter.line("pass")
 
 
 def _generate_for_argumentless(

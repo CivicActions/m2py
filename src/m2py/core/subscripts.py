@@ -91,6 +91,7 @@ class SubscriptCanonicalizer:
         return value
 
     @staticmethod
+    @lru_cache(maxsize=16384)
     def canonicalize_numeric(n: Union[int, float, Decimal]) -> str:
         """Canonicalize a numeric value.
 
@@ -119,22 +120,24 @@ class SubscriptCanonicalizer:
             >>> SubscriptCanonicalizer.canonicalize_numeric(-.5)
             '-.5'
         """
+        t = type(n)
         # Handle Decimal type
-        if isinstance(n, Decimal):
+        if t is Decimal:
             # Check if it's effectively an integer
-            if n == int(n):
-                return str(int(n))
+            d: Decimal = n  # type: ignore[assignment]
+            if d == int(d):
+                return str(int(d))
             # Format Decimal without scientific notation, preserving precision
-            sign, digits, exponent = n.as_tuple()
+            sign, digits, exponent = d.as_tuple()
             if not isinstance(exponent, int):
-                return str(n)  # NaN/Infinity
+                return str(d)  # NaN/Infinity
             if exponent >= 0:
-                return str(int(n))
+                return str(int(d))
             # Decimal number: reconstruct without scientific notation
             int_part = digits[:exponent] if exponent else ()
             frac_part = digits[exponent:]
-            int_str = "".join(str(d) for d in int_part) if int_part else ""
-            frac_str = "".join(str(d) for d in frac_part)
+            int_str = "".join(str(i) for i in int_part) if int_part else ""
+            frac_str = "".join(str(i) for i in frac_part)
             if not int_str:
                 int_str = ""
                 frac_str = "0" * (-exponent - len(digits)) + frac_str
@@ -146,16 +149,15 @@ class SubscriptCanonicalizer:
                 result = "-" + result
             return result
 
-        # Handle integer or float that equals integer
-        if isinstance(n, int) or (
-            isinstance(n, float) and n == int(n) and math.isfinite(n)
-        ):
+        # Handle integer (includes bool subclass)
+        if t is int or (t is not float and isinstance(n, int)):
             return str(int(n))
 
-        # Float with fractional part
-        if isinstance(n, float):
+        # Float
+        if t is float or isinstance(n, float):
+            if n == int(n) and math.isfinite(n):
+                return str(int(n))
             if not math.isfinite(n):
-                # inf/nan - just convert to string
                 return str(n)
 
             # Format and remove trailing zeros
@@ -177,7 +179,10 @@ class SubscriptCanonicalizer:
 
             return s
 
+        return str(int(n))
+
     @staticmethod
+    @lru_cache(maxsize=16384)
     def is_canonical_numeric_string(s: str) -> bool:
         """Check if string represents a canonical numeric value.
 
