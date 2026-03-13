@@ -698,8 +698,10 @@ from m2py.runtime.helpers import (  # noqa: E402
     m_sorts_after,
 )
 
-# Optimized MUMPS numeric coercion (module-level to avoid per-call import overhead)
-from m2py.codegen.helpers import m_num as _m_num  # noqa: E402
+# Optimized MUMPS numeric coercion (module-level to avoid per-call import overhead).
+# Imported from core.values (not codegen.helpers) so the runtime layer can be
+# loaded without the codegen package — required by test_runtime_independence.
+from m2py.core.values import m_num as _m_num  # noqa: E402
 
 
 class MArray:

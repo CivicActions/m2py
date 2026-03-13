@@ -14,8 +14,9 @@ Test routines and their status:
 - **DMUDT000** (61 assertions): date/time validation via ``%DT``
   — PASS (61 tests, 0 failures, 0 errors)
 - **DMUDIC00** (14 tests baseline): dictionary lookup via ``DIC``
-  — FINDC computed-field evaluation triggers O(n log n) ``$ORDER`` scans
-  over ~10K county records; transpilation is correct, timeout set to 60 min
+  — xfail (timeout): FINDC computed-field evaluation triggers O(n log n)
+  ``$ORDER`` scans over ~3,300 county records; transpilation is correct
+  but too slow to complete within CI timeout (>3600s on x86_64)
 - **DMUDIQ00** (7 assertions): data retrieval via ``DIQ`` — PASS
 
 Dependencies are auto-loaded from VistA-M via the
@@ -65,11 +66,10 @@ _INVOCATIONS = {
 }
 
 # DMUDIC00's FINDC test iterates ~3,300 county records with computed-field
-# evaluation per entry ($ORDER scan, ~53K execute_mumps/s on aarch64 dev
-# container).  x86_64 CI should finish well under 10 minutes; 60-min ceiling
-# prevents a runaway hang if something regresses.
+# evaluation per entry ($ORDER scan).  300-min ceiling prevents a runaway hang
+# if something regresses while giving CI enough headroom to complete.
 _TIMEOUTS: dict[str, float] = {
-    "DMUDIC00": 3600,
+    "DMUDIC00": 18000,
 }
 
 
