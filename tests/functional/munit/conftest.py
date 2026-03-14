@@ -86,6 +86,9 @@ _MASH_TEST_ROUTINES = [
 # FileMan Testing/MUnit directory (OSEHRA test fixtures: DMUFINIT chain, etc.)
 _FM_TESTING_DIR = _VISTA_SUBMODULE / "Packages" / "VA FileMan" / "Testing" / "MUnit"
 
+# Native Python overrides directory — .py files here replace transpiled routines
+_OVERRIDES_DIR = _REPO_ROOT / "overrides"
+
 # Scheduling Testing/MUnit directory (Tier 4b test routines)
 _SCHED_TESTING_DIR = _VISTA_SUBMODULE / "Packages" / "Scheduling" / "Testing" / "MUnit"
 
@@ -138,9 +141,30 @@ class MumpsAutoImporter(importlib.abc.MetaPathFinder):
     dependency in ``_register_fileman_dependencies()``.
     """
 
-    def __init__(self, search_dirs: list[Path]) -> None:
+    def __init__(
+        self,
+        search_dirs: list[Path],
+        override_dirs: list[Path] | None = None,
+    ) -> None:
         self._index: dict[str, Path] = {}  # module_name → .m path
+        self._overrides: dict[str, Path] = {}  # module_name → .py override path
         self._failed: set[str] = set()  # modules that failed transpilation
+
+        # Index override .py files first (higher priority than .m)
+        for d in override_dirs or []:
+            if d.is_dir():
+                for py_file in d.glob("*.py"):
+                    if py_file.name.startswith("_"):
+                        continue  # skip __init__.py, __pycache__, etc.
+                    self._overrides[py_file.stem] = py_file
+        if self._overrides:
+            logger.debug(
+                "MumpsAutoImporter indexed %d overrides from %s",
+                len(self._overrides),
+                [str(d) for d in (override_dirs or [])],
+            )
+
+        # Index .m files
         for d in search_dirs:
             if d.is_dir():
                 for m_file in d.glob("*.m"):
@@ -171,9 +195,10 @@ class MumpsAutoImporter(importlib.abc.MetaPathFinder):
                         except Exception:
                             pass  # skip unreadable files
         logger.debug(
-            "MumpsAutoImporter indexed %d routines from %d dirs",
+            "MumpsAutoImporter indexed %d routines from %d dirs (%d overrides)",
             len(self._index),
             len(search_dirs),
+            len(self._overrides),
         )
 
     def add_dirs(self, dirs: list[Path]) -> None:
@@ -213,12 +238,12 @@ class MumpsAutoImporter(importlib.abc.MetaPathFinder):
     # -- Modern importlib protocol (find_spec / create_module / exec_module) --
 
     def find_spec(self, fullname: str, path=None, target=None):
-        """Return a ModuleSpec if we have a matching .m file."""
+        """Return a ModuleSpec if we have a matching override or .m file."""
         if fullname in self._failed:
             return None
         if fullname in sys.modules:
             return None
-        if fullname not in self._index:
+        if fullname not in self._overrides and fullname not in self._index:
             return None
         return importlib.util.spec_from_loader(fullname, loader=self)
 
@@ -226,9 +251,41 @@ class MumpsAutoImporter(importlib.abc.MetaPathFinder):
         """Use default module creation semantics."""
         return None
 
+    def get_source_path(self, module_name: str) -> Path | None:
+        """Return the .m source path for a routine, or None.
+
+        Used by :func:`m2py.runtime.overrides.partial_override` to find
+        the MUMPS source for transpilation when building a partial override.
+        """
+        return self._index.get(module_name)
+
     def exec_module(self, module):
-        """Transpile and execute the MUMPS routine into *module*."""
+        """Load an override or transpile the MUMPS routine into *module*."""
         fullname = module.__name__
+
+        # --- Override fast path: load .py override directly ---
+        py_override = self._overrides.get(fullname)
+        if py_override is not None:
+            try:
+                from m2py.runtime.overrides import load_override
+
+                override_mod = load_override(py_override, fullname)
+                module.__dict__.update(override_mod.__dict__)
+                logger.info(
+                    "Loaded override for %s from %s", fullname, py_override.name
+                )
+                return
+            except Exception:
+                self._failed.add(fullname)
+                logger.debug(
+                    "Override load failed for %s (%s) — skipping",
+                    fullname,
+                    py_override.name,
+                    exc_info=True,
+                )
+                raise ImportError(fullname) from None
+
+        # --- Normal path: transpile .m source ---
         m_file = self._index.get(fullname)
         if m_file is None:
             raise ImportError(fullname)
@@ -277,7 +334,8 @@ def _install_auto_importer() -> None:
             _VISTA_M_FILEMAN_DIR,
             _VISTA_M_KERNEL_DIR,
             _FM_TESTING_DIR,
-        ]
+        ],
+        override_dirs=[_OVERRIDES_DIR],
     )
     sys.meta_path.append(_auto_importer)
     logger.info("Installed MumpsAutoImporter on sys.meta_path")

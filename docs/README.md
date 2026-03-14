@@ -40,6 +40,7 @@ python_code = generate_python(open("MYROUTINE.m").read(), routine_name="MYROUTIN
 | [asg-reference.md](asg-reference.md) | ASG node hierarchy, enums, analysis fields |
 | [codegen.md](codegen.md) | Code generation strategies and output patterns |
 | [runtime.md](runtime.md) | Runtime library, MArray, globals, devices |
+| [overrides.md](overrides.md) | Native Python routine overrides for performance |
 | [testing.md](testing.md) | Test organization, fixtures, running tests |
 | [limitations.md](limitations.md) | Known limitations (auto-generated) |
 
