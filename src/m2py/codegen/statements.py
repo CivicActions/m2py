@@ -3026,10 +3026,16 @@ def _generate_for_order_iter(
     info = stmt.order_iter_info  # OrderIterInfo (guaranteed non-None by caller)
     assert info is not None  # keep type checker happy
 
-    # Local array iteration is not yet optimised — fall back to while-loop.
+    # Local array iteration is not yet optimised — fall back.
+    # Must use the proper OPEN_ENDED / while-loop dispatch (not ARGUMENTLESS)
+    # so that the loop variable is initialised from the FOR start expression.
     if info.is_local:
-        # Reuse argumentless or open-ended while-loop path.
-        _generate_for_argumentless(stmt, for_ctx, ctx)
+        if for_ctx.use_while:
+            _generate_for_while(stmt, for_ctx, ctx)
+        elif for_ctx.loop_type == ForLoopType.OPEN_ENDED:
+            _generate_for_open_ended(stmt, for_ctx, ctx)
+        else:
+            _generate_for_argumentless(stmt, for_ctx, ctx)
         return
 
     # Build the prefix-subscripts tuple expression.

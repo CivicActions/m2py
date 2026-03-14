@@ -603,6 +603,16 @@ def fileman_bootstrap(munit_runtime):
         total += count
         logger.info("Loaded %d nodes from 0.84+DIALOG.zwr (^DI(.84,...))", count)
 
+    # ^DD("FUNC") — Function file (.5).  Contains computed expression
+    # functions (COUNT, TOTAL, MAXIMUM, etc.) used by DICOMP when parsing
+    # sort expressions like "COUNT(COUNTY)".  Without this, BUILDNEW^DIBTED
+    # cannot process sort template specs that use computed functions.
+    func_zwr = _VISTA_M_FILEMAN_GLOBALS_DIR / "0.5+FUNCTION.zwr"
+    if func_zwr.exists():
+        count = import_zwr(munit_runtime.globals, func_zwr)
+        total += count
+        logger.info('Loaded %d nodes from 0.5+FUNCTION.zwr (^DD("FUNC",...))', count)
+
     logger.info("FileMan bootstrap complete: %d total global nodes", total)
 
     # Ensure Package file (9.4) has VA FileMan entry so $$VERSION^XPDUTL("DI")

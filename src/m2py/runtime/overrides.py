@@ -57,7 +57,7 @@ def partial_override(routine_name: str) -> types.ModuleType:
             f"No MUMPS auto-importer installed — cannot load base for {routine_name}"
         )
 
-    m_file = importer.get_source_path(routine_name)
+    m_file = importer.get_source_path(routine_name)  # type: ignore[attr-defined]
     if m_file is None:
         raise ImportError(f"No .m source found for {routine_name}")
 
