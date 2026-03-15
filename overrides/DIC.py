@@ -32,7 +32,71 @@ _routine_name = "DIC"
 
 def __getattr__(name: str) -> Any:
     """Delegate non-overridden attributes to transpiled base."""
+    if name == "_entry_function":
+        return _dd_aware_entry_function
     return getattr(_base, name)
+
+
+def _dd_aware_entry_function(_rt, _scope=None, **kwargs):
+    """Handle DD field-name lookups natively; delegate everything else.
+
+    When DICOMP0 calls ``D ^DIC`` with ``DIC="^DD(file,"`` to look up a
+    field name, the transpiled DIC3 code has difficulty validating entries
+    with non-integer IENs like '.01'.  This wrapper detects that pattern
+    and performs a direct B-index lookup, matching what the real DIC does
+    for simple exact-match field-name lookups.
+    """
+    if _scope:
+        dic_val = _scope.get("DIC")
+        if dic_val is not None:
+            dic_str = dic_val.value if hasattr(dic_val, "value") else str(dic_val)
+            # Check if this is a DD field lookup: DIC="^DD(file,"
+            if (
+                isinstance(dic_str, str)
+                and dic_str.startswith("^DD(")
+                and dic_str.endswith(",")
+            ):
+                file_num = dic_str[4:-1]  # extract file number
+                x_val = _scope.get("X")
+                x_str = (
+                    x_val.value
+                    if hasattr(x_val, "value")
+                    else str(x_val)
+                    if x_val
+                    else ""
+                )
+                if x_str and x_str.isalpha():
+                    # Simple field name lookup — do it natively
+                    result = _lookup_dd_field(_rt, file_num, x_str)
+                    if result is not None:
+                        y_ma = _scope.setdefault(
+                            "Y",
+                            __import__("m2py.runtime", fromlist=["MArray"]).MArray(),
+                        )
+                        y_ma.value = result
+                        return
+    return _base._entry_function(_rt, _scope=_scope, **kwargs)
+
+
+def _lookup_dd_field(_rt, file_num: str, field_name: str) -> str | None:
+    """Look up a field by name in ^DD(file,"B",name,...).
+
+    Returns Y value in DIC format (IEN^name) or None if not found.
+    """
+    g = _rt.globals
+    # $O(^DD(file,"B",field_name,"")) → field_number
+    field_num = g.order("DD", (file_num, "B", field_name, ""))
+    if not field_num:
+        # Try upper case
+        field_num = g.order("DD", (file_num, "B", field_name.upper(), ""))
+    if not field_num:
+        return None  # Let transpiled DIC handle it
+    # Read field definition to get the display name
+    field_def = g.get("DD", (file_num, field_num, "0"))
+    if field_def:
+        display_name = str(field_def).split("^")[0]
+        return f"{field_num}^{display_name}"
+    return f"{field_num}^{field_name}"
 
 
 # ── Helpers: file/field metadata ─────────────────────────────────────
@@ -466,6 +530,7 @@ def LIST(
     if x_flag and dindex:
         if dindex.startswith("["):
             _list_sort_template(
+                _rt,
                 g,
                 gname,
                 gprefix,
@@ -477,6 +542,7 @@ def LIST(
                 dindex,
                 e_flag,
             )
+            return
         elif ">" in dindex or "<" in dindex or "=" in dindex:
             _list_screen_expr(
                 g,
@@ -698,7 +764,11 @@ def _find_template_ien(g: Any, name: str, file_num: str) -> str | None:
 
 
 def _read_template_levels(g: Any, ien: str) -> list[dict[str, Any]]:
-    """Read sort-template levels from ^DIBT(ien,2,level,0)."""
+    """Read sort-template levels from ^DIBT(ien,2,level,...).
+
+    Returns level dicts with raw_zero, field_num, label, flags, descending,
+    and MUMPS code nodes (CM, GET, QCON, TXT) for runtime execution.
+    """
     levels: list[dict[str, Any]] = []
     lvl = ""
     while True:
@@ -710,22 +780,30 @@ def _read_template_levels(g: Any, ien: str) -> list[dict[str, Any]]:
         field_num = parts[1] if len(parts) > 1 else ""
         label = parts[2] if len(parts) > 2 else ""
         flags = parts[3] if len(parts) > 3 else ""
-        screen_val = parts[4] if len(parts) > 4 else ""
 
         descending = "-" in flags
 
-        f_val = g.get("DIBT", (ien, "2", lvl, "F"))
-        t_val = g.get("DIBT", (ien, "2", lvl, "T"))
-        is_screen = (f_val == "0" and t_val == "1") or bool(screen_val)
+        # Read MUMPS code nodes
+        cm = g.get("DIBT", (ien, "2", lvl, "CM")) or ""
+        get_code = g.get("DIBT", (ien, "2", lvl, "GET")) or ""
+        qcon = g.get("DIBT", (ien, "2", lvl, "QCON")) or ""
+        txt = g.get("DIBT", (ien, "2", lvl, "TXT")) or ""
+        f_val = g.get("DIBT", (ien, "2", lvl, "F")) or ""
+        t_val = g.get("DIBT", (ien, "2", lvl, "T")) or ""
 
         levels.append(
             {
+                "raw_zero": zero,
                 "field_num": field_num,
                 "label": label,
                 "flags": flags,
-                "screen_val": screen_val,
                 "descending": descending,
-                "is_screen": is_screen,
+                "CM": cm,
+                "GET": get_code,
+                "QCON": qcon,
+                "TXT": txt,
+                "F": f_val,
+                "T": t_val,
             }
         )
     return levels
@@ -734,11 +812,40 @@ def _read_template_levels(g: Any, ien: str) -> list[dict[str, Any]]:
 def _eval_template_expr(
     g: Any, gname: str, gprefix: tuple[str, ...], ien: str, label: str, file_num: str
 ) -> Any:
-    """Evaluate a template sort/screen expression for one entry."""
+    """Evaluate a template sort/screen expression for one entry.
+
+    Returns the computed value, or None if the expression is not recognized.
+    """
+    if not label:
+        return None
+
     m = _RE_COMPUTED.match(label)
     if m and m.group(1).upper() == "COUNT":
         return _count_multiple(g, gname, gprefix, ien, m.group(2), file_num)
 
+    # Match $E(FIELD,start,end)="literal" — boolean screen expression
+    eq_match = re.match(
+        r'\$E(?:XTRACT)?\((\w+),(\d+),(\d+)\)\s*=\s*"([^"]*)"',
+        label,
+        re.IGNORECASE,
+    )
+    if eq_match:
+        fname = eq_match.group(1)
+        start = int(eq_match.group(2))
+        end = int(eq_match.group(3))
+        target = eq_match.group(4)
+        fn = _find_field_by_name(g, file_num, fname)
+        if fn:
+            info = _get_field_info(g, file_num, fn)
+            if info and info["piece"] > 0:
+                val = (
+                    _extract_piece(g, gname, gprefix, ien, info["node"], info["piece"])
+                    or ""
+                )
+                return 1 if val[start - 1 : end] == target else 0
+        return 0
+
+    # Match plain $E(FIELD,start,end) — extract substring
     em = re.match(r"\$E(?:XTRACT)?\((\w+),(\d+),(\d+)\)", label, re.IGNORECASE)
     if em:
         fname = em.group(1)
@@ -759,10 +866,11 @@ def _eval_template_expr(
         info = _get_field_info(g, file_num, fn)
         if info and info["piece"] > 0:
             return _extract_piece(g, gname, gprefix, ien, info["node"], info["piece"])
-    return ""
+    return None
 
 
 def _list_sort_template(
+    _rt: Any,
     g: Any,
     gname: str,
     gprefix: tuple[str, ...],
@@ -774,7 +882,15 @@ def _list_sort_template(
     dindex: str,
     e_flag: bool,
 ) -> None:
-    """X-flag sort using a named sort template from ^DIBT."""
+    """X-flag sort using a named sort template from ^DIBT.
+
+    Reads sort template levels, then for each entry:
+    - Executes CM (compute) MUMPS code to compute sort/screen values
+    - Evaluates QCON (query condition) to filter entries
+    - Sorts remaining entries by computed values
+    """
+    from m2py.runtime import MArray
+
     tmpl_name = dindex.strip("[]").strip()
     tmpl_ien = _find_template_ien(g, tmpl_name, file_num)
     if not tmpl_ien:
@@ -792,6 +908,7 @@ def _list_sort_template(
         return
 
     levels = _read_template_levels(g, tmpl_ien)
+
     if not levels:
         _list_b_index(
             g,
@@ -806,9 +923,7 @@ def _list_sort_template(
         )
         return
 
-    sort_levels = [lv for lv in levels if not lv["is_screen"]]
-    screen_levels = [lv for lv in levels if lv["is_screen"]]
-
+    # Collect all entries from the B-index
     all_entries: list[str] = []
     key = ""
     while True:
@@ -822,38 +937,153 @@ def _list_sort_template(
                 break
             all_entries.append(ien)
 
-    filtered: list[str] = []
-    for ien in all_entries:
-        passes = True
-        for slvl in screen_levels:
-            ev = _eval_template_expr(g, gname, gprefix, ien, slvl["label"], file_num)
-            sv = slvl["screen_val"]
-            if sv.startswith("="):
-                expected = sv[1:].strip('"')
-                if str(ev) != expected:
-                    passes = False
+    # Build DPP from ^DIBT template data for CM/QCON execution
+    dpp = MArray()
+    dpp.value = str(len(levels))
+    for i, lv in enumerate(levels, 1):
+        si = str(i)
+        dpp[si] = lv.get("raw_zero", "")
+        for sub_key in ("CM", "GET", "QCON", "TXT"):
+            val = lv.get(sub_key)
+            if val:
+                dpp[(si, sub_key)] = val
+        # Copy OVF0 sub-nodes (used by X DPP(n,"OVF0",field) in CM code)
+        ovf_key = ""
+        while True:
+            ovf_key = g.order("DIBT", (tmpl_ien, "2", si, "3", ovf_key))
+            if not ovf_key:
+                break
+            # Read the OVF0-like sub-nodes
+            ovf_val = g.get("DIBT", (tmpl_ien, "2", si, "3", ovf_key))
+            if ovf_val:
+                dpp[(si, "OVF0", ovf_key)] = ovf_val
+            # Also check descendants
+            sub = ""
+            while True:
+                sub = g.order("DIBT", (tmpl_ien, "2", si, "3", ovf_key, sub))
+                if not sub:
                     break
-        if passes:
-            filtered.append(ien)
+                sv = g.get("DIBT", (tmpl_ien, "2", si, "3", ovf_key, sub))
+                if sv:
+                    dpp[(si, "OVF0", ovf_key, sub)] = sv
 
-    if sort_levels:
+    # Evaluate entries: compute sort values and filter
+    results: list[tuple[str, list[Any]]] = []
 
-        def make_sort_key(ien: str) -> tuple:
-            keys: list[Any] = []
-            for slvl in sort_levels:
-                ev = _eval_template_expr(
-                    g, gname, gprefix, ien, slvl["label"], file_num
-                )
-                if isinstance(ev, int):
-                    keys.append((-ev if slvl["descending"] else ev,))
+    for ien in all_entries:
+        scope: dict[str, Any] = {}
+        scope["D0"] = MArray()
+        scope["D0"].value = ien
+        scope["DPP"] = dpp
+        scope["U"] = MArray()
+        scope["U"].value = "^"
+
+        # Set X to the .01 field value (NAME) for the current entry
+        name_val = _extract_piece(g, gname, gprefix, ien, "0", 1) or ""
+        scope["X"] = MArray()
+        scope["X"].value = name_val
+
+        # Initialize DISX array
+        disx = MArray()
+        scope["DISX"] = disx
+
+        sort_vals: list[Any] = []
+        passes_all = True
+
+        for i, lv in enumerate(levels, 1):
+            si = str(i)
+            cm_code = lv.get("CM", "")
+            qcon_code = lv.get("QCON", "")
+            f_val = lv.get("F", "")
+            t_val = lv.get("T", "")
+
+            # Try native evaluation of the template expression first — this
+            # bypasses potentially buggy DICOMP-compiled CM code.
+            # Use 'label' from the zero node (clean expression) rather than TXT
+            # (which may include suffixes like "not null" or doubled quotes).
+            expr = lv.get("label", "").strip()
+            native_val = (
+                _eval_template_expr(g, gname, gprefix, ien, expr, file_num)
+                if expr
+                else None
+            )
+
+            if native_val is not None:
+                disx[(si,)] = str(native_val)
+
+                # For boolean filter levels (F=0, T=1), interpret native_val
+                # as a truthy check.
+                if f_val or t_val:
+                    try:
+                        nv = float(native_val) if native_val != "" else 0
+                    except (ValueError, TypeError):
+                        nv = 0
+                    # F/T define accepted range (inclusive).
+                    # Boolean: F="0", T="1" means accept 0..1 (all, no filter)
+                    # But if flag @B is set, it means boolean screen
+                    if "@B" in lv.get("flags", ""):
+                        # Boolean screen: value must be truthy (non-zero)
+                        if not nv:
+                            passes_all = False
+                            break
+                sort_vals.append(str(native_val))
+                continue
+
+            # Execute CM code to compute the sort/screen value
+            if cm_code:
+                try:
+                    _rt.execute_mumps(cm_code.strip(), scope)
+                except Exception:
+                    pass
+
+            # Check QCON filter condition
+            if qcon_code:
+                try:
+                    _rt.execute_mumps(qcon_code.strip(), scope)
+                    if not _rt._test:
+                        passes_all = False
+                        break
+                except Exception:
+                    passes_all = False
+                    break
+
+            # Get computed value for sorting
+            disx_val = ""
+            if isinstance(disx, MArray):
+                child = disx._children.get(si) or disx._children.get(int(si))
+                if child and isinstance(child, MArray):
+                    disx_val = child.value or ""
+                elif child is not None:
+                    disx_val = child
+            sort_vals.append(disx_val)
+
+        if passes_all:
+            results.append((ien, sort_vals))
+
+    # Sort results by sort values (respecting descending flags)
+    def make_sort_key(item: tuple[str, list[Any]]) -> tuple:
+        _, vals = item
+        keys: list[Any] = []
+        for i, lv in enumerate(levels):
+            v = vals[i] if i < len(vals) else ""
+            try:
+                nv = float(v) if v != "" else 0
+                if lv.get("descending"):
+                    keys.append((0, -nv))
                 else:
-                    keys.append((str(ev),))
-            return tuple(keys)
+                    keys.append((0, nv))
+            except (ValueError, TypeError):
+                if lv.get("descending"):
+                    # For descending string sort, invert by complement
+                    keys.append((2, str(v)))
+                else:
+                    keys.append((1, str(v)))
+        return tuple(keys)
 
-        filtered.sort(key=make_sort_key)
+    results.sort(key=make_sort_key)
 
     count = 0
-    for ien in filtered:
+    for ien, _ in results:
         count += 1
         fv = _extract_fields(
             g, gname, gprefix, ien, field_specs, field_metas, file_num, e_flag

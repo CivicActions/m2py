@@ -4689,8 +4689,13 @@ class MUMPSRuntime:
                 return m_data_global(self._globals, resolved_name, full_subs)
             return m_data_global(self._globals, key, subs)
 
-        # Handle local variables
-        arr = _scope.get(base_name, MArray())
+        # Handle local variables – translate MUMPS name to Python scope key
+        # (e.g. "I" → "_a_I", "%D" → "_pct_D") so we match the entries that
+        # codegen stores under translated names.
+        from m2py.core.names import NameTranslator
+
+        py_name = NameTranslator.to_python(base_name)
+        arr = _scope.get(py_name, MArray())
         if not isinstance(arr, MArray):
             # Non-MArray value: defined with no descendants if truthy, else undefined
             if arr:
@@ -4904,10 +4909,12 @@ class MUMPSRuntime:
             if not key:
                 # Naked reference - resolve using the naked indicator
                 resolved_name, full_subs = self._globals.resolve_naked(subs)
-                return m_order_global(
+                _result = m_order_global(
                     self._globals, resolved_name, full_subs, direction
                 )
-            return m_order_global(self._globals, key, subs, direction)
+                return _result
+            _result = m_order_global(self._globals, key, subs, direction)
+            return _result
 
         arr = _scope.get(base_name, MArray())
         if not isinstance(arr, MArray):
@@ -5154,8 +5161,11 @@ class MUMPSRuntime:
                 return m_query_global(self._globals, resolved_name, full_subs)
             return m_query_global(self._globals, key, all_subs)
 
-        # Handle local variables
-        arr = _scope.get(base_name, MArray())
+        # Handle local variables – translate MUMPS name to Python scope key
+        from m2py.core.names import NameTranslator
+
+        py_name = NameTranslator.to_python(base_name)
+        arr = _scope.get(py_name, MArray())
         if not isinstance(arr, MArray):
             return ""
         return m_query(arr, base_name, all_subs)

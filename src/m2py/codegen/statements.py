@@ -171,8 +171,11 @@ def emit_state_to_scope_sync(ctx: "GeneratorContext") -> None:
     """
     if ctx.uses_dynamic_locals:
         ctx.emitter.line("_scope.update({k: v for k, v in state._locals.items()})")
-    elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.state_vars:
-        for var_name in sorted(ctx.state_vars):
+    elif ctx.strategy == GotoStrategy.TRAMPOLINE and (ctx.state_vars or ctx.array_vars):
+        # Sync all RoutineState fields: state_vars (cross-label) + array_vars
+        # (which are always included in RoutineState for subscript access).
+        all_fields = (ctx.state_vars or set()) | (ctx.array_vars or set())
+        for var_name in sorted(all_fields):
             python_name = translate_name(var_name)
             emit_state_var_to_scope(ctx, var_name, python_name)
 
@@ -214,7 +217,11 @@ def emit_state_var_to_scope(
         with ctx.emitter.indented():
             ctx.emitter.line("_m = MArray()")
             ctx.emitter.line(f"_scope[{key!r}] = _m")
-        ctx.emitter.line(f"_m.value = state.{py_name}")
+        # Handle killed variables: K X generates state.X = MArray() even for
+        # simple vars. Extract ._value to propagate None (killed) correctly.
+        # Must use ._value (not .value) because .value converts None→''.
+        ctx.emitter.line(f"_v = state.{py_name}")
+        ctx.emitter.line("_m.value = _v._value if isinstance(_v, MArray) else _v")
 
 
 def emit_scope_to_state_sync(ctx: "GeneratorContext") -> None:
@@ -241,8 +248,11 @@ def emit_scope_to_state_sync(ctx: "GeneratorContext") -> None:
                 ctx.emitter.line("_m = MArray()")
                 ctx.emitter.line("_m.value = _v")
                 ctx.emitter.line("state._locals[_k] = _m")
-    elif ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.state_vars:
-        for var_name in sorted(ctx.state_vars):
+    elif ctx.strategy == GotoStrategy.TRAMPOLINE and (ctx.state_vars or ctx.array_vars):
+        # Sync all RoutineState fields: state_vars (cross-label) + array_vars
+        # (which are always included in RoutineState for subscript access).
+        all_fields = (ctx.state_vars or set()) | (ctx.array_vars or set())
+        for var_name in sorted(all_fields):
             python_name = translate_name(var_name)
             emit_scope_var_to_state(ctx, var_name, python_name)
 

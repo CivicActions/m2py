@@ -624,6 +624,12 @@ def fileman_bootstrap(munit_runtime):
     # routines that X ^%ZOSF("TEST") or read ^%ZOSF("OS") will error.
     _bootstrap_zosf(munit_runtime)
 
+    # ^DIBT(0) — Sort Template file header.  ^DIC LAYGO needs this to
+    # allocate new IENs when creating sort templates (e.g. BUILDNEW^DIBTED).
+    # We set a minimal header with IEN counter at 0 rather than loading the
+    # full 15K-line 0.401+SORT TEMPLATE.zwr.
+    munit_runtime.globals.set("DIBT", ("0",), "SORT TEMPLATE^.401I^0^0")
+
     # Load DMUDIC00 test fixture data (files 1009.801/1009.802) if available.
     # This ZWR was captured from YDB running the real DMUFINIT chain — it
     # contains ^DD, ^DIC, and ^DMU entries for the Broken File and Shadow

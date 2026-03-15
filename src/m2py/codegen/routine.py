@@ -1092,7 +1092,9 @@ class RoutineGenerator:
                 # When called from another routine, variables may already exist in _scope.
                 emit_scope_to_state_sync(ctx)
                 if not ctx.uses_dynamic_locals:
-                    for var_name in sorted(ctx.state_vars):
+                    for var_name in sorted(
+                        (ctx.state_vars or set()) | (ctx.array_vars or set())
+                    ):
                         py_name = translate_name(var_name)
                         emit_scope_var_to_state(ctx, var_name, py_name)
                 # Target can be str (label) or int (line number)
@@ -1161,7 +1163,9 @@ class RoutineGenerator:
                         # Sync state back to _scope BEFORE re-raising
                         # Static vars need explicit sync when not using dynamic locals
                         if not ctx.uses_dynamic_locals:
-                            for var_name in sorted(ctx.state_vars):
+                            for var_name in sorted(
+                                (ctx.state_vars or set()) | (ctx.array_vars or set())
+                            ):
                                 py_name = translate_name(var_name)
                                 emit_state_var_to_scope(ctx, var_name, py_name)
                         emit_state_to_scope_sync(ctx)
@@ -1203,7 +1207,9 @@ class RoutineGenerator:
                 # Sync state back to _scope before returning for cross-routine visibility
                 emit_state_to_scope_sync(ctx)
                 if not ctx.uses_dynamic_locals:
-                    for var_name in sorted(ctx.state_vars):
+                    for var_name in sorted(
+                        (ctx.state_vars or set()) | (ctx.array_vars or set())
+                    ):
                         py_name = translate_name(var_name)
                         emit_state_var_to_scope(
                             ctx, var_name, py_name, scope_key=var_name
@@ -1245,7 +1251,9 @@ class RoutineGenerator:
                 # Initialize state from _scope for cross-routine visibility
                 emit_scope_to_state_sync(ctx)
                 if not ctx.uses_dynamic_locals:
-                    for var_name in sorted(ctx.state_vars):
+                    for var_name in sorted(
+                        (ctx.state_vars or set()) | (ctx.array_vars or set())
+                    ):
                         py_name = translate_name(var_name)
                         emit_scope_var_to_state(ctx, var_name, py_name)
 
@@ -1321,7 +1329,9 @@ class RoutineGenerator:
                 with ctx.emitter.indented():
                     # Static state→scope sync before re-raising
                     if not ctx.uses_dynamic_locals:
-                        for var_name in sorted(ctx.state_vars):
+                        for var_name in sorted(
+                            (ctx.state_vars or set()) | (ctx.array_vars or set())
+                        ):
                             py_name = translate_name(var_name)
                             emit_state_var_to_scope(ctx, var_name, py_name)
                     emit_state_to_scope_sync(ctx)
@@ -1352,7 +1362,9 @@ class RoutineGenerator:
                 # Sync state back to _scope before returning
                 emit_state_to_scope_sync(ctx)
                 if not ctx.uses_dynamic_locals:
-                    for var_name in sorted(ctx.state_vars):
+                    for var_name in sorted(
+                        (ctx.state_vars or set()) | (ctx.array_vars or set())
+                    ):
                         py_name = translate_name(var_name)
                         emit_state_var_to_scope(ctx, var_name, py_name)
                 # Return extrinsic function return value if one was stored

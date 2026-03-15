@@ -54,7 +54,7 @@ END
         assert "state.A" in python_code
         # Should have MArray wrapping for state→scope sync before the call
         assert "_scope['A']" in python_code
-        assert "_m.value = state.A" in python_code
+        assert "_m.value = _v._value if isinstance(_v, MArray) else _v" in python_code
 
     def test_trampoline_external_do_emits_scope_to_state_after(self, generate_python):
         """TRAMPOLINE routine syncs scope→state AFTER external DO call.
@@ -215,3 +215,62 @@ SUB
         result = execute_mumps(source)
         assert result.success is True
         assert result.output == "dev term 11"
+
+    def test_kill_propagation_across_goto(self, execute_mumps):
+        """KILL X in one label makes $D(X)=0 in subsequent GOTO target.
+
+        This tests the ._value kill propagation fix: when K X sets
+        state.X = MArray() (_value=None), the state→scope sync must
+        propagate None (not '') so $DATA returns 0 in the target label.
+        """
+        source = """\
+TEST
+ S X=42
+ K X
+ G DONE
+DONE
+ W $D(X)
+ Q
+"""
+        result = execute_mumps(source)
+        assert result.success is True
+        assert result.output == "0"
+
+    def test_kill_then_set_across_goto(self, execute_mumps):
+        """SET after KILL: final value visible after GOTO."""
+        source = """\
+TEST
+ S X=1
+ K X
+ S X=99
+ G DONE
+DONE
+ W X," ",$D(X)
+ Q
+"""
+        result = execute_mumps(source)
+        assert result.success is True
+        assert result.output == "99 1"
+
+    def test_array_var_only_synced_across_goto(self, execute_mumps):
+        """Variable only in array_vars (not state_vars) is synced across GOTO.
+
+        This tests that array_vars are included in the sync loops: a variable
+        with subscripts that crosses label boundaries must be synced even if
+        it only appears in array_vars (not state_vars).
+        """
+        source = """\
+TEST
+ S DICO(1)=0
+ D SUB
+ G DONE
+DONE
+ W DICO(1)
+ Q
+SUB
+ S DICO(1)=42
+ Q
+"""
+        result = execute_mumps(source)
+        assert result.success is True
+        assert result.output == "42"
