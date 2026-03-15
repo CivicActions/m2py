@@ -277,7 +277,7 @@ class MumpsAutoImporter(importlib.abc.MetaPathFinder):
                 return
             except Exception:
                 self._failed.add(fullname)
-                logger.debug(
+                logger.warning(
                     "Override load failed for %s (%s) — skipping",
                     fullname,
                     py_override.name,
@@ -311,7 +311,7 @@ class MumpsAutoImporter(importlib.abc.MetaPathFinder):
                 module.__dict__.update(real.__dict__)
         except Exception:
             self._failed.add(fullname)
-            logger.debug(
+            logger.warning(
                 "Auto-load failed for %s (%s) — skipping",
                 fullname,
                 m_file.name,
