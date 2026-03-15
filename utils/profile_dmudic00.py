@@ -151,16 +151,16 @@ def main():
 
     print(f"[{time.monotonic() - t0:.1f}s] Routines loaded, RSS: {get_rss_mb():.1f} MB")
 
-    # --- Phase 5: Load DMUDIC00 and patch STARTUP/SHUTDOWN ---
-    from tests.functional.munit.lib.adapter import _patch_startup_shutdown
+    # --- Phase 5: Load DMUDIC00 and install AC xref hook ---
+    from tests.functional.munit.conftest import _install_ac_xref_hook
 
     vista_dir = Path(os.environ.get("VISTA_DIR", str(vista_deps / "VistA")))
     testing_dir = vista_dir / "Packages" / "VA FileMan" / "Testing" / "MUnit"
     dmudic00_src = testing_dir / "DMUDIC00.m"
 
     _load_routine(dmudic00_src, "DMUDIC00")
-    test_module = sys.modules.get("DMUDIC00")
-    _patch_startup_shutdown("DMUDIC00", test_module, runtime)
+    _install_ac_xref_hook(runtime.globals)
+    test_module = sys.modules["DMUDIC00"]
 
     print(f"[{time.monotonic() - t0:.1f}s] DMUDIC00 loaded, RSS: {get_rss_mb():.1f} MB")
 

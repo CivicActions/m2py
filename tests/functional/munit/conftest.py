@@ -540,7 +540,7 @@ def fileman_bootstrap(munit_runtime):
         logger.info("Loaded %d FileMan globals from combined fileman.zwr", total)
         _bootstrap_package_file(munit_runtime)
         _bootstrap_zosf(munit_runtime)
-        _load_dmu_fixtures(munit_runtime)
+        _install_ac_xref_hook(munit_runtime.globals)
         return munit_runtime
 
     # Option 2: VistA-M individual ZWR files
@@ -630,34 +630,60 @@ def fileman_bootstrap(munit_runtime):
     # full 15K-line 0.401+SORT TEMPLATE.zwr.
     munit_runtime.globals.set("DIBT", ("0",), "SORT TEMPLATE^.401I^0^0")
 
-    # Load DMUDIC00 test fixture data (files 1009.801/1009.802) if available.
-    # This ZWR was captured from YDB running the real DMUFINIT chain — it
-    # contains ^DD, ^DIC, and ^DMU entries for the Broken File and Shadow
-    # State test fixtures, including all cross-reference indexes.
-    _load_dmu_fixtures(munit_runtime)
+    # Install AC xref hook — environmental compensation needed by DMUFINIT.
+    # When DMUDIC00's STARTUP calls D ^DMUFINIT, the DIFROM installer creates
+    # new Index file (.11) entries via FILE^DICN + MERGE.  MERGE bypasses
+    # cross-references, so the AC xref never fires.  This hook compensates
+    # by creating ^DD("IX","AC",rootfile,ien) entries as indexes are written.
+    # The same gap exists in native YottaDB (covered by pre-loaded AC data
+    # from 0.11+INDEX.zwr); this hook covers dynamically-created entries.
+    _install_ac_xref_hook(munit_runtime.globals)
 
     return munit_runtime
 
 
-def _load_dmu_fixtures(rt) -> int:
-    """Load DMUDIC00 test fixture globals (files 1009.801/1009.802).
+def _install_ac_xref_hook(backend) -> None:
+    """Hook the global backend to fire AC xref on ^DD("IX",ien,0) writes.
 
-    Returns the number of global nodes loaded.
+    This is environmental compensation (not an m2py bug workaround).
+    DDIXIN^DIFROMSX creates Index file (.11) entries via FILE^DICN + MERGE.
+    MERGE bypasses cross-references, so the .51 (Root File) AC xref never
+    fires.  In a full VistA environment, pre-existing AC entries from
+    0.11+INDEX.zwr cover this gap; this hook covers dynamically-created
+    index entries from DMUFINIT.
+
+    Creates ^DD("IX","AC",rootfile,ien)="" whenever the 0-node of an
+    index entry is written with a non-empty .51 value (piece 9).
+
+    Idempotent — safe to call multiple times on the same backend.
     """
-    from m2py.runtime.zwr import import_zwr
+    if getattr(backend, "_ac_xref_hook_installed", False):
+        return
+    original_set = backend.set
 
-    dmu_zwr = _GLOBALS_DIR / "dmudic00_fixtures.zwr"
-    if not dmu_zwr.exists():
-        logger.info(
-            "DMUDIC00 fixtures not found (%s) — DIC tests will rely on "
-            "DMUFINIT transpilation (likely to fail)",
-            dmu_zwr,
-        )
-        return 0
+    def _hooked_set(name: str, subscripts: tuple, value: str) -> None:
+        original_set(name, subscripts, value)
 
-    count = import_zwr(rt.globals, dmu_zwr)
-    logger.info("Loaded %d DMUDIC00 fixture nodes (files 1009.801/1009.802)", count)
-    return count
+        # Detect writes to ^DD("IX",<numeric-ien>,"0")
+        if (
+            name == "DD"
+            and len(subscripts) == 3
+            and subscripts[0] == "IX"
+            and subscripts[2] == "0"
+        ):
+            ien = subscripts[1]
+            try:
+                if float(ien) > 0:
+                    parts = str(value).split("^") if value else []
+                    # .51 (Root File) is at piece 9 (index 8) of the 0-node
+                    if len(parts) >= 9 and parts[8]:
+                        root_file = parts[8][:30]
+                        original_set("DD", ("IX", "AC", root_file, ien), "")
+            except (ValueError, TypeError):
+                pass  # Not a numeric IEN
+
+    backend.set = _hooked_set
+    backend._ac_xref_hook_installed = True
 
 
 def _bootstrap_package_file(rt) -> None:

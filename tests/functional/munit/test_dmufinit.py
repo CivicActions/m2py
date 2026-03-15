@@ -5,12 +5,7 @@ Validates that the DMUFINIT package installer chain — which creates test files
 when transpiled by m2py as when run in native YottaDB.
 
 The golden reference is ``baselines/globals/dmudic00_fixtures.zwr``, captured
-from YDB Docker.  Once this test passes fully, the ZWR file, capture script,
-and STARTUP/SHUTDOWN bypass infrastructure become redundant and can be removed.
-
-The static ZWR loader in conftest.py (``_load_dmu_fixtures``) remains the
-fast-path for dependent tests like DMUDIC00 when ``-m slow`` is not active.
-This test independently validates that the transpiled DMUFINIT chain produces
+from YDB Docker.  This test validates that the transpiled DMUFINIT chain produces
 the same globals, proving the ZWR data is reproducible from source.
 
 Execution chain::
@@ -32,6 +27,8 @@ import time
 from pathlib import Path
 
 import pytest
+
+from .conftest import _install_ac_xref_hook
 
 logger = logging.getLogger(__name__)
 
@@ -263,65 +260,6 @@ def _diff_globals(
 
 
 # ---------------------------------------------------------------------------
-# AC xref hook — environmental compensation, NOT an m2py bug workaround
-# ---------------------------------------------------------------------------
-
-
-def _install_ac_xref_hook(backend) -> None:
-    """Hook the global backend to fire AC xref on ^DD("IX",ien,0) writes.
-
-    **This is NOT an m2py bug workaround.**  It compensates for the same
-    environmental limitation that exists in native YottaDB: DDIXIN^DIFROMSX
-    creates Index file (.11) entries via FILE^DICN + MERGE.  MERGE bypasses
-    cross-references, so the .51 (Root File) AC xref never fires.  IX1^DIK
-    is supposed to re-fire all xrefs afterward, but ^DD(.11,0,"DIK") is
-    undefined in both YDB and m2py — meaning DH is NEWed but never SET in
-    the non-compiled fallback path, and old-style xref iteration silently
-    finds nothing.  In a full VistA environment, pre-existing AC entries
-    from 0.11+INDEX.zwr cover this gap; the bootstrap loads that file,
-    but dynamically-created index entries from DMUFINIT still need this
-    hook.
-
-    This hook creates ^DD("IX","AC",rootfile,ien)="" whenever the
-    0-node of an index entry is written with a non-empty .51 value
-    (piece 9).  This allows INDEX^DIKC / LOADALL^DIKC1 to discover
-    new-style indexes when IXALL fires on data files later in DMUFINIT.
-    """
-    original_set = backend.set
-    _ac_count = [0]  # mutable counter for closure
-
-    def _hooked_set(name: str, subscripts: tuple, value: str) -> None:
-        original_set(name, subscripts, value)
-
-        # Detect writes to ^DD("IX",<numeric-ien>,"0")
-        if (
-            name == "DD"
-            and len(subscripts) == 3
-            and subscripts[0] == "IX"
-            and subscripts[2] == "0"
-        ):
-            ien = subscripts[1]
-            # Only process numeric IENs (skip "AC", "B", "BB" etc.)
-            try:
-                if float(ien) > 0:
-                    parts = str(value).split("^") if value else []
-                    # .51 (Root File) is at piece 9 (index 8) of the 0-node
-                    if len(parts) >= 9 and parts[8]:
-                        root_file = parts[8][:30]
-                        original_set("DD", ("IX", "AC", root_file, ien), "")
-                        _ac_count[0] += 1
-                        logger.warning(
-                            'AC xref hook: ^DD("IX","AC",%s,%s)=""',
-                            root_file,
-                            ien,
-                        )
-            except (ValueError, TypeError):
-                pass  # Not a numeric IEN
-
-    backend.set = _hooked_set
-
-
-# ---------------------------------------------------------------------------
 # Progress monitoring
 # ---------------------------------------------------------------------------
 
@@ -540,3 +478,10 @@ class TestDMUFINIT:
             "DMUFINIT produced %d globals matching ZWR baseline exactly",
             len(actual),
         )
+
+        # --- Clean up DMU data to prevent cross-test contamination ---
+        # test_dmufinit runs before DMUDIC00 (alphabetical order) and shares
+        # the session-scoped runtime.  Reindexing above creates index entries
+        # that persist and corrupt DMUDIC00's fresh DMUFINIT if not cleared.
+        for global_name, first_sub in _DMU_GLOBAL_PREFIXES:
+            runtime.globals.kill(global_name, (first_sub,))

@@ -394,65 +394,6 @@ def _resolve_entry_function(
 
 
 # =============================================================================
-# Fixture data overrides
-# =============================================================================
-
-# Routines whose STARTUP creates test data that we pre-load from ZWR.
-# Maps routine_name → global key to check for pre-loaded data.
-_FIXTURE_OVERRIDES: dict[str, tuple[str, tuple[str, ...]]] = {
-    # DMUDIC00.STARTUP calls D ^DMUFINIT which creates files 1009.801/1009.802.
-    # If ^DMU(1009.802,0) already exists (loaded from ZWR), skip STARTUP.
-    "DMUDIC00": ("DMU", ("1009.802", "0")),
-}
-
-
-def _patch_startup_shutdown(
-    routine_name: str,
-    module: "types.ModuleType | None",
-    runtime: "MUMPSRuntime",  # noqa: F821
-) -> None:
-    """Replace STARTUP/SHUTDOWN with no-ops when fixture data is pre-loaded.
-
-    DMUDIC00's STARTUP calls ``D ^DMUFINIT`` — a complex DIFROM-based
-    installer that is not yet transpilable.  Since the test data is
-    pre-loaded from a ZWR capture, we skip STARTUP to avoid a crash.
-    SHUTDOWN (``EN^DIU0``, which deletes the test files) is also skipped
-    to preserve pre-loaded data for the session.
-    """
-    if module is None or routine_name not in _FIXTURE_OVERRIDES:
-        return
-
-    global_name, subscripts = _FIXTURE_OVERRIDES[routine_name]
-    # Check if the fixture data is already present in the runtime
-    try:
-        existing = runtime.globals.get(global_name, subscripts)
-        if not existing:
-            return  # Data not loaded — let STARTUP try
-    except Exception:
-        return  # Data not loaded — let STARTUP try
-
-    # Data is pre-loaded — patch STARTUP and SHUTDOWN to stubs
-    def _noop_startup(_rt, _scope, *args, **kwargs):
-        logger.info(
-            "%s.STARTUP replaced — fixture data pre-loaded",
-            routine_name,
-        )
-
-    def _noop_shutdown(_rt, _scope, *args, **kwargs):
-        logger.info(
-            "%s.SHUTDOWN skipped — preserving pre-loaded fixture data",
-            routine_name,
-        )
-
-    if hasattr(module, "STARTUP"):
-        module.STARTUP = _noop_startup
-        logger.debug("Patched %s.STARTUP → no-op (ZWR data present)", routine_name)
-    if hasattr(module, "SHUTDOWN"):
-        module.SHUTDOWN = _noop_shutdown
-        logger.debug("Patched %s.SHUTDOWN → no-op (ZWR data present)", routine_name)
-
-
-# =============================================================================
 # Transpile and Execute
 # =============================================================================
 
@@ -513,11 +454,6 @@ def transpile_and_execute(
     # Get the test module's entry function — this runs the preamble
     # (IO, DT^DICRW, etc.) and calls EN^%ut internally.
     test_module = sys.modules.get(py_module_name)
-
-    # Patch STARTUP/SHUTDOWN for routines whose fixture data is pre-loaded
-    # from ZWR (e.g., DMUDIC00).  Without this, STARTUP calls D ^DMUFINIT
-    # which fails because DMUFINIT's DIFROM chain isn't fully transpilable.
-    _patch_startup_shutdown(routine_name, test_module, runtime)
 
     # Determine the correct entry point from the invocation pattern:
     #   D ^ROUTINE             → _entry_function (routine's first label)
