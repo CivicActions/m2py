@@ -68,9 +68,7 @@ _INVOCATIONS = {
 # DMUDIC00's FINDC test iterates ~3,300 county records with computed-field
 # evaluation per entry ($ORDER scan).  300-min ceiling prevents a runaway hang
 # if something regresses while giving CI enough headroom to complete.
-_TIMEOUTS: dict[str, float] = {
-    "DMUDIC00": 18000,
-}
+_TIMEOUTS: dict[str, float] = {}
 
 
 def _make_config(routine_name: str) -> TestRoutineConfig:

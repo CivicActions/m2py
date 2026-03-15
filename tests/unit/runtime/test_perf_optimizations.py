@@ -370,6 +370,207 @@ class TestMumpsCollationKeyCache:
 
 
 # ---------------------------------------------------------------------------
+# Sort cache atomicity: single WeakKeyDictionary replaces two parallel dicts
+# ---------------------------------------------------------------------------
+
+
+class TestSortCacheAtomicity:
+    """The _sort_cache stores (sorted_keys, sorted_ck) tuples in a single
+    WeakKeyDictionary, preventing the GC race condition where two parallel
+    WeakKeyDictionary instances could become inconsistent when one weakref
+    callback fires before the other.
+
+    Regression: https://github.com/CivicActions/m2py/issues/26
+    Before this fix, _sorted_keys_cache.get(node) could succeed while
+    _sorted_ck_cache[node] raised KeyError with a weakref as the key,
+    crashing MUnit tests (%utt1, ZZRGUTEX, ZZDGPTCO1, %uttcovr).
+    """
+
+    def _make_storage(self):
+        from m2py.runtime.globals import InMemoryGlobalStorage
+
+        return InMemoryGlobalStorage()
+
+    def test_sort_cache_is_single_dict(self):
+        """_sort_cache is one dict, not two parallel dicts."""
+        gs = self._make_storage()
+        assert hasattr(gs, "_sort_cache")
+        assert not hasattr(gs, "_sorted_keys_cache")
+        assert not hasattr(gs, "_sorted_ck_cache")
+
+    def test_order_populates_sort_cache_as_tuple(self):
+        """$ORDER populates _sort_cache with (keys, collation_keys) tuple."""
+        gs = self._make_storage()
+        gs.set("G", ("a",), "1")
+        gs.set("G", ("b",), "2")
+        gs.set("G", ("c",), "3")
+
+        # First $ORDER call populates cache
+        result = gs.order("G", ("",))
+        assert result == "a"
+
+        # Cache should contain a tuple entry for the root node
+        root = gs._globals["G"]
+        cached = gs._sort_cache.get(root)
+        assert cached is not None
+        assert isinstance(cached, tuple)
+        assert len(cached) == 2
+        sorted_keys, sorted_ck = cached
+        assert sorted_keys == ["a", "b", "c"]
+        assert len(sorted_ck) == 3
+
+    def test_order_cache_hit_returns_correct_results(self):
+        """Sequential $ORDER calls use cache and return correct keys."""
+        gs = self._make_storage()
+        gs.set("G", ("1",), "v1")
+        gs.set("G", ("2",), "v2")
+        gs.set("G", ("3",), "v3")
+
+        assert gs.order("G", ("",)) == "1"
+        assert gs.order("G", ("1",)) == "2"
+        assert gs.order("G", ("2",)) == "3"
+        assert gs.order("G", ("3",)) == ""
+
+    def test_set_updates_sort_cache_in_place(self):
+        """Setting a new key updates both sorted_keys and sorted_ck in the
+        cached tuple via _sorted_cache_insert."""
+        gs = self._make_storage()
+        gs.set("G", ("a",), "1")
+        gs.set("G", ("c",), "3")
+
+        # Trigger cache population
+        gs.order("G", ("",))
+        root = gs._globals["G"]
+        cached_before = gs._sort_cache.get(root)
+        assert cached_before is not None
+
+        # Insert a new key between "a" and "c"
+        gs.set("G", ("b",), "2")
+
+        # Cache should be updated in-place
+        cached_after = gs._sort_cache.get(root)
+        assert cached_after is not None
+        assert cached_after[0] == ["a", "b", "c"]
+        assert len(cached_after[1]) == 3
+
+    def test_kill_invalidates_sort_cache(self):
+        """Kill removes the node's sort cache entry."""
+        gs = self._make_storage()
+        gs.set("G", ("a",), "1")
+        gs.set("G", ("b",), "2")
+
+        # Populate cache
+        gs.order("G", ("",))
+        root = gs._globals["G"]
+        assert gs._sort_cache.get(root) is not None
+
+        # Kill — should invalidate cache
+        gs.kill("G", ("a",))
+        assert gs._sort_cache.get(root) is None
+
+    def test_kill_ancestor_cleanup_invalidates_cache(self):
+        """Kill that cleans up empty ancestors also invalidates their cache."""
+        gs = self._make_storage()
+        gs.set("G", ("a", "1"), "v1")
+
+        # Populate cache for the "a" parent
+        gs.order("G", ("a", ""))
+        a_node = gs._globals["G"]._children["a"]
+        assert gs._sort_cache.get(a_node) is not None
+
+        # Kill the only child — "a" becomes empty and gets cleaned up
+        gs.kill("G", ("a", "1"))
+        # "a" node itself should be removed (empty ancestor cleanup)
+        if "G" in gs._globals:
+            assert "a" not in gs._globals["G"]._children
+
+    def test_gc_cleans_sort_cache_entry(self):
+        """When an MArray node is garbage-collected, its _sort_cache entry
+        is automatically removed by WeakKeyDictionary."""
+        import gc
+
+        gs = self._make_storage()
+        gs.set("G", ("a",), "1")
+
+        # Populate cache
+        gs.order("G", ("",))
+        assert len(gs._sort_cache) > 0
+
+        # Kill entire global — removes all references to nodes
+        gs.kill("G", ())
+        gc.collect()
+
+        # Cache should be empty after GC
+        assert len(gs._sort_cache) == 0
+
+    def test_iter_keys_populates_sort_cache(self):
+        """iter_keys() populates _sort_cache with tuple entries."""
+        gs = self._make_storage()
+        gs.set("G", ("x",), "1")
+        gs.set("G", ("y",), "2")
+
+        keys = list(gs.iter_keys("G", ()))
+        assert keys == ["x", "y"]
+
+        root = gs._globals["G"]
+        cached = gs._sort_cache.get(root)
+        assert cached is not None
+        assert isinstance(cached, tuple)
+        assert cached[0] == ["x", "y"]
+
+    def test_query_populates_sort_cache(self):
+        """$QUERY populates _sort_cache entries during traversal."""
+        gs = self._make_storage()
+        gs.set("G", ("1", "a"), "v1")
+        gs.set("G", ("1", "b"), "v2")
+
+        result = gs.query("G", ("",))
+        assert result  # should find a node
+
+        # At least some nodes should have cache entries
+        assert len(gs._sort_cache) > 0
+
+    def test_reverse_order_with_cache(self):
+        """Reverse $ORDER works correctly with cached sort data."""
+        gs = self._make_storage()
+        gs.set("G", ("a",), "1")
+        gs.set("G", ("b",), "2")
+        gs.set("G", ("c",), "3")
+
+        # Forward to populate cache
+        gs.order("G", ("",))
+
+        # Reverse should use same cache
+        assert gs.order("G", ("",), direction=-1) == "c"
+        assert gs.order("G", ("c",), direction=-1) == "b"
+        assert gs.order("G", ("b",), direction=-1) == "a"
+        assert gs.order("G", ("a",), direction=-1) == ""
+
+    def test_concurrent_set_and_order_consistency(self):
+        """Interleaved set() and order() calls maintain consistent results."""
+        gs = self._make_storage()
+
+        # Build up data with interleaved order calls
+        gs.set("G", ("1",), "v1")
+        assert gs.order("G", ("",)) == "1"
+
+        gs.set("G", ("3",), "v3")
+        assert gs.order("G", ("1",)) == "3"
+
+        gs.set("G", ("2",), "v2")
+        # "2" was inserted between "1" and "3" in the cache
+        assert gs.order("G", ("1",)) == "2"
+        assert gs.order("G", ("2",)) == "3"
+
+    def test_sort_cache_empty_children(self):
+        """$ORDER on a node with no children returns empty string."""
+        gs = self._make_storage()
+        gs.set("G", (), "root_val")
+        # No subscripted children — $ORDER should return ""
+        assert gs.order("G", ("",)) == ""
+
+
+# ---------------------------------------------------------------------------
 # XECUTE fn_cache checked before parse/compile
 # ---------------------------------------------------------------------------
 

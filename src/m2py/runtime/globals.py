@@ -19,7 +19,15 @@ import bisect
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterator, List, Protocol, TextIO, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Iterator,
+    List,
+    Protocol,
+    TextIO,
+    Tuple,
+    runtime_checkable,
+)
 from weakref import WeakKeyDictionary
 
 # Import collation key and query helper for $ORDER/$QUERY
@@ -570,17 +578,14 @@ class InMemoryGlobalStorage:
         self._last_global_ref_subs: tuple[str, ...] = ()
 
         # Sorted-keys cache: maps each MArray *node* (the parent whose children
-        # are being iterated) to its pre-sorted children-key list.  A
-        # WeakKeyDictionary ensures the cache is automatically cleaned up when
-        # the node is garbage-collected.  Entries are invalidated whenever a
-        # child of that node is added or removed.
-        self._sorted_keys_cache: WeakKeyDictionary["MArray", List] = WeakKeyDictionary()
-
-        # Parallel cache of pre-computed collation keys for each sorted node.
-        # _sorted_ck_cache[node][i] = _mumps_collation_key(_sorted_keys_cache[node][i])
-        # Allows binary-search in order() without calling _mumps_collation_key
-        # on every comparison step (O(log N) instead of O(N) per $ORDER call).
-        self._sorted_ck_cache: WeakKeyDictionary["MArray", List] = WeakKeyDictionary()
+        # are being iterated) to a (sorted_keys, sorted_collation_keys) tuple.
+        # A WeakKeyDictionary ensures the cache is automatically cleaned up when
+        # the node is garbage-collected.  Using a single dict (instead of two
+        # parallel dicts) prevents a GC race where one weakref callback fires
+        # before the other, leaving inconsistent state.
+        self._sort_cache: WeakKeyDictionary["MArray", Tuple[List, List]] = (
+            WeakKeyDictionary()
+        )
 
     @property
     def _naked_indicator(self) -> tuple[str, tuple[str, ...]] | None:
@@ -742,18 +747,18 @@ class InMemoryGlobalStorage:
                 # pattern (keys 1,2,3,...) the insertion point is always
                 # at the end → O(1) amortized; otherwise O(log N) search
                 # + O(N) shift — better than O(N log N) full re-sort.
-                cached = self._sorted_keys_cache.get(node)
+                cached = self._sort_cache.get(node)
                 if cached is not None:
-                    _sorted_cache_insert(cached, self._sorted_ck_cache[node], sub)
+                    _sorted_cache_insert(cached[0], cached[1], sub)
             node = node._children[sub]
 
         # Set value at final subscript
         last_sub = subscripts[-1]
         if last_sub not in node._children:
             node._children[last_sub] = MArray()
-            cached = self._sorted_keys_cache.get(node)
+            cached = self._sort_cache.get(node)
             if cached is not None:
-                _sorted_cache_insert(cached, self._sorted_ck_cache[node], last_sub)
+                _sorted_cache_insert(cached[0], cached[1], last_sub)
         node._children[last_sub]._value = value
 
     def kill(self, name: str, subscripts: tuple[str, ...]) -> None:
@@ -790,8 +795,7 @@ class InMemoryGlobalStorage:
         last_sub = subscripts[-1]
         if last_sub in node._children:
             del node._children[last_sub]
-            self._sorted_keys_cache.pop(node, None)
-            self._sorted_ck_cache.pop(node, None)
+            self._sort_cache.pop(node, None)
 
         # Clean up empty ancestor nodes (reverse order - leaf to root)
         # Node is empty if it has no value AND no children
@@ -800,8 +804,7 @@ class InMemoryGlobalStorage:
             child = parent._children[child_key]
             if child._value is None and not child._children:
                 del parent._children[child_key]
-                self._sorted_keys_cache.pop(parent, None)
-                self._sorted_ck_cache.pop(parent, None)
+                self._sort_cache.pop(parent, None)
             else:
                 break  # Stop if we hit a non-empty node
 
@@ -921,14 +924,13 @@ class InMemoryGlobalStorage:
         # Use a per-node cache so that sequential $ORDER calls over the same
         # level sort only once instead of on every call (O(N²) → O(N log N)).
         # Also cache pre-computed collation keys for O(log N) binary search.
-        sorted_fwd = self._sorted_keys_cache.get(node)
-        if sorted_fwd is None:
+        cached = self._sort_cache.get(node)
+        if cached is None:
             sorted_fwd = sorted(node._children.keys(), key=_mumps_collation_key)
             sorted_ck = [_mumps_collation_key(k) for k in sorted_fwd]
-            self._sorted_keys_cache[node] = sorted_fwd
-            self._sorted_ck_cache[node] = sorted_ck
+            self._sort_cache[node] = (sorted_fwd, sorted_ck)
         else:
-            sorted_ck = self._sorted_ck_cache[node]
+            sorted_fwd, sorted_ck = cached
 
         if not sorted_fwd:
             return ""
@@ -992,12 +994,13 @@ class InMemoryGlobalStorage:
                 return
             node = node._children[sub]
 
-        sorted_fwd = self._sorted_keys_cache.get(node)
-        if sorted_fwd is None:
+        cached = self._sort_cache.get(node)
+        if cached is None:
             sorted_fwd = sorted(node._children.keys(), key=_mumps_collation_key)
             sorted_ck = [_mumps_collation_key(k) for k in sorted_fwd]
-            self._sorted_keys_cache[node] = sorted_fwd
-            self._sorted_ck_cache[node] = sorted_ck
+            self._sort_cache[node] = (sorted_fwd, sorted_ck)
+        else:
+            sorted_fwd = cached[0]
         keys = sorted_fwd if direction == 1 else reversed(sorted_fwd)
         for key in keys:
             yield m_format_output(key)
@@ -1028,7 +1031,7 @@ class InMemoryGlobalStorage:
                 [],
                 (),
                 at_start=True,
-                _sort_cache=self._sorted_keys_cache,
+                _sort_cache=self._sort_cache,
             )
         else:
             # Find next valued node after the given subscripts
@@ -1037,7 +1040,7 @@ class InMemoryGlobalStorage:
                 [],
                 subscripts,
                 at_start=False,
-                _sort_cache=self._sorted_keys_cache,
+                _sort_cache=self._sort_cache,
             )
 
         if result is None:

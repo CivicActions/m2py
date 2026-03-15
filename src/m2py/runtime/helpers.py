@@ -632,7 +632,7 @@ def _find_next_valued_node(
         start_path: Starting point for search (find nodes after this)
         at_start: True if we should search from beginning of this subtree
         _sort_cache: Optional WeakKeyDictionary for caching per-node sorted keys.
-            Pass the storage's _sorted_keys_cache to avoid re-sorting across
+            Pass the storage's _sort_cache to avoid re-sorting across
             repeated $QUERY calls on the same global.
 
     Returns:
@@ -643,9 +643,12 @@ def _find_next_valued_node(
     if _sort_cache is not None:
         cached = _sort_cache.get(node)
         if cached is None:
-            cached = sorted(node._children.keys(), key=_mumps_collation_key)
-            _sort_cache[node] = cached
-        keys = cached
+            sorted_fwd = sorted(node._children.keys(), key=_mumps_collation_key)
+            sorted_ck = [_mumps_collation_key(k) for k in sorted_fwd]
+            _sort_cache[node] = (sorted_fwd, sorted_ck)
+            keys = sorted_fwd
+        else:
+            keys = cached[0]
     else:
         keys = sorted(node._children.keys(), key=_mumps_collation_key)
 
