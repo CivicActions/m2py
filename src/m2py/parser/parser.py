@@ -288,6 +288,17 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
                 # Mark this as an inline block now that it has body statements
                 stmt.is_inline_block = True
 
+                # MUMPS: all argumentless DOs on the same line share the
+                # same dot-block.  E.g. ``D  F …  D`` — the trailing D
+                # inside the FOR must execute the same block as the leading D.
+                for pds in post_do_same_line:
+                    nested_do = _find_argumentless_do_for_dot_lines(pds)
+                    if nested_do:
+                        nested_do.body.statements = list(stmt.body.statements)
+                        for child in nested_do.body.statements:
+                            child.scope = nested_do.body
+                        nested_do.is_inline_block = True
+
             result.append(stmt)
             # Re-insert same-line post-DO statements after the DO block
             result.extend(post_do_same_line)

@@ -12,8 +12,7 @@ Test routines and their status:
 - **MXMLPATT** (25 tests): XML Path — fully passing.
   Dependencies loaded (MXMLPATH, %ZOSV, DIALOG globals).
 - **MXMLDOMT** (9 tests): XML DOM Parser — fully passing.
-  File I/O via ``%ZISH`` provided by a Python implementation
-  (zish_impl.py) since ZISHGUX.m's ZEXCEPT scoping isn't yet supported.
+  File I/O via ``%ZISH`` provided by transpiled ZISHGUX.m.
 
 Library routines are loaded from VistA-M via the
 ``mxml_library`` session fixture defined in conftest.py.

@@ -407,14 +407,9 @@ def _register_xml_parser_dependencies() -> None:
     _try_load_routine(_VISTA_M_KERNEL_DIR / "XUSCLEAN.m", "XUSCLEAN")
     _try_load_routine(_VISTA_M_KERNEL_DIR / "ZOSVGTM.m", "%ZOSV")
 
-    # %ZISH — Python implementation because ZISHGUX.m's FTG→READNXT
-    # internal call uses ZEXCEPT scoping that the trampoline codegen
-    # doesn't support yet (READNXT gets its own RoutineState, so %ZA
-    # set by READNXT is invisible to FTG's scope).
-    import sys
-    from .lib import zish_impl
-
-    sys.modules["_pct_ZISH"] = zish_impl
+    # %ZISH — transpiled from ZISHGUX.m (Host File Control for GT.M/YDB)
+    _try_load_routine(_VISTA_M_KERNEL_DIR / "ZISHGUX.m", "%ZISH")
+    _try_load_routine(_VISTA_M_KERNEL_DIR / "ZIS3.m", "%ZIS3")
 
 
 def _register_fileman_dependencies() -> None:
@@ -430,7 +425,7 @@ def _register_fileman_dependencies() -> None:
     3. **%-prefix routines** — explicitly pre-loaded because the auto-importer
        needs the mapping (DIDT→%DT, DIRCR→%RCR)
     """
-    # First load the shared XML Parser deps (includes %ZISH Python impl)
+    # First load the shared XML Parser deps (includes transpiled %ZISH)
     _register_xml_parser_dependencies()
 
     # Install the auto-importer for lazy on-demand transpilation
@@ -510,6 +505,14 @@ def munit_runtime():
 
     runtime = MUMPSRuntime()
     runtime._capture_output = True
+
+    # Set ^XTV(8989.3,1,"DEV") to a writable temp directory so that
+    # $$DEFDIR^%ZISH() returns a valid path for host file I/O.
+    import tempfile
+
+    dev_dir = tempfile.mkdtemp(prefix="munit_dev_") + "/"
+    runtime.globals.set("XTV", ("8989.3", "1", "DEV"), dev_dir)
+
     return runtime
 
 
@@ -886,7 +889,7 @@ def fileman_library(munit_framework, fileman_bootstrap):
     Loads:
     - All FileMan/Kernel dependency routines (DIC, DIQ, %DT, etc.)
     - DMUFINIT chain (test fixture installation routines)
-    - %ZISH Python implementation
+    - %ZISH (transpiled from ZISHGUX.m)
     """
     _register_fileman_dependencies()
 

@@ -8,7 +8,12 @@ import pytest
 from m2py.parser import MUMPSParser
 from m2py.parser.line_parser import parse_commands_from_line
 from m2py.analysis.semantic_analyzer import analyze_command
-from m2py.asg.statements import MDoStatement, MSetStatement, MWriteStatement
+from m2py.asg.statements import (
+    MDoStatement,
+    MForStatement,
+    MSetStatement,
+    MWriteStatement,
+)
 
 
 @pytest.mark.asg
@@ -172,6 +177,127 @@ class TestDoBlockBodyPopulation:
         assert isinstance(inner_do, MDoStatement)
         # Inner DO has: S Y=2, S Z=3
         assert len(inner_do.body.statements) == 2
+
+    def test_do_for_do_shares_dot_block(self):
+        """D  F ...  D — trailing D inside FOR shares the leading D's dot-block.
+
+        In MUMPS, ``D  F I=1:1:3 D`` means:
+          1. Leading D starts the dot-block
+          2. F loops, and the trailing D inside the FOR *also* executes
+             the same dot-block
+        Both argumentless DOs on the same line must share the same body.
+        """
+        parser = MUMPSParser()
+        source = """TEST\tD  F I=1:1:3 D
+ . W I,!
+"""
+        routine = parser.parse(source)
+        stmts = routine.labels[0].body.statements
+
+        # First statement is the leading argumentless DO
+        leading_do = stmts[0]
+        assert isinstance(leading_do, MDoStatement)
+        assert not leading_do.targets  # argumentless
+        assert leading_do.is_inline_block
+        assert len(leading_do.body.statements) == 1
+        assert isinstance(leading_do.body.statements[0], MWriteStatement)
+
+        # Second statement is the FOR loop (same-line post-DO)
+        for_stmt = stmts[1]
+        assert isinstance(for_stmt, MForStatement)
+        # FOR body should contain the trailing argumentless DO
+        assert len(for_stmt.body.statements) == 1
+        inner_do = for_stmt.body.statements[0]
+        assert isinstance(inner_do, MDoStatement)
+        assert not inner_do.targets  # argumentless
+        assert inner_do.is_inline_block
+        # Inner DO must have the same body content as leading DO
+        assert len(inner_do.body.statements) == 1
+        assert isinstance(inner_do.body.statements[0], MWriteStatement)
+
+    def test_do_for_do_multi_line_block(self):
+        """D  F ...  D with multi-line dot-block."""
+        parser = MUMPSParser()
+        source = """TEST\tD  F I=1:1:3 D
+ . S X=I*2
+ . W X,!
+"""
+        routine = parser.parse(source)
+        stmts = routine.labels[0].body.statements
+
+        leading_do = stmts[0]
+        assert isinstance(leading_do, MDoStatement)
+        assert len(leading_do.body.statements) == 2
+
+        for_stmt = stmts[1]
+        assert isinstance(for_stmt, MForStatement)
+        inner_do = for_stmt.body.statements[0]
+        assert isinstance(inner_do, MDoStatement)
+        # Both DOs share the same 2-statement block
+        assert len(inner_do.body.statements) == 2
+        assert isinstance(inner_do.body.statements[0], MSetStatement)
+        assert isinstance(inner_do.body.statements[1], MWriteStatement)
+
+    def test_do_for_do_quit_shares_block(self):
+        """D  F ...  D  Q:cond — trailing D shares block, Q is separate."""
+        parser = MUMPSParser()
+        source = """MGTF\tD  F  D  Q:%ZISHY
+ . W "line",!
+"""
+        routine = parser.parse(source)
+        stmts = routine.labels[0].body.statements
+
+        leading_do = stmts[0]
+        assert isinstance(leading_do, MDoStatement)
+        assert leading_do.is_inline_block
+        assert len(leading_do.body.statements) == 1
+
+        for_stmt = stmts[1]
+        assert isinstance(for_stmt, MForStatement)
+        # FOR body: D (argumentless) and Q:%ZISHY
+        assert len(for_stmt.body.statements) == 2
+        inner_do = for_stmt.body.statements[0]
+        assert isinstance(inner_do, MDoStatement)
+        assert inner_do.is_inline_block
+        assert len(inner_do.body.statements) == 1
+
+    def test_do_without_for_do_no_sharing(self):
+        """Plain D (no trailing D) — no sharing needed."""
+        parser = MUMPSParser()
+        source = """TEST\tD
+ . S X=1
+ S Y=2
+"""
+        routine = parser.parse(source)
+        stmts = routine.labels[0].body.statements
+
+        do_stmt = stmts[0]
+        assert isinstance(do_stmt, MDoStatement)
+        assert do_stmt.is_inline_block
+        assert len(do_stmt.body.statements) == 1
+
+        set_stmt = stmts[1]
+        assert isinstance(set_stmt, MSetStatement)
+
+    def test_do_for_no_inner_do(self):
+        """D  F ... S X=1 — FOR body has no argumentless DO, no sharing."""
+        parser = MUMPSParser()
+        source = """TEST\tD  F I=1:1:3 S X=I
+ . W "hello",!
+"""
+        routine = parser.parse(source)
+        stmts = routine.labels[0].body.statements
+
+        leading_do = stmts[0]
+        assert isinstance(leading_do, MDoStatement)
+        assert leading_do.is_inline_block
+        assert len(leading_do.body.statements) == 1
+
+        for_stmt = stmts[1]
+        assert isinstance(for_stmt, MForStatement)
+        # FOR body has SET only (no argumentless DO)
+        assert len(for_stmt.body.statements) == 1
+        assert isinstance(for_stmt.body.statements[0], MSetStatement)
 
 
 @pytest.mark.asg

@@ -2594,7 +2594,16 @@ def m_zparse(path: str, item: str = "") -> str:
     item_upper = item.upper()
 
     if not item or item_upper == "FULL":
-        return os.path.abspath(path) if path else ""
+        if not path:
+            # YDB returns the default/current directory with trailing /
+            return os.getcwd() + "/"
+        if path.endswith("/"):
+            # Directory path — validate existence, preserve trailing /
+            return path if os.path.isdir(path) else ""
+        # File path — validate that containing directory exists
+        resolved = os.path.abspath(path)
+        parent = os.path.dirname(resolved)
+        return resolved if os.path.isdir(parent) else ""
 
     if item_upper == "DIRECTORY":
         return os.path.dirname(path)
