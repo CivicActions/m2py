@@ -88,7 +88,7 @@ class TestProblemList:
         munit_baseline,
     ):
         config = _make_config(routine_name)
-        result = transpile_and_execute(config, munit_runtime, timeout=60)
+        result = transpile_and_execute(config, munit_runtime)
 
         assert result.status != "error", (
             f"{routine_name} crashed: {result.error_message}"

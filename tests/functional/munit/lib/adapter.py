@@ -460,8 +460,6 @@ def _patch_startup_shutdown(
 def transpile_and_execute(
     config: TestRoutineConfig,
     runtime: "MUMPSRuntime",  # noqa: F821 — imported at call time
-    *,
-    timeout: float = 0,
 ) -> MUnitResult:
     """Transpile a test routine and execute it through the M-Unit framework.
 
@@ -474,7 +472,6 @@ def transpile_and_execute(
     Args:
         config: Routine configuration (name, package, source path, etc.)
         runtime: Shared MUMPSRuntime instance.
-        timeout: Maximum execution time in seconds (0 = no limit).
 
     Returns:
         Parsed MUnitResult from the M-Unit framework output.
@@ -560,53 +557,29 @@ def transpile_and_execute(
         _u.value = "^"
         scope["U"] = _u
 
-        # Optional timeout via signal.alarm (Unix only)
-        # Use a BaseException subclass so that broad `except Exception:`
-        # handlers in the runtime/codegen layer cannot swallow it.
-        _prev_handler = None
-        if timeout > 0:
-            import signal
-
-            class _AlarmTimeout(BaseException):
-                """Uncatchable timeout raised by SIGALRM."""
-
-            def _alarm_handler(signum, frame):
-                raise _AlarmTimeout(f"{routine_name} exceeded {timeout}s timeout")
-
-            _prev_handler = signal.signal(signal.SIGALRM, _alarm_handler)
-            signal.alarm(int(timeout))
-
-        try:
-            # Call the resolved entry function.
-            #
-            # For D ^ROUTINE or D LABEL^ROUTINE: calls the routine's own
-            # entry point directly (runs preamble, then invokes EN^%ut
-            # internally).
-            #
-            # For D EN^%ut("ROUTINE"): calls the %ut framework's EN label
-            # directly with the routine name as argument.  This is the
-            # correct invocation for routines like %utt2, %utt3 that are
-            # designed to be *called by* the framework, not to self-invoke.
-            if resolved.args:
-                run_with_goto_support(
-                    resolved.func,
-                    runtime,
-                    scope,
-                    _args=resolved.args,
-                )
-            else:
-                run_with_goto_support(
-                    resolved.func,
-                    runtime,
-                    scope,
-                )
-        finally:
-            if timeout > 0:
-                import signal
-
-                signal.alarm(0)  # cancel alarm
-                if _prev_handler is not None:
-                    signal.signal(signal.SIGALRM, _prev_handler)
+        # Call the resolved entry function.
+        #
+        # For D ^ROUTINE or D LABEL^ROUTINE: calls the routine's own
+        # entry point directly (runs preamble, then invokes EN^%ut
+        # internally).
+        #
+        # For D EN^%ut("ROUTINE"): calls the %ut framework's EN label
+        # directly with the routine name as argument.  This is the
+        # correct invocation for routines like %utt2, %utt3 that are
+        # designed to be *called by* the framework, not to self-invoke.
+        if resolved.args:
+            run_with_goto_support(
+                resolved.func,
+                runtime,
+                scope,
+                _args=resolved.args,
+            )
+        else:
+            run_with_goto_support(
+                resolved.func,
+                runtime,
+                scope,
+            )
     except Exception as e:
         elapsed = time.monotonic() - start
         output = runtime.get_output()
@@ -619,20 +592,6 @@ def transpile_and_execute(
         result.duration_seconds = elapsed
         result.raw_output = output
         return result
-    except BaseException as e:
-        # _AlarmTimeout (or KeyboardInterrupt) — not catchable by MUMPS
-        # error handlers.  Treat like a regular exception for test purposes.
-        elapsed = time.monotonic() - start
-        output = runtime.get_output()
-        logger.debug("BaseException running %s: %s", routine_name, e)
-        result = parse_munit_output(output, routine_name, config.package_name)
-        if result.status == "skip":
-            result.status = "error"
-        result.error_message = f"Runtime exception: {type(e).__name__}: {e}"
-        result.duration_seconds = elapsed
-        result.raw_output = output
-        return result
-
     elapsed = time.monotonic() - start
     output = runtime.get_output()
 

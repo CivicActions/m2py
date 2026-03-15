@@ -65,11 +65,6 @@ _INVOCATIONS = {
     "DMUDIQ00": "D ^DMUDIQ00",
 }
 
-# DMUDIC00's FINDC test iterates ~3,300 county records with computed-field
-# evaluation per entry ($ORDER scan).  300-min ceiling prevents a runaway hang
-# if something regresses while giving CI enough headroom to complete.
-_TIMEOUTS: dict[str, float] = {}
-
 
 def _make_config(routine_name: str) -> TestRoutineConfig:
     """Build a TestRoutineConfig for a Tier 3 routine."""
@@ -106,8 +101,7 @@ class TestVAFileMan:
     ):
         """Transpile and execute one VA FileMan test routine."""
         config = _make_config(routine_name)
-        timeout = _TIMEOUTS.get(routine_name, 0)
-        result = transpile_and_execute(config, munit_runtime, timeout=timeout)
+        result = transpile_and_execute(config, munit_runtime)
 
         assert result.status != "error", (
             f"{routine_name} crashed: {result.error_message}"
