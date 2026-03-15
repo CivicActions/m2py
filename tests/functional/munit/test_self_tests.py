@@ -7,22 +7,16 @@ Transpiles each M-Unit self-test routine via m2py, executes it through
 - **fail**: routine crashed, or produced unexpected/missing failures
 - **xfail**: routine has known issues unrelated to intentional failures
 
-Note: the osehravista baseline was captured from a VistA instance that may
-have *different routine versions* than VistA-M.  Exact test count
-matching is unreliable, so we classify purely by outcome: did the transpiled
-code complete, and were there unexpected failures?
+Intentional-failure routines declare exact expected test/failure/error
+counts (where deterministic) and expected failure entries (entry_tag,
+routine, message substring).  The test PASSES only when all counts match,
+every expected failure is present, and no unexpected failures appear.
 
 Intentional-failure routines:
-  - %utt5: tests CHKEQ/CHKTF/FAIL assertion mechanisms (4 expected failures)
+  - %utt5: tests CHKEQ/CHKTF/FAIL assertion mechanisms (5 expected failures)
   - %utt7: tests ``!TEST`` marker discovery (2 expected failures in T5)
-  - %utt2: FAIL tag intentionally calls ``fail^%ut`` (1 expected failure)
   - %utt4: MAIN calls GT.M coverage (VIEW "TRACE") which can't run in Python
-  - %utt1: meta-runner that includes %utt2/%utt4/%utt5 failures (8 expected)
-
-Each intentional-fail routine declares expected failure entries
-(entry_tag, routine, message substring).  The test PASSES only when every
-expected failure is present and no unexpected failures appear.  If the
-transpiler breaks and produces wrong errors, the test fails loudly.
+  - %utt1: meta-runner that includes %utt2/%utt4/%utt5 failures
 """
 
 from __future__ import annotations
@@ -50,7 +44,13 @@ TIER1_ROUTINES = [
 # Expected failure specifications for intentional-fail routines.
 #
 # Each spec defines:
-#   min_tests  – minimum total test count (sanity check)
+#   expected_tests – exact test count (when deterministic across all
+#                    execution modes: sequential, parallel, standalone)
+#   min_tests      – minimum test count (when count varies, e.g. due to
+#                    shared session-scoped runtime state between routines)
+#   max_tests      – optional upper bound (with min_tests, prevents drift)
+#   expected_failures – exact failure count (if deterministic)
+#   expected_errors   – exact error count (if deterministic)
 #   entries    – list of (entry_tag, routine, message_substring) that MUST
 #                each match at least one FailureDetail
 #   allowed_extra_tags – optional list of (entry_tag, routine) tuples for
@@ -65,7 +65,9 @@ _EXPECTED_FAILURES: dict[str, dict] = {
     # can't represent the invalid line, so it's dropped and the label runs
     # without error.
     "%utt5": {
-        "min_tests": 9,
+        "expected_tests": 9,
+        "expected_failures": 5,
+        "expected_errors": 0,
         "entries": [
             ("BADCHKEQ", "%utt5", "UNEQUAL ON PURPOSE"),
             ("BADCHKTF", "%utt5", "FALSE (0) ON PURPOSE"),
@@ -75,7 +77,9 @@ _EXPECTED_FAILURES: dict[str, dict] = {
         ],
     },
     "%utt7": {
-        "min_tests": 5,
+        "expected_tests": 5,
+        "expected_failures": 2,
+        "expected_errors": 0,
         "entries": [
             ("T5", "%utt7", "intentional failure"),
             ("T5", "%utt7", "Intentionally throwing a failure"),
@@ -85,21 +89,28 @@ _EXPECTED_FAILURES: dict[str, dict] = {
     # and %RSEL (transpiled as _pct_RSEL).  Python can't emulate hardware-level
     # line profiling, so MAIN always errors.  The parser strips the "Error:"
     # prefix, leaving the raw MUMPS error text — match on the missing module.
+    #
+    # Test count varies: 2 on a fresh runtime, up to 5 when running after
+    # %utt1 on a shared session-scoped runtime (M-Unit globals persist).
     "%utt4": {
         "min_tests": 2,
+        "max_tests": 10,
         "entries": [
             ("MAIN", "%utt4", "_pct_RSEL"),
         ],
         # MAIN produces multiple error/failure entries from retried $ETRAP handling
         "allowed_extra_tags": [("MAIN", "%utt4")],
     },
-    # GT.M baseline: 109 tests, 7 failures, 1 error.
-    # m2py produces: ~113 tests, ~11 failures, 1 error.
-    # The extra tests/failures come from %utt4 MAIN entries (covered by
-    # allowed_extra_tags).  BADERROR is the only remaining %utt5 delta
-    # (syntax error not representable in Python).
+    # Meta-runner: discovers and runs %utt2–%utt7 plus its own T5 tests.
+    # Always finds 113 tests.  Failure counts vary slightly depending on
+    # runtime state:
+    #   - Fresh runtime:  8 failures, 2 errors (FAIL^%utt2 present)
+    #   - After setup:   11 failures, 1 error  (FAIL^%utt2 absent,
+    #                    extra MAIN^%utt4 "no failure message" entries)
+    # BADERROR is the only remaining %utt5 delta (syntax error not
+    # representable in Python).
     "%utt1": {
-        "min_tests": 80,
+        "expected_tests": 113,
         "entries": [
             # T5^%utt1 — intentional assertion failures
             ("T5", "%utt1", "intentional failure"),
@@ -113,7 +124,8 @@ _EXPECTED_FAILURES: dict[str, dict] = {
         ],
         # %utt4 coverage errors are expected but not "intentional" — they
         # come from unsupported GT.M features (%RSEL, VIEW "TRACE").
-        "allowed_extra_tags": [("MAIN", "%utt4")],
+        # FAIL^%utt2 appears on fresh runtimes but not after prior setup.
+        "allowed_extra_tags": [("MAIN", "%utt4"), ("FAIL", "%utt2")],
     },
 }
 
@@ -132,15 +144,38 @@ def _check_expected_failures(routine_name: str, result) -> None:
     Raises AssertionError with diagnostics if:
     - Any expected failure entry is missing
     - Any unexpected failure appears (not in entries or allowed_extra_tags)
-    - Total test count is below minimum
+    - Test/failure/error counts don't match spec (exact or bounded)
     """
     spec = _EXPECTED_FAILURES[routine_name]
 
-    # Minimum test count sanity check
-    assert result.total_tests >= spec["min_tests"], (
-        f"{routine_name}: ran only {result.total_tests} tests "
-        f"(expected >= {spec['min_tests']})"
-    )
+    # --- Test count validation ---
+    if "expected_tests" in spec:
+        assert result.total_tests == spec["expected_tests"], (
+            f"{routine_name}: ran {result.total_tests} tests "
+            f"(expected exactly {spec['expected_tests']})"
+        )
+    else:
+        assert result.total_tests >= spec["min_tests"], (
+            f"{routine_name}: ran only {result.total_tests} tests "
+            f"(expected >= {spec['min_tests']})"
+        )
+        if "max_tests" in spec:
+            assert result.total_tests <= spec["max_tests"], (
+                f"{routine_name}: ran {result.total_tests} tests "
+                f"(expected <= {spec['max_tests']})"
+            )
+
+    # --- Failure/error count validation (when exact counts specified) ---
+    if "expected_failures" in spec:
+        assert result.failures == spec["expected_failures"], (
+            f"{routine_name}: {result.failures} failures "
+            f"(expected exactly {spec['expected_failures']})"
+        )
+    if "expected_errors" in spec:
+        assert result.errors == spec["expected_errors"], (
+            f"{routine_name}: {result.errors} errors "
+            f"(expected exactly {spec['expected_errors']})"
+        )
 
     # Must have at least the expected number of failures
     assert result.failures > 0 or result.errors > 0, (
