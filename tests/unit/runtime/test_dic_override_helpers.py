@@ -1,7 +1,7 @@
 """Tests for DIC override helper functions.
 
 Tests the native DD field lookup, template expression evaluation,
-and template level reading functions added to overrides/DIC.py.
+and template level reading functions in tests/functional/munit/overrides/DIC.py.
 
 These functions bypass buggy transpiled MUMPS code paths for:
 1. DD field name lookups (non-integer IENs like '.01')
@@ -15,24 +15,33 @@ this by patching in a mock _base before importing the module.
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import sys
 import types
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 
 from m2py.runtime import MArray, MUMPSRuntime
 
+_DIC_OVERRIDE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "functional"
+    / "munit"
+    / "overrides"
+    / "DIC.py"
+)
 
 # ---------------------------------------------------------------------------
-# Module-level fixture: import overrides.DIC with mocked base
+# Module-level fixture: import overrides/DIC.py with mocked base
 # ---------------------------------------------------------------------------
 
 
 def _get_dic_module():
-    """Import overrides.DIC with a mocked partial_override to avoid needing
+    """Load DIC.py override with a mocked partial_override to avoid needing
     the full MUMPS auto-importer stack."""
-    mod_name = "overrides.DIC"
+    mod_name = "_test_overrides_DIC"
     if mod_name in sys.modules:
         return sys.modules[mod_name]
 
@@ -55,12 +64,15 @@ def _get_dic_module():
 
     ov_mod.partial_override = _mock_partial
     try:
-        # Remove any cached partial import
+        # Remove any cached import
         for key in list(sys.modules):
-            if "overrides.DIC" in key or "_m2py_base_DIC" in key:
+            if mod_name in key or "_m2py_base_DIC" in key:
                 del sys.modules[key]
 
-        mod = importlib.import_module("overrides.DIC")
+        spec = importlib.util.spec_from_file_location(mod_name, _DIC_OVERRIDE_PATH)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        spec.loader.exec_module(mod)
     finally:
         ov_mod.partial_override = orig_partial
 

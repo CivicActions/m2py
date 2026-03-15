@@ -635,3 +635,131 @@ class TestTranspileSources:
         code, err = results[0]
         assert err is None
         assert len(code) > 0
+
+
+# =============================================================================
+# Overrides-dir tests
+# =============================================================================
+
+
+class TestOverridesDir:
+    """Tests for the --overrides-dir CLI option."""
+
+    def test_override_replaces_transpilation(self, tmp_dir: Path):
+        """Override .py file is copied instead of transpiling the .m source."""
+        m_file = tmp_dir / "HELLO.m"
+        m_file.write_text('HELLO\n WRITE "Hello",!\n QUIT\n')
+
+        ov_dir = tmp_dir / "overrides"
+        ov_dir.mkdir()
+        (ov_dir / "HELLO.py").write_text("# custom override\n")
+
+        out_dir = tmp_dir / "out"
+        summary = transpile_paths(
+            [str(m_file)],
+            output_dir=str(out_dir),
+            overrides_dir=str(ov_dir),
+            no_format=True,
+        )
+        assert summary.succeeded == 1
+        assert summary.failed == 0
+        output = out_dir / "HELLO.py"
+        assert output.read_text() == "# custom override\n"
+
+    def test_override_case_insensitive_stem(self, tmp_dir: Path):
+        """Override matching is case-insensitive on the routine stem."""
+        m_file = tmp_dir / "hello.m"
+        m_file.write_text("HELLO\n QUIT\n")
+
+        ov_dir = tmp_dir / "overrides"
+        ov_dir.mkdir()
+        (ov_dir / "HELLO.py").write_text("# uppercase override\n")
+
+        out_dir = tmp_dir / "out"
+        summary = transpile_paths(
+            [str(m_file)],
+            output_dir=str(out_dir),
+            overrides_dir=str(ov_dir),
+            no_format=True,
+        )
+        assert summary.succeeded == 1
+        assert (out_dir / "hello.py").read_text() == "# uppercase override\n"
+
+    def test_no_override_falls_through(self, tmp_dir: Path):
+        """Files without an override are transpiled normally."""
+        m_file = tmp_dir / "NOOP.m"
+        m_file.write_text("NOOP\n QUIT\n")
+
+        ov_dir = tmp_dir / "overrides"
+        ov_dir.mkdir()
+        # No NOOP.py in overrides
+
+        out_dir = tmp_dir / "out"
+        summary = transpile_paths(
+            [str(m_file)],
+            output_dir=str(out_dir),
+            overrides_dir=str(ov_dir),
+            no_format=True,
+        )
+        assert summary.succeeded == 1
+        content = (out_dir / "NOOP.py").read_text()
+        assert "NOOP" in content  # transpiled, not an override
+
+    def test_underscore_files_ignored(self, tmp_dir: Path):
+        """Override files starting with _ are ignored."""
+        m_file = tmp_dir / "INIT.m"
+        m_file.write_text("INIT\n QUIT\n")
+
+        ov_dir = tmp_dir / "overrides"
+        ov_dir.mkdir()
+        (ov_dir / "__init__.py").write_text("# should be ignored\n")
+
+        out_dir = tmp_dir / "out"
+        summary = transpile_paths(
+            [str(m_file)],
+            output_dir=str(out_dir),
+            overrides_dir=str(ov_dir),
+            no_format=True,
+        )
+        assert summary.succeeded == 1
+        content = (out_dir / "INIT.py").read_text()
+        assert "should be ignored" not in content
+
+    def test_override_verbose_output(self, tmp_dir: Path):
+        """Verbose mode reports overrides on stderr."""
+        m_file = tmp_dir / "FOO.m"
+        m_file.write_text("FOO\n QUIT\n")
+
+        ov_dir = tmp_dir / "overrides"
+        ov_dir.mkdir()
+        (ov_dir / "FOO.py").write_text("# foo override\n")
+
+        out_dir = tmp_dir / "out"
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "transpile",
+                str(m_file),
+                "-o",
+                str(out_dir),
+                "--overrides-dir",
+                str(ov_dir),
+                "-v",
+                "--no-format",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Override" in result.output
+
+    def test_cli_overrides_dir_nonexistent(self, tmp_dir: Path):
+        """--overrides-dir with nonexistent path fails."""
+        m_file = tmp_dir / "X.m"
+        m_file.write_text("X\n QUIT\n")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["transpile", str(m_file), "--overrides-dir", "/no/such/dir"],
+        )
+        assert result.exit_code != 0

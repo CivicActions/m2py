@@ -5,6 +5,7 @@ Entry point: ``m2py.cli:main``
 Usage::
 
     m2py transpile <PATH> [PATH ...] [-o OUTPUT_DIR] [-v] [--no-format]
+                   [--overrides-dir DIR]
     m2py globals import <file.zwr> [--backend <type>]
     m2py globals export <file.zwr> [--globals '^DD,^DIC'] [--backend <type>]
 """
@@ -47,11 +48,23 @@ def cli(ctx: click.Context) -> None:
     default=False,
     help="Skip ruff lint-fix and formatting on generated output.",
 )
+@click.option(
+    "--overrides-dir",
+    "overrides_dir",
+    default=None,
+    type=click.Path(exists=True, file_okay=False),
+    help=(
+        "Directory of .py override files. When a .py file here matches "
+        "an input .m file by stem, the override is copied to the output "
+        "instead of transpiling."
+    ),
+)
 def transpile(
     paths: tuple[str, ...],
     output_dir: str | None,
     verbose: bool,
     no_format: bool,
+    overrides_dir: str | None,
 ) -> None:
     """Transpile MUMPS .m files or directories to Python."""
     summary = transpile_paths(
@@ -59,6 +72,7 @@ def transpile(
         output_dir=output_dir,
         no_format=no_format,
         verbose=verbose,
+        overrides_dir=overrides_dir,
     )
 
     if summary.total == 0:

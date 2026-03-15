@@ -87,7 +87,7 @@ _MASH_TEST_ROUTINES = [
 _FM_TESTING_DIR = _VISTA_SUBMODULE / "Packages" / "VA FileMan" / "Testing" / "MUnit"
 
 # Native Python overrides directory — .py files here replace transpiled routines
-_OVERRIDES_DIR = _REPO_ROOT / "overrides"
+_OVERRIDES_DIR = Path(__file__).resolve().parent / "overrides"
 
 # Scheduling Testing/MUnit directory (Tier 4b test routines)
 _SCHED_TESTING_DIR = _VISTA_SUBMODULE / "Packages" / "Scheduling" / "Testing" / "MUnit"
