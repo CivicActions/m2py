@@ -426,6 +426,69 @@ def _resolve_entry_function(
 
 
 # =============================================================================
+# Kernel scope bootstrap
+# =============================================================================
+
+
+def _build_kernel_scope(runtime: "MUMPSRuntime") -> "dict[str, MArray]":  # noqa: F821
+    """Build a scope dict with VistA Kernel standard variables.
+
+    In a real VistA/MUMPS session, the Kernel login sequence (XUS, ZU)
+    initializes these variables before any application code runs.  This
+    function provides the equivalent for transpiled test execution.
+
+    Variables set:
+        U           "^"         — universal piece delimiter
+        DUZ         1           — user IEN (matches seeded ^VA(200,1,...))
+        DUZ(0)      "@"         — programmer access (unrestricted)
+        DTIME       999         — terminal timeout (effectively none)
+        DT          <today>     — today's date in FileMan internal format
+                                  (YYYMMDD where YYY = year - 1700)
+        IO          "0"         — principal I/O device ($PRINCIPAL)
+        IO(0)       "0"         — principal I/O device at login
+    """
+    import datetime
+
+    from m2py.runtime import MArray
+
+    scope: dict[str, MArray] = {}
+
+    # U = "^" — piece delimiter, set by Kernel during MUMPS login
+    _u = MArray()
+    _u.value = "^"
+    scope["U"] = _u
+
+    # DUZ = 1 — user IEN 1 (as seeded in ^VA(200,1,...) by fixtures)
+    # DUZ(0) = "@" — programmer access, allows unrestricted operations
+    _duz = MArray()
+    _duz.value = 1
+    _duz["0"] = "@"
+    scope["DUZ"] = _duz
+
+    # DTIME = 999 — terminal timeout in seconds (effectively unlimited)
+    _dtime = MArray()
+    _dtime.value = 999
+    scope["DTIME"] = _dtime
+
+    # DT = today in FileMan internal date format: YYYMMDD
+    # where YYY = year - 1700  (e.g. 2026 → 326, so Mar 16 2026 → 3260316)
+    today = datetime.date.today()
+    fm_date = (today.year - 1700) * 10000 + today.month * 100 + today.day
+    _dt = MArray()
+    _dt.value = fm_date
+    scope["DT"] = _dt
+
+    # IO = $PRINCIPAL device name ("0" in m2py)
+    # IO(0) = principal device at login time
+    _io = MArray()
+    _io.value = runtime.principal()
+    _io["0"] = runtime.principal()
+    scope["IO"] = _io
+
+    return scope
+
+
+# =============================================================================
 # Transpile and Execute
 # =============================================================================
 
@@ -520,14 +583,7 @@ def transpile_and_execute(
 
     start = time.monotonic()
     try:
-        # Bootstrap VistA Kernel standard variables that routines expect:
-        #   U = "^"  — piece delimiter, set by Kernel during MUMPS login
-        from m2py.runtime import MArray
-
-        scope: dict[str, MArray] = {}
-        _u = MArray()
-        _u.value = "^"
-        scope["U"] = _u
+        scope = _build_kernel_scope(runtime)
 
         # Call the resolved entry function.
         #

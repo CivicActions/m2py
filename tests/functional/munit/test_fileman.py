@@ -14,9 +14,7 @@ Test routines and their status:
 - **DMUDT000** (61 assertions): date/time validation via ``%DT``
   — PASS (61 tests, 0 failures, 0 errors)
 - **DMUDIC00** (14 tests baseline): dictionary lookup via ``DIC``
-  — xfail (timeout): FINDC computed-field evaluation triggers O(n log n)
-  ``$ORDER`` scans over ~3,300 county records; transpilation is correct
-  but too slow to complete within CI timeout (>3600s on x86_64)
+  — PASS (14 tests, 0 failures, 0 errors with DIC.py override)
 - **DMUDIQ00** (7 assertions): data retrieval via ``DIQ`` — PASS
 
 Dependencies are auto-loaded from VistA-M via the
