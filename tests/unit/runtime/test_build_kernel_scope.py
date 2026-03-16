@@ -9,8 +9,10 @@ Variables tested:
   DUZ(0)  = "@"          — programmer access
   DTIME   = 999          — terminal timeout
   DT      = <today>      — FileMan internal date (YYYMMDD)
-  IO      = "0"          — principal device
-  IO(0)   = "0"          — principal device at login
+
+IO is intentionally NOT set here — each VistA routine's preamble
+sets IO=$PRINCIPAL itself, and pre-setting IO as an MArray with
+subscripts causes side-effects with OPEN^%ZISH.
 """
 
 from __future__ import annotations
@@ -73,25 +75,15 @@ class TestBuildKernelScope:
         scope = _build_kernel_scope(_make_runtime())
         assert isinstance(scope["DT"].value, int)
 
-    def test_io_principal_device(self):
-        scope = _build_kernel_scope(_make_runtime())
-        assert scope["IO"].value == "0"
-
-    def test_io_zero_principal_at_login(self):
-        scope = _build_kernel_scope(_make_runtime())
-        assert scope["IO"].get("0") == "0"
-
-    def test_io_uses_runtime_principal(self):
-        """IO should reflect the runtime's actual $PRINCIPAL value."""
-        rt = _make_runtime(principal="/dev/pts/1")
-        scope = _build_kernel_scope(rt)
-        assert scope["IO"].value == "/dev/pts/1"
-        assert scope["IO"].get("0") == "/dev/pts/1"
-
     def test_all_expected_keys_present(self):
         scope = _build_kernel_scope(_make_runtime())
-        expected_keys = {"U", "DUZ", "DTIME", "DT", "IO"}
+        expected_keys = {"U", "DUZ", "DTIME", "DT"}
         assert expected_keys == set(scope.keys())
+
+    def test_io_not_in_scope(self):
+        """IO is NOT pre-set — routines set IO=$PRINCIPAL themselves."""
+        scope = _build_kernel_scope(_make_runtime())
+        assert "IO" not in scope
 
     def test_values_are_marray(self):
         """All scope values should be MArray instances."""

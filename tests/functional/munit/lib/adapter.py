@@ -444,8 +444,11 @@ def _build_kernel_scope(runtime: "MUMPSRuntime") -> "dict[str, MArray]":  # noqa
         DTIME       999         — terminal timeout (effectively none)
         DT          <today>     — today's date in FileMan internal format
                                   (YYYMMDD where YYY = year - 1700)
-        IO          "0"         — principal I/O device ($PRINCIPAL)
-        IO(0)       "0"         — principal I/O device at login
+
+    Not set here (set by routine preambles instead):
+        IO          — set by ``S IO=$PRINCIPAL`` in each routine's preamble
+        IO(0)       — set by Kernel login; pre-setting as MArray with subscript
+                      causes side-effects when ``OPEN^%ZISH`` reassigns IO root
     """
     import datetime
 
@@ -477,13 +480,6 @@ def _build_kernel_scope(runtime: "MUMPSRuntime") -> "dict[str, MArray]":  # noqa
     _dt = MArray()
     _dt.value = fm_date
     scope["DT"] = _dt
-
-    # IO = $PRINCIPAL device name ("0" in m2py)
-    # IO(0) = principal device at login time
-    _io = MArray()
-    _io.value = runtime.principal()
-    _io["0"] = runtime.principal()
-    scope["IO"] = _io
 
     return scope
 
