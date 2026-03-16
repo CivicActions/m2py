@@ -28,11 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.10'
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - run: uv sync
@@ -93,15 +93,15 @@ jobs:
       IRIS_PASSWORD: SYS
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # ── Python + uv (inmemory / iris — ydb runs inside Docker) ────
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         if: matrix.backend != 'yottadb'
         with:
           python-version: '3.10'
 
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v7
         if: matrix.backend != 'yottadb'
         with:
           enable-cache: true
@@ -113,7 +113,7 @@ jobs:
       # ── VistA deps for munit split ────────────────────────────────
       - name: Cache VistA dependencies
         if: matrix.split == 'munit'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .vista-deps
           key: vista-deps-${{ hashFiles('tests/functional/munit/vista_versions.json') }}
@@ -127,12 +127,12 @@ jobs:
         run: uv sync --extra backend
 
       # ── YDB: build Docker image with layer caching ────────────────
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
         if: matrix.backend == 'yottadb'
 
       - name: Build YDB Docker image
         if: matrix.backend == 'yottadb'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.yottadb
@@ -142,12 +142,12 @@ jobs:
           cache-to: type=gha,mode=max,scope=ydb-build
 
       # ── IRIS: build custom image + start container ────────────────
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
         if: matrix.backend == 'iris'
 
       - name: Build IRIS Docker image
         if: matrix.backend == 'iris'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.iris
