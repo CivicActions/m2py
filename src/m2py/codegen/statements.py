@@ -54,6 +54,7 @@ from m2py.asg.statements import (
     MMergeStatement,
     MNewStatement,
     MOpenStatement,
+    MParseErrorStatement,
     MQuitStatement,
     MReadStatement,
     MReadTarget,
@@ -969,6 +970,9 @@ def _dispatch_statement(stmt: "MStatement", ctx: "GeneratorContext") -> None:
         raise NotImplementedError(
             "LIM-016: KVALUE command not supported (not implemented in YDB)"
         )
+    # Parse error placeholder — generate runtime error
+    elif isinstance(stmt, MParseErrorStatement):
+        _generate_parse_error(stmt, ctx)
     else:
         raise NotImplementedError(f"Unsupported statement type: {type(stmt).__name__}")
 
@@ -7537,6 +7541,29 @@ def _generate_break(stmt: MBreakStatement, ctx: "GeneratorContext") -> None:
         ctx: Generator context
     """
     ctx.emitter.line("breakpoint()  # BREAK - enter debugger")
+
+
+# =============================================================================
+# Parse Error Statement
+# =============================================================================
+
+
+def _generate_parse_error(stmt: MParseErrorStatement, ctx: "GeneratorContext") -> None:
+    """Generate runtime error for a line that failed to parse.
+
+    MUMPS implementations like YDB raise errors at runtime when execution
+    reaches a line with a syntax error (e.g., %YDB-E-EXPR). This allows
+    $ETRAP/$ZTRAP to catch them. We replicate this by raising MRuntimeError.
+
+    Args:
+        stmt: MParseErrorStatement node with error details
+        ctx: Generator context
+    """
+    code = repr(stmt.error_code)
+    msg = repr(stmt.error_message)
+    ctx.emitter.line(
+        f"raise MRuntimeError({code}, {msg})  # Parse error: {stmt.line_content!r}"
+    )
 
 
 # =============================================================================

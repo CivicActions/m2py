@@ -18,6 +18,7 @@ from m2py.asg.enums import (
 )
 from m2py.asg.statements import (
     MStatement,
+    MParseErrorStatement,
     MAssignment,
     MSetStatement,
     MWriteStatement,
@@ -130,6 +131,7 @@ __all__ = [
     "ScopeStrategy",
     # Statements
     "MStatement",
+    "MParseErrorStatement",
     "MAssignment",
     "MSetStatement",
     "MWriteStatement",

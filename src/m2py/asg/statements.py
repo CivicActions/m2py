@@ -50,6 +50,29 @@ class MStatement(ASGElement):
 
 
 # =============================================================================
+# Parse Error Statement
+# =============================================================================
+
+
+@dataclass
+class MParseErrorStatement(MStatement):
+    """Placeholder for a line that failed to parse.
+
+    Instead of silently dropping unparseable lines, the parser inserts
+    this statement so the codegen can emit a runtime error. This makes
+    syntax errors visible at runtime (caught by $ETRAP/$ZTRAP) rather
+    than silently disappearing.
+
+    In YDB, executing a line with a syntax error raises %YDB-E-EXPR or
+    similar at runtime. This statement replicates that behavior.
+    """
+
+    error_code: str = "EXPR"
+    error_message: str = "Expression expected but not found"
+    line_content: str = ""  # Original MUMPS line text
+
+
+# =============================================================================
 # Assignment Statements
 # =============================================================================
 

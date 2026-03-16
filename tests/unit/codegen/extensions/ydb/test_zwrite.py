@@ -69,17 +69,19 @@ class TestZwriteSubscriptsPass2:
 
     def test_zwrite_simple_subscript(self, execute_mumps):
         """ZW X — ZWRITE a simple subscripted variable."""
-        result = execute_mumps('TEST\n S X(1)="a",X(2)="b" ZW X Q\n')
+        result = execute_mumps('TEST\n S X(1)="a",X(2)="b"\n ZWRITE X\n Q\n')
         # ZWRITE should show at least some output for X
         assert result.success
 
     def test_zwrite_specific_subscript(self, execute_mumps):
         """ZW X(1) — ZWRITE a specific subscripted element."""
-        result = execute_mumps('TEST\n S X(1)="hello" ZW X(1) Q\n')
+        result = execute_mumps('TEST\n S X(1)="hello"\n ZWRITE X(1)\n Q\n')
         assert result.success
 
     def test_zwrite_nested_subscripts(self, execute_mumps):
         """ZW X — ZWRITE all X entries including nested."""
-        result = execute_mumps('TEST\n S X(1,1)="a",X(1,2)="b",X(2,1)="c" ZW X Q\n')
+        result = execute_mumps(
+            'TEST\n S X(1,1)="a",X(1,2)="b",X(2,1)="c"\n ZWRITE X\n Q\n'
+        )
         # ZWRITE should show subscripted entries
         assert result.success

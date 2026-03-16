@@ -32,6 +32,7 @@ from m2py.asg.statements import (
     MElseStatement,
     MForStatement,
     MIfStatement,
+    MParseErrorStatement,
     MStatement,
 )
 from m2py.asg.type_helpers import get_body_scope
@@ -715,9 +716,19 @@ class MUMPSParser:
         # Parse the continuation line content
         commands = parse_commands_from_line(stripped_rest, line_number)
 
-        # Check for parse error
+        # Check for parse error — emit MParseErrorStatement so codegen
+        # generates a runtime error instead of silently dropping the line
         if isinstance(commands, MParseError):
             routine.parse_errors.append(commands)
+            error_stmt = MParseErrorStatement(
+                line_number=line_number,
+                error_message=commands.message,
+                line_content=commands.line_content,
+            )
+            error_stmt.scope = label.body
+            if dot_level > 0:
+                error_stmt._dot_level = dot_level
+            label.body.statements.append(error_stmt)
             return
 
         # Convert to ASG statements and add to label body
@@ -770,6 +781,7 @@ class MUMPSParser:
         # Parse line content using textX command grammar.
         # Parsed commands are stored for later ASG building.
         # Handle dotted block continuation (`. S X=1`) - strip leading dots
+        label_parse_error: Optional[MParseError] = None
         if label._line_rest:
             line_content = label._line_rest.strip()
             dot_level = 0
@@ -786,6 +798,7 @@ class MUMPSParser:
                     routine.parse_errors.append(parsed_content)
                     label._parsed_content = None
                     label._parsed_commands = []
+                    label_parse_error = parsed_content
                 else:
                     label._parsed_content = parsed_content
                     # Get commands from parsed content
@@ -833,6 +846,17 @@ class MUMPSParser:
                 if label._dot_level is not None:
                     stmt._dot_level = label._dot_level
                 label.body.statements.append(stmt)
+        elif label_parse_error is not None:
+            # Label line had a parse error — emit MParseErrorStatement
+            error_stmt = MParseErrorStatement(
+                line_number=line_number,
+                error_message=label_parse_error.message,
+                line_content=label_parse_error.line_content,
+            )
+            error_stmt.scope = label.body
+            if label._dot_level is not None:
+                error_stmt._dot_level = label._dot_level
+            label.body.statements.append(error_stmt)
 
         return label
 

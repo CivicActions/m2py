@@ -460,6 +460,7 @@ class RoutineGenerator:
         ctx.emitter.line(
             "from m2py.runtime import MUMPSRuntime, MArray, run_with_goto_support, resolve_goto_target, LabelNotFoundError, GotoExternal, _unwind_pending_news"
         )
+        ctx.emitter.line("from m2py.runtime.exceptions import MRuntimeError")
         # Import runtime helpers: LHS functions, $DATA, $ORDER, $QUERY, $SELECT,
         # $PIECE, $EXTRACT, $GET, $FIND, $NAME/$QLENGTH/$QSUBSCRIPT, $FNUMBER,
         # sorts-after, pattern_match, NewScopeManager, READ helpers, m_var_value,

@@ -59,18 +59,17 @@ TIER1_ROUTINES = [
 # ---------------------------------------------------------------------------
 _EXPECTED_FAILURES: dict[str, dict] = {
     # GT.M baseline: 10 tests, 5 failures, 1 error.
-    # m2py produces: 9 tests, 5 failures, 0 errors.
-    # BADERROR (1 error in baseline) is missing: intentional syntax error
-    # (`S X=`) that GT.M catches via $ETRAP as %YDB-E-EXPR.  m2py's parser
-    # can't represent the invalid line, so it's dropped and the label runs
-    # without error.
+    # m2py now matches: 10 tests, 5 failures, 1 error.
+    # BADERROR: intentional syntax error (`S X=`) that raises MRuntimeError
+    # at runtime, caught by $ETRAP just like YDB's %YDB-E-EXPR.
     "%utt5": {
-        "expected_tests": 9,
+        "expected_tests": 10,
         "expected_failures": 5,
-        "expected_errors": 0,
+        "expected_errors": 1,
         "entries": [
             ("BADCHKEQ", "%utt5", "UNEQUAL ON PURPOSE"),
             ("BADCHKTF", "%utt5", "FALSE (0) ON PURPOSE"),
+            ("BADERROR", "%utt5", "EXPR"),
             ("CALLFAIL", "%utt5", "Called FAIL to test it"),
             ("LEAKSBAD", "%utt5", "VARIABLE LEAK: X"),
             ("NVLDARG1", "%utt5", "NO VALUES INPUT TO CHKEQ"),
@@ -101,16 +100,25 @@ _EXPECTED_FAILURES: dict[str, dict] = {
         # MAIN produces multiple error/failure entries from retried $ETRAP handling
         "allowed_extra_tags": [("MAIN", "%utt4")],
     },
+    # %uttcovr CACHECOV loads routine source for coverage analysis.
+    # The EXPR parse error surfaces in routines being analyzed, causing
+    # cascade failures in source-line comparison checks.
+    "%uttcovr": {
+        "expected_tests": 71,
+        "expected_failures": 2,
+        "expected_errors": 1,
+        "entries": [
+            ("CACHECOV", "%uttcovr", "EXPR"),
+            ("CACHECOV", "%uttcovr", "FIRST LINE LOADED"),
+            ("CACHECOV", "%uttcovr", "14th line loaded"),
+        ],
+    },
     # Meta-runner: discovers and runs %utt2–%utt7 plus its own T5 tests.
-    # Always finds 113 tests.  Failure counts vary slightly depending on
-    # runtime state:
-    #   - Fresh runtime:  8 failures, 2 errors (FAIL^%utt2 present)
-    #   - After setup:   11 failures, 1 error  (FAIL^%utt2 absent,
-    #                    extra MAIN^%utt4 "no failure message" entries)
-    # BADERROR is the only remaining %utt5 delta (syntax error not
-    # representable in Python).
+    # YDB baseline: 109 tests, 7 failures, 1 error
+    # m2py produces 115 tests (some extra from runtime state sharing).
+    # BADERROR now correctly surfaces as an error (syntax error preserved).
     "%utt1": {
-        "expected_tests": 113,
+        "expected_tests": 115,
         "entries": [
             # T5^%utt1 — intentional assertion failures
             ("T5", "%utt1", "intentional failure"),
@@ -118,6 +126,7 @@ _EXPECTED_FAILURES: dict[str, dict] = {
             # %utt5 — assertion mechanism tests
             ("BADCHKEQ", "%utt5", "UNEQUAL ON PURPOSE"),
             ("BADCHKTF", "%utt5", "FALSE (0) ON PURPOSE"),
+            ("BADERROR", "%utt5", "EXPR"),
             ("CALLFAIL", "%utt5", "Called FAIL to test it"),
             ("LEAKSBAD", "%utt5", "VARIABLE LEAK: X"),
             ("NVLDARG1", "%utt5", "NO VALUES INPUT TO CHKEQ"),
@@ -125,7 +134,12 @@ _EXPECTED_FAILURES: dict[str, dict] = {
         # %utt4 coverage errors are expected but not "intentional" — they
         # come from unsupported GT.M features (%RSEL, VIEW "TRACE").
         # FAIL^%utt2 appears on fresh runtimes but not after prior setup.
-        "allowed_extra_tags": [("MAIN", "%utt4"), ("FAIL", "%utt2")],
+        # CACHECOV^%uttcovr errors from parse error surfacing in routine analysis.
+        "allowed_extra_tags": [
+            ("MAIN", "%utt4"),
+            ("FAIL", "%utt2"),
+            ("CACHECOV", "%uttcovr"),
+        ],
     },
 }
 
