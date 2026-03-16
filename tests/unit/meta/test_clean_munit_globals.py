@@ -8,7 +8,6 @@ separate process with a unique $J.
 from __future__ import annotations
 
 import os
-import sys
 
 import pytest
 
@@ -25,13 +24,9 @@ def runtime():
 @pytest.fixture
 def clean_munit_globals():
     """Import _clean_munit_globals from the MUnit adapter."""
-    sys.path.insert(0, "tests/functional/munit")
-    try:
-        from lib.adapter import _clean_munit_globals
+    from tests.functional.munit.lib.adapter import _clean_munit_globals
 
-        return _clean_munit_globals
-    finally:
-        sys.path.pop(0)
+    return _clean_munit_globals
 
 
 def _populate_munit_globals(runtime, j: str) -> None:
