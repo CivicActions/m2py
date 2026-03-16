@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 
 from .models import FailureDetail, MUnitResult, TestRoutineConfig
+from .patterns import DO_RE as _TESTLIST_DO_RE
+from .patterns import UTCALL_RE as _TESTLIST_UTCALL_RE
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +41,9 @@ _ERROR_RE = re.compile(r"Error:\s+(.*)")
 
 # --- TestList patterns ---
 
-# "D EN^%ut("routine",verbosity)" style invocation
-_TESTLIST_UTCALL_RE = re.compile(r'D\s+EN\^%ut\("(\w+)"(?:,\d+)?\)')
-
-# "D TAG^ROUTINE" or "D ^ROUTINE" style invocation
-_TESTLIST_DO_RE = re.compile(r"D\s+(\w+\^)?\^?(\w+)")
+# Shared invocation patterns re-exported from patterns.py.
+# UTCALL_RE groups: 1=label, 2=routine, 3=verbosity, 4=break.
+# DO_RE groups: 1=tag (optional), 2=routine.
 
 # Package name → tier mapping
 _TIER_MAP: dict[str, int] = {
@@ -235,7 +235,7 @@ def _parse_testlist_line(line: str) -> tuple[str, str]:
     # Try "D EN^%ut("routine")" pattern first
     ut_match = _TESTLIST_UTCALL_RE.search(line)
     if ut_match:
-        routine_name = ut_match.group(1)
+        routine_name = ut_match.group(2)  # group 2 = routine name
         return routine_name, line
 
     # Try "D TAG^ROUTINE" or "D ^ROUTINE" pattern

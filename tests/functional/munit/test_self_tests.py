@@ -245,20 +245,11 @@ def _check_expected_failures(routine_name: str, result) -> None:
     )
 
 
-@pytest.fixture(scope="module")
-def _ensure_framework(munit_framework):
-    """Module-level guard that the M-Unit framework is loaded."""
-    return munit_framework
-
-
 @pytest.mark.slow
 @pytest.mark.munit
+@pytest.mark.usefixtures("munit_framework")
 class TestMashUtilities:
     """Run MASH Utilities self-test routines through the transpiled M-Unit framework."""
-
-    @pytest.fixture(autouse=True)
-    def _framework(self, _ensure_framework):
-        """Auto-use the framework fixture for every test in the class."""
 
     @pytest.mark.parametrize("routine_name", TIER1_ROUTINES)
     def test_munit_routine(

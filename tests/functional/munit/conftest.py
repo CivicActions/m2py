@@ -54,13 +54,20 @@ _VISTA_DIR = Path(os.environ.get("VISTA_DIR", str(_VISTA_DEPS / "VistA")))
 
 # Derived paths within VistA-M
 _VISTA_M_PACKAGES_DIR = _VISTA_M_DIR / "Packages"
-_VISTA_M_KERNEL_DIR = _VISTA_M_PACKAGES_DIR / "Kernel" / "Routines"
-_VISTA_M_FILEMAN_DIR = _VISTA_M_PACKAGES_DIR / "VA FileMan" / "Routines"
+
+
+def _pkg_routines(package: str) -> Path:
+    """Return the Routines directory for a VistA-M package."""
+    return _VISTA_M_PACKAGES_DIR / package / "Routines"
+
+
+_VISTA_M_KERNEL_DIR = _pkg_routines("Kernel")
+_VISTA_M_FILEMAN_DIR = _pkg_routines("VA FileMan")
 _VISTA_M_FILEMAN_GLOBALS_DIR = _VISTA_M_PACKAGES_DIR / "VA FileMan" / "Globals"
-_VISTA_M_MXML_DIR = _VISTA_M_PACKAGES_DIR / "M XML Parser" / "Routines"
-_VISTA_M_MASH_DIR = _VISTA_M_PACKAGES_DIR / "MASH Utilities" / "Routines"
-_VISTA_M_SCHEDULING_DIR = _VISTA_M_PACKAGES_DIR / "Scheduling" / "Routines"
-_VISTA_M_REGISTRATION_DIR = _VISTA_M_PACKAGES_DIR / "Registration" / "Routines"
+_VISTA_M_MXML_DIR = _pkg_routines("M XML Parser")
+_VISTA_M_MASH_DIR = _pkg_routines("MASH Utilities")
+_VISTA_M_SCHEDULING_DIR = _pkg_routines("Scheduling")
+_VISTA_M_REGISTRATION_DIR = _pkg_routines("Registration")
 
 # VistA-VEHU-M — contains additional routines not in VistA-M (e.g. SDMAPI*)
 _VEHU_M_DIR = _REPO_ROOT / "VistA-VEHU-M"
@@ -101,15 +108,13 @@ _PROBLEM_LIST_TESTING_DIR = (
 )
 
 # Package routine directories used by Problem List dependencies
-_VISTA_M_PROBLEM_LIST_DIR = _VISTA_M_PACKAGES_DIR / "Problem List" / "Routines"
-_VISTA_M_CCR_DIR = _VISTA_M_PACKAGES_DIR / "Clinical Case Registries" / "Routines"
-_VISTA_M_PCE_DIR = _VISTA_M_PACKAGES_DIR / "PCE Patient Care Encounter" / "Routines"
-_VISTA_M_CLIN_REMINDERS_DIR = _VISTA_M_PACKAGES_DIR / "Clinical Reminders" / "Routines"
-_VISTA_M_QUASAR_DIR = _VISTA_M_PACKAGES_DIR / "Quasar" / "Routines"
-_VISTA_M_AICS_DIR = (
-    _VISTA_M_PACKAGES_DIR / "Automated Information Collection System" / "Routines"
-)
-_VISTA_M_ODS_DIR = _VISTA_M_PACKAGES_DIR / "ODS" / "Routines"
+_VISTA_M_PROBLEM_LIST_DIR = _pkg_routines("Problem List")
+_VISTA_M_CCR_DIR = _pkg_routines("Clinical Case Registries")
+_VISTA_M_PCE_DIR = _pkg_routines("PCE Patient Care Encounter")
+_VISTA_M_CLIN_REMINDERS_DIR = _pkg_routines("Clinical Reminders")
+_VISTA_M_QUASAR_DIR = _pkg_routines("Quasar")
+_VISTA_M_AICS_DIR = _pkg_routines("Automated Information Collection System")
+_VISTA_M_ODS_DIR = _pkg_routines("ODS")
 
 
 # ---------------------------------------------------------------------------
@@ -546,6 +551,88 @@ def munit_runtime():
     return runtime
 
 
+# ---------------------------------------------------------------------------
+# FileMan global loading helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_zwr(backend, path: Path, label: str) -> int:
+    """Load a ZWR file into the backend, returning the node count (0 if missing)."""
+    from m2py.runtime.zwr import import_zwr
+
+    if not path.exists():
+        return 0
+    count = import_zwr(backend, path)
+    logger.info("Loaded %d nodes from %s", count, label)
+    return count
+
+
+def _load_fileman_globals(backend) -> int:
+    """Load FileMan ZWR globals into *backend*.
+
+    Tries ``baselines/globals/fileman.zwr`` first (pre-captured combined
+    file).  Falls back to individual ZWR files from VistA-M.
+
+    Returns total node count, or calls ``pytest.skip()`` if no data
+    is available.
+    """
+    # Option 1: pre-captured combined file
+    combined = _GLOBALS_DIR / "fileman.zwr"
+    if combined.exists():
+        total = _load_zwr(backend, combined, "fileman.zwr (combined)")
+        return total
+
+    # Option 2: VistA-M individual ZWR files
+    dd_zwr = _VISTA_M_FILEMAN_GLOBALS_DIR / "DD.zwr"
+    dic_zwr = _VISTA_M_FILEMAN_GLOBALS_DIR / "1+FILE.zwr"
+
+    if not dd_zwr.exists() and not dic_zwr.exists():
+        pytest.skip(
+            "FileMan globals not available — need baselines/globals/fileman.zwr "
+            "or VistA-M dependency"
+        )
+
+    total = 0
+    total += _load_zwr(backend, dd_zwr, "DD.zwr")
+    total += _load_zwr(backend, dic_zwr, "1+FILE.zwr (^DIC)")
+
+    # ^DD(.11) supplement — old-style cross-references for the Index file
+    total += _load_zwr(
+        backend, _GLOBALS_DIR / "fileman_dd_supplement.zwr", "fileman_dd_supplement.zwr"
+    )
+
+    # ^DD("IX",...) — pre-existing index entries and AC runtime entries
+    total += _load_zwr(
+        backend,
+        _VISTA_M_FILEMAN_GLOBALS_DIR / "0.11+INDEX.zwr",
+        '0.11+INDEX.zwr (^DD("IX",...))',
+    )
+
+    # ^DI(.85) — Language file (locale-specific date/time formatting)
+    total += _load_zwr(
+        backend,
+        _VISTA_M_FILEMAN_GLOBALS_DIR / "0.85+LANGUAGE.zwr",
+        "0.85+LANGUAGE.zwr (^DI(.85,...))",
+    )
+
+    # ^DI(.84) — Dialog file (error/help text for BLD^DIALOG)
+    total += _load_zwr(
+        backend,
+        _VISTA_M_FILEMAN_GLOBALS_DIR / "0.84+DIALOG.zwr",
+        "0.84+DIALOG.zwr (^DI(.84,...))",
+    )
+
+    # ^DD("FUNC") — Function file (.5) for DICOMP computed expressions
+    total += _load_zwr(
+        backend,
+        _VISTA_M_FILEMAN_GLOBALS_DIR / "0.5+FUNCTION.zwr",
+        '0.5+FUNCTION.zwr (^DD("FUNC",...))',
+    )
+
+    logger.info("FileMan bootstrap complete: %d total global nodes", total)
+    return total
+
+
 @pytest.fixture(scope="session")
 def fileman_bootstrap(munit_runtime):
     """Bootstrap FileMan globals into the runtime (Tier 3).
@@ -560,116 +647,17 @@ def fileman_bootstrap(munit_runtime):
 
     Also bootstraps ``^%ZOSF`` (kernel OS-specific infrastructure)
     from ZOSFGUX.m values — see ``_bootstrap_zosf()``.
-    Loading the full ^DD (765K lines) takes a few seconds at session start.
     """
-    from m2py.runtime.zwr import import_zwr
-
-    total = 0
-
-    # Option 1: pre-captured combined file
-    combined = _GLOBALS_DIR / "fileman.zwr"
-    if combined.exists():
-        total += import_zwr(munit_runtime.globals, combined)
-        logger.info("Loaded %d FileMan globals from combined fileman.zwr", total)
-        _bootstrap_package_file(munit_runtime)
-        _bootstrap_zosf(munit_runtime)
-        _install_ac_xref_hook(munit_runtime.globals)
-        return munit_runtime
-
-    # Option 2: VistA-M individual ZWR files
-    dd_zwr = _VISTA_M_FILEMAN_GLOBALS_DIR / "DD.zwr"
-    dic_zwr = _VISTA_M_FILEMAN_GLOBALS_DIR / "1+FILE.zwr"
-
-    if not dd_zwr.exists() and not dic_zwr.exists():
-        pytest.skip(
-            "FileMan globals not available — need baselines/globals/fileman.zwr "
-            "or VistA-M dependency"
-        )
-
-    if dd_zwr.exists():
-        count = import_zwr(munit_runtime.globals, dd_zwr)
-        total += count
-        logger.info("Loaded %d nodes from DD.zwr", count)
-
-    if dic_zwr.exists():
-        count = import_zwr(munit_runtime.globals, dic_zwr)
-        total += count
-        logger.info("Loaded %d nodes from 1+FILE.zwr (^DIC)", count)
-
-    # VistA-M's DD.zwr omits ^DD(.11,...) — the data dictionary for the
-    # Index file (.11).  Without it, old-style cross-references (B, AC) on
-    # the Index file don't fire when indexes are installed, so LOADALL^DIKC1
-    # can't discover new-style indexes.  Load a supplement if available.
-    dd_supplement = _GLOBALS_DIR / "fileman_dd_supplement.zwr"
-    if dd_supplement.exists():
-        count = import_zwr(munit_runtime.globals, dd_supplement)
-        total += count
-        logger.info("Loaded %d nodes from fileman_dd_supplement.zwr", count)
-
-    # 0.11+INDEX.zwr contains pre-existing ^DD("IX",...) index entries and
-    # ~1500 ^DD("IX","AC",rootfile,ien) runtime entries.  Without AC data,
-    # INDEX^DIKC / LOADALL^DIKC1 cannot discover new-style cross-references
-    # for data files.  This is the same data that a full VistA installation
-    # would have — loading it brings the test environment closer to parity
-    # with a real YDB instance.
-    index_zwr = _VISTA_M_FILEMAN_GLOBALS_DIR / "0.11+INDEX.zwr"
-    if index_zwr.exists():
-        count = import_zwr(munit_runtime.globals, index_zwr)
-        total += count
-        logger.info('Loaded %d nodes from 0.11+INDEX.zwr (^DD("IX",...))', count)
-
-    # ^DI(.85) — Language file.  Provides locale-specific date/time
-    # formatting code used by DD^%DT when DUZ("LANG")>1 (e.g. German).
-    lang_zwr = _VISTA_M_FILEMAN_GLOBALS_DIR / "0.85+LANGUAGE.zwr"
-    if lang_zwr.exists():
-        count = import_zwr(munit_runtime.globals, lang_zwr)
-        total += count
-        logger.info("Loaded %d nodes from 0.85+LANGUAGE.zwr (^DI(.85,...))", count)
-
-    # ^DI(.84) — Dialog file.  Contains error/help text definitions used
-    # by BLD^DIALOG.  Without it, FileMan error handling silently returns 0
-    # (no error built), causing infinite loops in routines like DIDU that
-    # rely on DIERR being set when an error is encountered.
-    dialog_zwr = _VISTA_M_FILEMAN_GLOBALS_DIR / "0.84+DIALOG.zwr"
-    if dialog_zwr.exists():
-        count = import_zwr(munit_runtime.globals, dialog_zwr)
-        total += count
-        logger.info("Loaded %d nodes from 0.84+DIALOG.zwr (^DI(.84,...))", count)
-
-    # ^DD("FUNC") — Function file (.5).  Contains computed expression
-    # functions (COUNT, TOTAL, MAXIMUM, etc.) used by DICOMP when parsing
-    # sort expressions like "COUNT(COUNTY)".  Without this, BUILDNEW^DIBTED
-    # cannot process sort template specs that use computed functions.
-    func_zwr = _VISTA_M_FILEMAN_GLOBALS_DIR / "0.5+FUNCTION.zwr"
-    if func_zwr.exists():
-        count = import_zwr(munit_runtime.globals, func_zwr)
-        total += count
-        logger.info('Loaded %d nodes from 0.5+FUNCTION.zwr (^DD("FUNC",...))', count)
-
-    logger.info("FileMan bootstrap complete: %d total global nodes", total)
-
-    # Ensure Package file (9.4) has VA FileMan entry so $$VERSION^XPDUTL("DI")
-    # returns "22.2".  DMUDIC00 gates its tests behind this version check.
+    _load_fileman_globals(munit_runtime.globals)
     _bootstrap_package_file(munit_runtime)
-
-    # Bootstrap ^%ZOSF kernel infrastructure (OS type, routine existence
-    # test, UCI/PROD, terminal control, etc.).  Without this, FileMan
-    # routines that X ^%ZOSF("TEST") or read ^%ZOSF("OS") will error.
     _bootstrap_zosf(munit_runtime)
 
     # ^DIBT(0) — Sort Template file header.  ^DIC LAYGO needs this to
     # allocate new IENs when creating sort templates (e.g. BUILDNEW^DIBTED).
-    # We set a minimal header with IEN counter at 0 rather than loading the
-    # full 15K-line 0.401+SORT TEMPLATE.zwr.
     munit_runtime.globals.set("DIBT", ("0",), "SORT TEMPLATE^.401I^0^0")
 
-    # Install AC xref hook — environmental compensation needed by DMUFINIT.
-    # When DMUDIC00's STARTUP calls D ^DMUFINIT, the DIFROM installer creates
-    # new Index file (.11) entries via FILE^DICN + MERGE.  MERGE bypasses
-    # cross-references, so the AC xref never fires.  This hook compensates
-    # by creating ^DD("IX","AC",rootfile,ien) entries as indexes are written.
-    # The same gap exists in native YottaDB (covered by pre-loaded AC data
-    # from 0.11+INDEX.zwr); this hook covers dynamically-created entries.
+    # Install AC xref hook — environmental compensation for DMUFINIT's
+    # MERGE-based index creation (bypasses cross-references).
     _install_ac_xref_hook(munit_runtime.globals)
 
     return munit_runtime

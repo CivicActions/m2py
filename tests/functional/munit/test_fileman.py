@@ -23,24 +23,12 @@ Dependencies are auto-loaded from VistA-M via the
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 
 from .lib.adapter import transpile_and_execute
-from .lib.models import TestRoutineConfig
+from .lib.helpers import assert_munit_pass, make_test_config, vista_testing_dir
 
-
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
-
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_VISTA_DEPS = Path(os.environ.get("VISTA_DEPS_DIR", str(_REPO_ROOT / ".vista-deps")))
-_VISTA_DIR = Path(os.environ.get("VISTA_DIR", str(_VISTA_DEPS / "VistA")))
-
-_TESTING_DIR = _VISTA_DIR / "Packages" / "VA FileMan" / "Testing" / "MUnit"
+_TESTING_DIR = vista_testing_dir("VA FileMan")
 
 # ---------------------------------------------------------------------------
 # TestList routines  (from VistA/Packages/VA FileMan/Testing/MUnit/TestList)
@@ -54,41 +42,12 @@ TIER3_ROUTINES = [
     "DMUDIQ00",
 ]
 
-# Invocation patterns from the TestList file (all use `D ^ROUTINE`)
-_INVOCATIONS = {
-    "ZZUTDIDT": "D ^ZZUTDIDT",
-    "DMUDT000": "D ^DMUDT000",
-    "DMUDTC00": "D ^DMUDTC00",
-    "DMUDIC00": "D ^DMUDIC00",
-    "DMUDIQ00": "D ^DMUDIQ00",
-}
-
-
-def _make_config(routine_name: str) -> TestRoutineConfig:
-    """Build a TestRoutineConfig for a Tier 3 routine."""
-    return TestRoutineConfig(
-        routine_name=routine_name,
-        package_name="VA FileMan",
-        invocation=_INVOCATIONS[routine_name],
-        source_path=str(_TESTING_DIR / f"{routine_name}.m"),
-        tier=3,
-    )
-
-
-@pytest.fixture(scope="module")
-def _ensure_library(fileman_library):
-    """Module-level guard that FileMan library routines are loaded."""
-    return fileman_library
-
 
 @pytest.mark.slow
 @pytest.mark.munit
+@pytest.mark.usefixtures("fileman_library")
 class TestVAFileMan:
     """Run VA FileMan test routines through the transpiled M-Unit framework."""
-
-    @pytest.fixture(autouse=True)
-    def _library(self, _ensure_library):
-        """Auto-use the library fixture for every test in the class."""
 
     @pytest.mark.parametrize("routine_name", TIER3_ROUTINES)
     def test_munit_routine(
@@ -98,15 +57,11 @@ class TestVAFileMan:
         munit_baseline,
     ):
         """Transpile and execute one VA FileMan test routine."""
-        config = _make_config(routine_name)
+        config = make_test_config(
+            routine_name,
+            package_name="VA FileMan",
+            tier=3,
+            testing_dir=_TESTING_DIR,
+        )
         result = transpile_and_execute(config, munit_runtime)
-
-        assert result.status != "error", (
-            f"{routine_name} crashed: {result.error_message}"
-        )
-        assert result.total_tests > 0, f"{routine_name}: summary line found but 0 tests"
-        assert result.failures == 0 and result.errors == 0, (
-            f"{routine_name}: {result.failures} failures, {result.errors} errors "
-            f"(tests={result.total_tests})\n"
-            f"Raw output:\n{result.raw_output}"
-        )
+        assert_munit_pass(result, routine_name)

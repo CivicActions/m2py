@@ -14,23 +14,12 @@ the full FileMan ``DIE`` / ``UPDATE^DIE`` edit chain.
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 
 from .lib.adapter import transpile_and_execute
-from .lib.models import TestRoutineConfig
+from .lib.helpers import assert_munit_pass, make_test_config, vista_testing_dir
 
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
-
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_VISTA_DEPS = Path(os.environ.get("VISTA_DEPS_DIR", str(_REPO_ROOT / ".vista-deps")))
-_VISTA_DIR = Path(os.environ.get("VISTA_DIR", str(_VISTA_DEPS / "VistA")))
-
-_TESTING_DIR = _VISTA_DIR / "Packages" / "Registration" / "Testing" / "MUnit"
+_TESTING_DIR = vista_testing_dir("Registration")
 
 # ---------------------------------------------------------------------------
 # TestList routine (from VistA/Packages/Registration/Testing/MUnit/TestList)
@@ -38,34 +27,12 @@ _TESTING_DIR = _VISTA_DIR / "Packages" / "Registration" / "Testing" / "MUnit"
 
 ROUTINES = ["ZZDGPTCO1"]
 
-_INVOCATIONS = {r: f"D ^{r}" for r in ROUTINES}
-
-
-def _make_config(routine_name: str) -> TestRoutineConfig:
-    """Build a TestRoutineConfig for a Tier 4c routine."""
-    return TestRoutineConfig(
-        routine_name=routine_name,
-        package_name="Registration",
-        invocation=_INVOCATIONS[routine_name],
-        source_path=str(_TESTING_DIR / f"{routine_name}.m"),
-        tier=4,
-    )
-
-
-@pytest.fixture(scope="module")
-def _ensure_library(registration_library):
-    """Module-level guard that Registration library routines are loaded."""
-    return registration_library
-
 
 @pytest.mark.slow
 @pytest.mark.munit
+@pytest.mark.usefixtures("registration_library")
 class TestRegistration:
     """Run Registration test routines through the transpiled M-Unit framework."""
-
-    @pytest.fixture(autouse=True)
-    def _library(self, _ensure_library):
-        """Auto-use the library fixture for every test in the class."""
 
     @pytest.mark.parametrize("routine_name", ROUTINES)
     def test_munit_routine(
@@ -75,14 +42,11 @@ class TestRegistration:
         munit_baseline,
     ):
         """Transpile and execute one Registration test routine."""
-        config = _make_config(routine_name)
+        config = make_test_config(
+            routine_name,
+            package_name="Registration",
+            tier=4,
+            testing_dir=_TESTING_DIR,
+        )
         result = transpile_and_execute(config, munit_runtime)
-
-        assert result.status != "error", (
-            f"{routine_name} crashed: {result.error_message}"
-        )
-        assert result.total_tests > 0, f"{routine_name}: summary line found but 0 tests"
-        assert result.failures == 0 and result.errors == 0, (
-            f"{routine_name}: {result.failures} failures, {result.errors} errors "
-            f"(tests={result.total_tests})"
-        )
+        assert_munit_pass(result, routine_name)

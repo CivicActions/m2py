@@ -20,24 +20,12 @@ Library routines are loaded from VistA-M via the
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 
 from .lib.adapter import transpile_and_execute
-from .lib.models import TestRoutineConfig
+from .lib.helpers import assert_munit_pass, make_test_config, vista_testing_dir
 
-
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
-
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_VISTA_DEPS = Path(os.environ.get("VISTA_DEPS_DIR", str(_REPO_ROOT / ".vista-deps")))
-_VISTA_DIR = Path(os.environ.get("VISTA_DIR", str(_VISTA_DEPS / "VistA")))
-
-_TESTING_DIR = _VISTA_DIR / "Packages" / "M XML Parser" / "Testing" / "MUnit"
+_TESTING_DIR = vista_testing_dir("M XML Parser")
 
 # ---------------------------------------------------------------------------
 # TestList routines  (from VistA/Packages/M XML Parser/Testing/MUnit/TestList)
@@ -59,31 +47,11 @@ _INVOCATIONS = {
 }
 
 
-def _make_config(routine_name: str) -> TestRoutineConfig:
-    """Build a TestRoutineConfig for a Tier 2 routine."""
-    return TestRoutineConfig(
-        routine_name=routine_name,
-        package_name="M XML Parser",
-        invocation=_INVOCATIONS[routine_name],
-        source_path=str(_TESTING_DIR / f"{routine_name}.m"),
-        tier=2,
-    )
-
-
-@pytest.fixture(scope="module")
-def _ensure_library(mxml_library):
-    """Module-level guard that M XML Parser library routines are loaded."""
-    return mxml_library
-
-
 @pytest.mark.slow
 @pytest.mark.munit
+@pytest.mark.usefixtures("mxml_library")
 class TestMXMLParser:
     """Run M XML Parser test routines through the transpiled M-Unit framework."""
-
-    @pytest.fixture(autouse=True)
-    def _library(self, _ensure_library):
-        """Auto-use the library fixture for every test in the class."""
 
     @pytest.mark.parametrize("routine_name", TIER2_ROUTINES)
     def test_munit_routine(
@@ -92,30 +60,13 @@ class TestMXMLParser:
         munit_runtime,
         munit_baseline,
     ):
-        """Transpile and execute one M XML Parser test routine.
-
-        All four routines (MXMLBLD, MXMLTMPT, MXMLPATT, MXMLDOMT)
-        are expected to pass cleanly.  Crashes or failures are real
-        test failures.
-        """
-        config = _make_config(routine_name)
-
-        # Execute through the adapter
+        """Transpile and execute one M XML Parser test routine."""
+        config = make_test_config(
+            routine_name,
+            package_name="M XML Parser",
+            tier=2,
+            testing_dir=_TESTING_DIR,
+            invocation=_INVOCATIONS[routine_name],
+        )
         result = transpile_and_execute(config, munit_runtime)
-
-        # --- Crash: no summary line parsed ---
-        assert result.status != "error", (
-            f"{routine_name} crashed: {result.error_message}\n"
-            f"--- raw output ---\n{result.raw_output}"
-        )
-
-        # --- Must have run some tests ---
-        assert result.total_tests > 0, f"{routine_name}: summary line found but 0 tests"
-
-        # --- Must have 0 failures and 0 errors ---
-        assert result.failures == 0 and result.errors == 0, (
-            f"{routine_name}: "
-            f"{result.failures} failures, {result.errors} errors "
-            f"(tests={result.total_tests})\n"
-            f"--- raw output ---\n{result.raw_output}"
-        )
+        assert_munit_pass(result, routine_name)

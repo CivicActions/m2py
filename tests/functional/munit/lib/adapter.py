@@ -343,15 +343,12 @@ def _resolve_entry_function(
     Returns:
         A _ResolvedEntry with the callable and arguments, or None if not found.
     """
-    import re
-
     from m2py.runtime import MArray
 
+    from .patterns import DO_RE, UTCALL_RE
+
     # Pattern: D LABEL^%ut("ROUTINE"[,verb[,break]])  — M-Unit framework call
-    m = re.match(
-        r'D\s+(\w+)\^%ut\(\s*"([^"]+)"(?:\s*,\s*(\d+))?(?:\s*,\s*(\d+))?\s*\)',
-        invocation,
-    )
+    m = UTCALL_RE.match(invocation)
     if m:
         label = m.group(1)
         target_routine = m.group(2)
@@ -401,8 +398,8 @@ def _resolve_entry_function(
         return None
 
     # Pattern: D LABEL^ROUTINE  (label call)
-    m = re.match(r"D\s+(\w+)\^", invocation)
-    if m:
+    m = DO_RE.match(invocation)
+    if m and m.group(1):
         label = m.group(1)
         func = getattr(module, label, None)
         if func is not None:
