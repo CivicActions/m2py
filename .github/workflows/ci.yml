@@ -194,7 +194,7 @@ jobs:
               ARGS+=(tests/functional/ --ignore=tests/functional/test_mvts.py --ignore=tests/functional/munit/)
               ;;
             slow)
-              ARGS+=(-m "slow and not quality")
+              ARGS+=(-m "slow and not quality and not munit")
               ;;
             quality)
               ARGS+=(-m quality)
