@@ -236,6 +236,38 @@ def load_package_routines(
 
 
 # =============================================================================
+# MUnit global cleanup
+# =============================================================================
+
+
+def _clean_munit_globals(runtime: "MUMPSRuntime") -> None:  # noqa: F821
+    """Kill MUnit transient globals to isolate test runs.
+
+    In real MUMPS each test invocation runs in a separate process with a
+    unique ``$J``, so ``^TMP("%ut",$J,...)`` is naturally isolated.  In our
+    test suite all tests share a single runtime (same ``$J``), so we must
+    explicitly clean up MUnit globals between runs to match that semantics.
+
+    ``EN^%ut`` does ``K ^TMP("%ut",$J,"UTVALS")`` at the start, but other
+    MUnit globals (result accumulators, GUI buffers) persist.  This function
+    kills the full subtree for each known MUnit global prefix keyed by $J.
+    """
+    import os
+
+    j = str(os.getpid())
+    for prefix in (
+        "%ut",
+        "MUNIT-%utRSLT",
+        "GUI-MUNIT",
+        "%utCOVCOHORT",
+        "%utCOVCOHORTSAV",
+        "%utCOVRESULT",
+        "%utCOVREPORT",
+    ):
+        runtime.globals.kill("TMP", (prefix, j))
+
+
+# =============================================================================
 # I/O state cleanup
 # =============================================================================
 
@@ -481,6 +513,10 @@ def transpile_and_execute(
     # and switch back to $PRINCIPAL.  Without this, a test that OPENs a file
     # device (or changes $IO) can pollute the runtime for subsequent tests.
     _reset_io(runtime)
+
+    # Kill MUnit transient globals from prior test runs.  In real MUMPS each
+    # test starts a new process ($J), so these are naturally isolated.
+    _clean_munit_globals(runtime)
 
     start = time.monotonic()
     try:

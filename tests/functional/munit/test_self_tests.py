@@ -91,11 +91,13 @@ _EXPECTED_FAILURES: dict[str, dict] = {
     # calculations also fail because VIEW "TRACE" is a no-op (no profiling
     # data collected).  These are inherent m2py limitations.
     #
-    # Test count varies: 2 on a fresh runtime, up to 5 when running after
-    # %utt1 on a shared session-scoped runtime (M-Unit globals persist).
+    # YDB baseline: 0 tests (coverage path short-circuits differently).
+    # m2py: 5 tests — %RSEL stub returns "no routines" but the coverage
+    # code runs 5 checks before encountering profiling failures.
     "%utt4": {
-        "min_tests": 2,
-        "max_tests": 10,
+        "expected_tests": 5,
+        "expected_failures": 4,
+        "expected_errors": 1,
         "entries": [
             ("MAIN", "%utt4", "CTRAP"),
         ],
@@ -117,11 +119,19 @@ _EXPECTED_FAILURES: dict[str, dict] = {
         ],
     },
     # Meta-runner: discovers and runs %utt2–%utt7 plus its own T5 tests.
-    # YDB baseline: 109 tests, 7 failures, 1 error
-    # m2py produces 115 tests (some extra from runtime state sharing).
-    # BADERROR now correctly surfaces as an error (syntax error preserved).
+    # YDB baseline: 109 tests, 7 failures, 1 error.
+    # m2py produces 115/13/3 — the delta is +6/+6/+2, accounted for by:
+    #   %utt4:   +5 tests, +4 failures, +1 error
+    #            (%RSEL stub lets coverage code run 5 checks vs YDB's 0)
+    #   %uttcovr: +1 test, +2 failures, +1 error
+    #            (CACHECOV parse error surfacing)
+    # All other sub-routines (%utt2, %utt5, %utt6) match YDB exactly.
+    # %utt1's own entry tags (T4–T8, COVRPTGL) contribute 18/2/0 — same
+    # as YDB.
     "%utt1": {
         "expected_tests": 115,
+        "expected_failures": 13,
+        "expected_errors": 3,
         "entries": [
             # T5^%utt1 — intentional assertion failures
             ("T5", "%utt1", "intentional failure"),
