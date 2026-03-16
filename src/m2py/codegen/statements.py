@@ -5876,6 +5876,17 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
         if dest is None or src is None:
             continue
 
+        # Detect same-variable MERGE for M19 overlap check.
+        # M19: "If glvn1 is a descendant of glvn2 or if glvn2 is a
+        # descendant of glvn1 an error condition occurs with ecode='M19'."
+        _needs_m19_check = False
+        if isinstance(src, GlobalVariable) and isinstance(dest, GlobalVariable):
+            if src.name == dest.name:
+                _needs_m19_check = True
+        elif isinstance(src, MVariable) and isinstance(dest, MVariable):
+            if src.name == dest.name:
+                _needs_m19_check = True
+
         # Generate source access code
         if isinstance(src, GlobalVariable):
             # Source is global: ^G or ^G(subs)
@@ -5955,6 +5966,10 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
             dest_name = dest.name
             dest_subs = gen_subscripts_tuple(dest.subscripts, ctx, str_wrap=True)
 
+            # M19 check: same global name → check for ancestor/descendant overlap
+            if _needs_m19_check:
+                ctx.emitter.line(f"_m19_check({src_subs}, {dest_subs})")
+
             # Get source tree and merge into global
             ctx.emitter.line(f"_merge_src = {src_tree_expr}")
             ctx.emitter.line("if _merge_src is not None:")
@@ -5988,6 +6003,16 @@ def _generate_merge(stmt: MMergeStatement, ctx: "GeneratorContext") -> None:
         elif isinstance(dest, MVariable):
             # Destination is local variable: B or B(subs)
             dest_var_name = dest.name
+
+            # M19 check: same local variable name → check for ancestor/descendant overlap
+            if _needs_m19_check:
+                src_subs_exprs = [generate_expr(s, ctx) for s in (src.subscripts or [])]
+                dest_subs_exprs = [
+                    generate_expr(s, ctx) for s in (dest.subscripts or [])
+                ]
+                src_tuple = f"({', '.join(f'str({e})' for e in src_subs_exprs)}{',' if src_subs_exprs else ''})"
+                dest_tuple = f"({', '.join(f'str({e})' for e in dest_subs_exprs)}{',' if dest_subs_exprs else ''})"
+                ctx.emitter.line(f"_m19_check({src_tuple}, {dest_tuple})")
 
             if ctx.strategy == GotoStrategy.SIMPLE_FUNCTIONS:
                 # Ensure destination exists as MArray

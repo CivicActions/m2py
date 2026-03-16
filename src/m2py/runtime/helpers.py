@@ -2837,3 +2837,28 @@ def m_zgetsyi(keyword: str) -> str:
     if kw == "NODENAME":
         return platform.node()
     return ""
+
+
+def _m19_check(src_subs: tuple, dest_subs: tuple) -> None:
+    """Raise M19 error if MERGE source and dest have ancestor/descendant overlap.
+
+    Per the MUMPS 1995 standard (8.2.13): "If glvn1 is a descendant of
+    glvn2 or if glvn2 is a descendant of glvn1 an error condition occurs
+    with ecode='M19'."
+
+    Self-merge (identical subscript tuples) is allowed — it's a no-op.
+    Only strict ancestor/descendant relationships trigger the error.
+    """
+    from m2py.runtime.exceptions import MRuntimeError
+
+    if src_subs == dest_subs:
+        return  # Self-merge is OK
+    shorter, longer = (
+        (src_subs, dest_subs)
+        if len(src_subs) <= len(dest_subs)
+        else (dest_subs, src_subs)
+    )
+    if longer[: len(shorter)] == shorter:
+        raise MRuntimeError(
+            "M19", "MERGE operands have ancestor/descendant relationship"
+        )
