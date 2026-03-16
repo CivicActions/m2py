@@ -238,14 +238,32 @@ class MumpsAutoImporter(importlib.abc.MetaPathFinder):
     # -- Modern importlib protocol (find_spec / create_module / exec_module) --
 
     def find_spec(self, fullname: str, path=None, target=None):
-        """Return a ModuleSpec if we have a matching override or .m file."""
+        """Return a ModuleSpec if we have a matching override, .m file, or bundled routine."""
         if fullname in self._failed:
+            return None
             return None
         if fullname in sys.modules:
             return None
-        if fullname not in self._overrides and fullname not in self._index:
+        if (
+            fullname not in self._overrides
+            and fullname not in self._index
+            and not self._is_bundled_routine(fullname)
+        ):
             return None
         return importlib.util.spec_from_loader(fullname, loader=self)
+
+    @staticmethod
+    def _is_bundled_routine(fullname: str) -> bool:
+        """Check if fullname is a bundled routine in m2py.runtime.routines."""
+        try:
+            from importlib import resources
+
+            return resources.is_resource("m2py.runtime.routines", fullname + ".py")
+        except Exception:
+            # Fallback: try direct import check
+            from importlib.util import find_spec as _find_spec
+
+            return _find_spec(f"m2py.runtime.routines.{fullname}") is not None
 
     def create_module(self, spec):
         """Use default module creation semantics."""
@@ -288,6 +306,18 @@ class MumpsAutoImporter(importlib.abc.MetaPathFinder):
         # --- Normal path: transpile .m source ---
         m_file = self._index.get(fullname)
         if m_file is None:
+            # --- Bundled routine fallback ---
+            if self._is_bundled_routine(fullname):
+                try:
+                    import importlib as _il
+
+                    bundled = _il.import_module(f"m2py.runtime.routines.{fullname}")
+                    module.__dict__.update(bundled.__dict__)
+                    logger.info("Loaded bundled routine %s", fullname)
+                    return
+                except Exception:
+                    self._failed.add(fullname)
+                    raise ImportError(fullname) from None
             raise ImportError(fullname)
 
         # Determine the MUMPS routine name
@@ -827,6 +857,37 @@ def clinical_bootstrap(fileman_bootstrap):
     return fileman_bootstrap
 
 
+def _register_bundled_routines() -> None:
+    """Register pre-transpiled bundled routines in sys.modules.
+
+    Scans ``m2py.runtime.routines`` for Python modules and registers each
+    under its short name (e.g. ``_pct_RSEL``) so that transpiled code like
+    ``import _pct_RSEL`` resolves without needing the auto-importer.
+    """
+    import importlib
+    import pkgutil
+
+    import m2py.runtime.routines as pkg
+
+    for importer, name, ispkg in pkgutil.iter_modules(pkg.__path__):
+        if ispkg or name.startswith("_"):
+            continue
+        fullname = name  # e.g. "MATH"
+        if fullname not in sys.modules:
+            mod = importlib.import_module(f"m2py.runtime.routines.{fullname}")
+            sys.modules[fullname] = mod
+            logger.debug("Registered bundled routine %s", fullname)
+
+    # Also handle _pct_* modules (names starting with underscore)
+    for importer, name, ispkg in pkgutil.iter_modules(pkg.__path__):
+        if ispkg or not name.startswith("_pct_"):
+            continue
+        if name not in sys.modules:
+            mod = importlib.import_module(f"m2py.runtime.routines.{name}")
+            sys.modules[name] = mod
+            logger.debug("Registered bundled routine %s", name)
+
+
 @pytest.fixture(scope="session")
 def munit_framework(munit_runtime):
     """Transpile and load the full MASH Utilities suite (framework + self-tests).
@@ -840,6 +901,13 @@ def munit_framework(munit_runtime):
     modules = load_mash_routines(_VISTA_M_MASH_DIR)
     if "%ut" not in modules:
         pytest.skip("Failed to load %ut framework")
+
+    # Register bundled routines from m2py.runtime.routines into sys.modules.
+    # These are pre-transpiled system utilities (e.g. _pct_RSEL for %RSEL)
+    # that the transpiled code imports at runtime.  Without this, `import
+    # _pct_RSEL` inside COV^%ut1 fails because the auto-importer is not
+    # active for the MASH self-test suite.
+    _register_bundled_routines()
 
     # Register XTMUNIT as an alias for %ut.  In VistA, XTMUNIT was the
     # package-namespaced (Toolkit) name for %ut.  FileMan test routines

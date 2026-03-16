@@ -85,9 +85,11 @@ _EXPECTED_FAILURES: dict[str, dict] = {
         ],
     },
     # %utt4 MAIN calls COV^%ut which requires GT.M VIEW "TRACE" profiling
-    # and %RSEL (transpiled as _pct_RSEL).  Python can't emulate hardware-level
-    # line profiling, so MAIN always errors.  The parser strips the "Error:"
-    # prefix, leaving the raw MUMPS error text — match on the missing module.
+    # and %RSEL (transpiled as _pct_RSEL).  With the %RSEL stub loaded,
+    # coverage code progresses further but hits USE device parameter
+    # limitations (CTRAP is a device parameter, not a variable).  Coverage
+    # calculations also fail because VIEW "TRACE" is a no-op (no profiling
+    # data collected).  These are inherent m2py limitations.
     #
     # Test count varies: 2 on a fresh runtime, up to 5 when running after
     # %utt1 on a shared session-scoped runtime (M-Unit globals persist).
@@ -95,9 +97,10 @@ _EXPECTED_FAILURES: dict[str, dict] = {
         "min_tests": 2,
         "max_tests": 10,
         "entries": [
-            ("MAIN", "%utt4", "_pct_RSEL"),
+            ("MAIN", "%utt4", "CTRAP"),
         ],
-        # MAIN produces multiple error/failure entries from retried $ETRAP handling
+        # MAIN produces multiple coverage failure entries from incomplete
+        # profiling data (VIEW "TRACE" is a no-op in Python)
         "allowed_extra_tags": [("MAIN", "%utt4")],
     },
     # %uttcovr CACHECOV loads routine source for coverage analysis.
