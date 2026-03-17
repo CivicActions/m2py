@@ -122,3 +122,145 @@ class TestFileIOIntegration:
 
         result = _generate_special_variable(var, FakeCtx())
         assert result == "_rt.zeof()"
+
+
+class TestCloseDelete:
+    """Tests for CLOSE :DELETE parameter (GT.M/YDB extension)."""
+
+    def test_close_delete_removes_file(self, tmp_path):
+        """CLOSE device:DELETE closes and removes the file."""
+        filepath = str(tmp_path / "to_delete.txt")
+        rt = MUMPSRuntime()
+
+        # Create and write to file
+        rt.open_device(filepath, ["NEWVERSION"])
+        rt.use_device(filepath)
+        rt.write("temporary data")
+        rt.close_device(filepath, parameters=["DELETE"])
+
+        # File should be removed
+        import os
+
+        assert not os.path.exists(filepath)
+        # Should be back on principal
+        assert rt.io() == "0"
+
+    def test_close_delete_case_insensitive(self, tmp_path):
+        """DELETE parameter is case-insensitive."""
+        filepath = str(tmp_path / "ci_delete.txt")
+        rt = MUMPSRuntime()
+
+        rt.open_device(filepath, ["NEWVERSION"])
+        rt.use_device(filepath)
+        rt.write("data")
+        rt.close_device(filepath, parameters=["delete"])
+
+        import os
+
+        assert not os.path.exists(filepath)
+
+    def test_close_without_delete_keeps_file(self, tmp_path):
+        """Normal CLOSE preserves the file."""
+        filepath = str(tmp_path / "keep.txt")
+        rt = MUMPSRuntime()
+
+        rt.open_device(filepath, ["NEWVERSION"])
+        rt.use_device(filepath)
+        rt.write("keep this")
+        rt.close_device(filepath)
+
+        import os
+
+        assert os.path.exists(filepath)
+
+    def test_close_delete_nonexistent_file_no_error(self, tmp_path):
+        """DELETE of already-removed file doesn't raise."""
+        filepath = str(tmp_path / "phantom.txt")
+        rt = MUMPSRuntime()
+
+        rt.open_device(filepath, ["NEWVERSION"])
+        rt.close_device(filepath, parameters=["DELETE"])
+        # Second close with DELETE on non-existent file should be a no-op
+        # (device already removed from table, file already gone)
+
+
+class TestOpenDeviceIndirected:
+    """Tests for open_device_indirected() — runtime OPEN spec parsing."""
+
+    def test_simple_file_path(self, tmp_path):
+        """Indirected OPEN with just a file path."""
+        filepath = str(tmp_path / "simple.txt")
+        rt = MUMPSRuntime()
+        # Touch the file so OPEN succeeds
+        (tmp_path / "simple.txt").write_text("")
+
+        result = rt.open_device_indirected(filepath, {})
+        assert result is True
+        rt.close_device(filepath)
+
+    def test_file_with_params_and_timeout(self, tmp_path):
+        """Indirected OPEN with params and timeout: 'file:(NEWVERSION):0'."""
+        filepath = str(tmp_path / "indirected.txt")
+        spec = f"{filepath}:(NEWVERSION):0"
+        rt = MUMPSRuntime()
+
+        result = rt.open_device_indirected(spec, {})
+        assert result is True
+        # $TEST should be set since timeout was present
+        assert rt._test == 1
+        rt.close_device(filepath)
+
+    def test_file_write_via_indirection(self, tmp_path):
+        """Full cycle: indirected OPEN → USE → WRITE → CLOSE → verify."""
+        filepath = str(tmp_path / "via_indir.txt")
+        spec = f"{filepath}:(NEWVERSION:NOWRAP:STREAM):0"
+        rt = MUMPSRuntime()
+
+        result = rt.open_device_indirected(spec, {})
+        assert result is True
+
+        rt.use_device(filepath)
+        rt.write("indirected write")
+        rt.write_newline()
+        rt.close_device(filepath)
+
+        with open(filepath) as f:
+            assert f.read() == "indirected write\n"
+
+    def test_variable_resolution(self, tmp_path):
+        """Indirected OPEN resolves variable name to file path."""
+        from m2py.runtime import MArray
+
+        filepath = str(tmp_path / "varres.txt")
+        (tmp_path / "varres.txt").write_text("")
+
+        scope = {"_pct_IO": MArray()}
+        scope["_pct_IO"].value = filepath
+
+        rt = MUMPSRuntime()
+        result = rt.open_device_indirected("%IO:(READONLY):0", scope)
+        assert result is True
+        rt.close_device(filepath)
+
+    def test_empty_params(self, tmp_path):
+        """Indirected OPEN with device::timeout (empty params)."""
+        filepath = str(tmp_path / "emptyparam.txt")
+        (tmp_path / "emptyparam.txt").write_text("")
+
+        spec = f"{filepath}::0"
+        rt = MUMPSRuntime()
+
+        result = rt.open_device_indirected(spec, {})
+        assert result is True
+        assert rt._test == 1
+        rt.close_device(filepath)
+
+    def test_split_open_spec_parentheses(self):
+        """_split_open_spec respects parentheses in params."""
+        parts = MUMPSRuntime._split_open_spec("/tmp/file:(NEWVERSION:NOWRAP:STREAM):0")
+        assert parts == ["/tmp/file", "(NEWVERSION:NOWRAP:STREAM)", "0"]
+
+    def test_split_open_spec_no_params(self):
+        """_split_open_spec handles device::timeout."""
+        parts = MUMPSRuntime._split_open_spec("/tmp/file::5")
+        assert parts == ["/tmp/file", "", "5"]

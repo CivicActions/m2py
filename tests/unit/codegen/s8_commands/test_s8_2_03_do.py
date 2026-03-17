@@ -107,7 +107,7 @@ class TestDoCommandCodegen:
 
         D LABEL^ROUTINE generates:
         1. Import statement for the external routine module
-        2. Label existence check with helpful error
+        2. Label resolution via resolve_label_func (handles dot-level labels)
         3. Call via run_with_goto_support for external GOTO handling (T075e)
         """
         code = generate_python("TEST D LABEL^EXTRTN Q")
@@ -115,12 +115,11 @@ class TestDoCommandCodegen:
         # Should import the external routine module
         assert "import EXTRTN" in code
 
-        # Should check if label exists with helpful error
-        assert "hasattr(EXTRTN, 'LABEL')" in code
-        assert "LabelNotFoundError" in code
+        # Should resolve label via resolve_label_func
+        assert "resolve_label_func(EXTRTN, 'LABEL')" in code
 
         # Should call via run_with_goto_support for external GOTO handling
-        assert "run_with_goto_support(getattr(EXTRTN, 'LABEL'), _rt, _scope)" in code
+        assert "run_with_goto_support(_target_func, _rt, _scope)" in code
 
 
 @pytest.mark.codegen
@@ -1236,9 +1235,9 @@ class TestDoBlockExtrinsicSave:
         an extrinsic function context.
         """
         code = generate_python("TEST\n D\n . W 1\n Q\n")
-        assert "_saved_extrinsic = _rt._in_extrinsic" in code
+        assert "_rt._extrinsic_stack.append(_rt._in_extrinsic)" in code
         assert "_rt._in_extrinsic = False" in code
-        assert "_rt._in_extrinsic = _saved_extrinsic" in code
+        assert "_rt._in_extrinsic = _rt._extrinsic_stack.pop()" in code
 
     def test_do_target_saves_extrinsic(self, generate_python):
         """D SUB generates save/restore of _in_extrinsic for subroutine call.
@@ -1246,7 +1245,7 @@ class TestDoBlockExtrinsicSave:
         Phase 21: Subroutine calls should see $QUIT=0.
         """
         code = generate_python("TEST\n D SUB\n Q\nSUB\n Q\n")
-        assert "_saved_extrinsic = _rt._in_extrinsic" in code
+        assert "_rt._extrinsic_stack.append(_rt._in_extrinsic)" in code
         assert "_rt._in_extrinsic = False" in code
 
 
@@ -1313,21 +1312,12 @@ class TestDoExternalRoutineEntryFunction:
     def test_d_label_routine_does_not_use_entry_function(self, generate_python):
         """D LABEL^EXTRTN still uses named label, not _entry_function."""
         code = generate_python("TEST D LABEL^EXTRTN Q")
-        # Uses getattr() for pyright-safe cross-module label access
-        assert "getattr(EXTRTN, 'LABEL')" in code
+        # Uses resolve_label_func for label resolution (handles dot-level labels)
+        assert "resolve_label_func(EXTRTN, 'LABEL')" in code
         # The DO call should reference the label directly, not _entry_function
-        # (Note: _entry_function is always declared at module level, so just
-        # check the call site doesn't use it)
-        for line in code.splitlines():
-            if (
-                "EXTRTN" in line
-                and "import" not in line
-                and "_entry_function" not in line
-            ):
-                if "getattr(EXTRTN, 'LABEL')" in line:
-                    break
-        else:
-            pytest.fail("Expected getattr(EXTRTN, 'LABEL') call, not _entry_function")
+        assert (
+            "_entry_function" not in code.split("resolve_label_func")[1].split("\n")[0]
+        )
 
 
 @pytest.mark.codegen
@@ -1370,3 +1360,578 @@ class TestTrampolineByRefPass2:
         """D:cond SUB — postconditioned DO (coverage: codegen DO path)."""
         result = execute_mumps('TEST\n S X=1\n D:X SUB\n Q\nSUB\n W "called",!\n Q\n')
         assert "called" in result.output
+
+
+# =============================================================================
+# DO indirection scope: execute_mumps and _emit_external_do_call scope fix
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestDoIndirectionScopeDispatch:
+    """DO indirection passes correct scope to execute_mumps and external calls.
+
+    Fix: generate_indirect_do() and _emit_external_do_call() were hardcoded
+    to pass _scope instead of the strategy-appropriate scope dictionary.
+    Now uses scope_dict_expr(ctx) which returns state._locals for
+    TRAMPOLINE+dynamic_locals routines.
+
+    The symptom was that D @CMD with arguments (going through execute_mumps)
+    or external routine calls would not see local variables from the caller,
+    because the wrong scope dict was passed.
+    """
+
+    def test_indirect_do_passes_variables(self, execute_mumps):
+        """D @CMD — indirect DO sees caller's local variables.
+
+        The subroutine should be able to read variables set by the caller
+        when dispatched through indirection.
+        """
+        result = execute_mumps(
+            'TEST\n S X="hello"\n S CMD="SUB"\n D @CMD\n Q\nSUB\n W X\n Q\n'
+        )
+        assert result.output == "hello"
+
+    def test_indirect_do_modifies_caller_scope(self, execute_mumps):
+        """D @CMD — indirect DO can SET variables visible to caller."""
+        result = execute_mumps(
+            'TEST\n S CMD="SUB"\n D @CMD\n W X\n Q\nSUB\n S X="set-by-sub"\n Q\n'
+        )
+        assert result.output == "set-by-sub"
+
+    def test_indirect_do_callback_pattern(self, execute_mumps):
+        """D @CB with computed callback name — real-world pattern.
+
+        This mimics the MXML callback dispatch pattern where a callback
+        name is stored in a variable and dispatched via D @CB.
+        The callee must receive the correct local variables.
+        """
+        result = execute_mumps(
+            "TEST\n"
+            ' S ATTR="value"\n'
+            ' S CB="HANDLER"\n'
+            " D @CB\n"
+            " Q\n"
+            "HANDLER\n"
+            ' W "attr="_ATTR\n'
+            " Q\n"
+        )
+        assert result.output == "attr=value"
+
+    def test_indirect_do_in_loop_scope(self, execute_mumps):
+        """D @CMD in FOR loop passes correct scope each iteration."""
+        result = execute_mumps(
+            'TEST\n S CMD="SUB"\n F I=1:1:3 D @CMD\n Q\nSUB\n W I\n Q\n'
+        )
+        assert result.output == "123"
+
+    def test_indirect_do_codegen_scope_ref(self, generate_python):
+        """D @CMD codegen uses scope_dict_expr for execute_mumps scope.
+
+        In SIMPLE_FUNCTIONS strategy, this should be _scope.
+        """
+        code = generate_python('TEST\n S CMD="SUB"\n D @CMD\n Q\nSUB\n W 1\n Q\n')
+        # Should reference resolve_do_targets with _scope
+        assert "resolve_do_targets" in code
+        assert "_scope" in code
+
+
+@pytest.mark.codegen
+class TestDoIndirectionTrampolineScope:
+    """DO indirection with TRAMPOLINE strategy scope dispatching.
+
+    In routines that use GOTO (TRAMPOLINE strategy), the scope dict
+    is state._locals instead of _scope. Indirect DO must use the
+    correct scope dict for both execute_mumps() and external calls.
+    """
+
+    def test_indirect_do_goto_routine_passes_vars(self, execute_mumps):
+        """D @CMD reads variables in GOTO routine (TRAMPOLINE).
+
+        GOTO forces TRAMPOLINE strategy. Indirect DO must use
+        state._locals, not _scope.
+        """
+        result = execute_mumps(
+            "TEST\n"
+            ' S X="from-test"\n'
+            ' S CMD="SUB"\n'
+            " G DISPATCH\n"
+            " Q\n"
+            "DISPATCH\n"
+            " D @CMD\n"
+            " Q\n"
+            "SUB\n"
+            " W X\n"
+            " Q\n"
+        )
+        assert result.output == "from-test"
+
+    def test_indirect_do_codegen_trampoline(self, generate_python):
+        """D @CMD in TRAMPOLINE+dynamic_locals generates state._locals.
+
+        GOTO forces TRAMPOLINE, K forces dynamic_locals.
+        """
+        code = generate_python(
+            "TEST\n"
+            " K\n"
+            ' S CMD="SUB"\n'
+            " G DISPATCH\n"
+            " Q\n"
+            "DISPATCH\n"
+            " D @CMD\n"
+            " Q\n"
+            "SUB\n"
+            " W 1\n"
+            " Q\n"
+        )
+        assert "state._locals" in code
+
+
+# =============================================================================
+# $QUIT stack: nested DO / extrinsic collision fix
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestQuitStackNestedExtrinsic:
+    """$QUIT stack-based save/restore for nested DO blocks and extrinsics.
+
+    Fix: Nested DO blocks both used the same _saved_extrinsic variable,
+    causing the inner block to clobber the outer's save. After inner
+    restore, the outer would restore the wrong value.
+
+    Now uses _rt._extrinsic_stack with push/pop to maintain a proper
+    stack of $QUIT states.
+    """
+
+    def test_nested_do_blocks_quit_zero(self, execute_mumps):
+        """Nested DO blocks: $QUIT=0 in both inner and outer blocks.
+
+        $QUIT should be 0 inside DO blocks (non-extrinsic context).
+        The inner block must not corrupt the outer's $QUIT restore.
+        """
+        result = execute_mumps(
+            "TEST\n"
+            " D\n"
+            ' . W "outer:"_$Q\n'
+            " . D\n"
+            ' . . W "inner:"_$Q_","\n'
+            ' . W ",after-inner:"_$Q\n'
+            " Q\n"
+        )
+        assert "inner:0" in result.output
+        assert "outer:0" in result.output
+        assert "after-inner:0" in result.output
+
+    def test_extrinsic_nested_do_quit(self, execute_mumps):
+        """Extrinsic function with nested DO: $QUIT correct at all levels.
+
+        Inside $$FUNC: $QUIT=1 (extrinsic context).
+        Inside DO block within $$FUNC: $QUIT=0 (DO block resets).
+        After DO block returns: $QUIT=1 (restored from stack).
+        """
+        result = execute_mumps(
+            "TEST\n"
+            " W $$FUNC\n"
+            " Q\n"
+            "FUNC()\n"
+            ' N R S R="before:"_$Q\n'
+            " D\n"
+            ' . S R=R_",in-do:"_$Q\n'
+            ' S R=R_",after-do:"_$Q\n'
+            " Q R\n"
+        )
+        # $QUIT=1 in extrinsic, $QUIT=0 in DO block, $QUIT=1 after DO
+        assert "before:1" in result.output
+        assert "in-do:0" in result.output
+        assert "after-do:1" in result.output
+
+    def test_extrinsic_inside_do_block(self, execute_mumps):
+        """$$FUNC called from inside a DO block returns correctly.
+
+        This is the pattern that caused the original bug: an extrinsic
+        function called from within a DO block. The nested save/restore
+        must not interfere.
+        """
+        result = execute_mumps("TEST\n D\n . W $$ADD(2,3)\n Q\nADD(A,B)\n Q A+B\n")
+        assert result.output == "5"
+
+    def test_deeply_nested_extrinsic_quit(self, execute_mumps):
+        """Multiple levels of nesting: extrinsic → DO → extrinsic → DO.
+
+        Each level pushes/pops _extrinsic_stack correctly.
+        """
+        result = execute_mumps(
+            "TEST\n"
+            " W $$OUTER\n"
+            " Q\n"
+            "OUTER()\n"
+            ' N V S V=""\n'
+            " D\n"
+            " . S V=V_$$INNER\n"
+            " Q V\n"
+            "INNER()\n"
+            ' N R S R=""\n'
+            " D\n"
+            ' . S R="deep"\n'
+            " Q R\n"
+        )
+        assert result.output == "deep"
+
+    def test_extrinsic_stack_codegen_pattern(self, generate_python):
+        """DO block codegen uses _extrinsic_stack.append/pop pattern."""
+        code = generate_python("TEST\n D\n . W 1\n Q\n")
+        assert "_rt._extrinsic_stack.append(_rt._in_extrinsic)" in code
+        assert "_rt._in_extrinsic = _rt._extrinsic_stack.pop()" in code
+
+    def test_subroutine_call_stack_codegen(self, generate_python):
+        """D SUB codegen uses _extrinsic_stack.append/pop pattern."""
+        code = generate_python("TEST\n D SUB\n Q\nSUB\n W 1\n Q\n")
+        assert "_rt._extrinsic_stack.append(_rt._in_extrinsic)" in code
+        assert "_rt._in_extrinsic = False" in code
+
+    def test_consecutive_do_blocks_quit_isolation(self, execute_mumps):
+        """Multiple consecutive DO blocks each see $QUIT=0.
+
+        Each block independently pushes/pops the stack.
+        """
+        result = execute_mumps(
+            'TEST\n D\n . W "A"_$Q_","\n D\n . W "B"_$Q_","\n D\n . W "C"_$Q\n Q\n'
+        )
+        assert result.output == "A0,B0,C0"
+
+    def test_quit_value_from_extrinsic_after_nested_do(self, execute_mumps):
+        """Extrinsic actually returns value after nested DO blocks.
+
+        This is the end-to-end test: $$FUNC with nested DO blocks
+        must still return a value via QUIT expr.
+        """
+        result = execute_mumps(
+            "TEST\n W $$CALC(10,20)\n Q\nCALC(A,B)\n N SUM\n D\n . S SUM=A+B\n Q SUM\n"
+        )
+        assert result.output == "30"
+
+
+# =============================================================================
+# TRAMPOLINE parameter shadowing fix
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestTrampolineParamShadowingCodegen:
+    """Codegen tests: TRAMPOLINE DO calls use _globals[] to avoid shadowing.
+
+    Fix: In TRAMPOLINE mode, DO calls used bare function names like
+    ``DICOMP(_rt, ...)`` which breaks when a formal parameter is also named
+    DICOMP — the local variable shadows the module-level function.
+
+    Solution: All DO calls (both byref and non-byref) now use
+    ``_globals['LABEL'](_rt, ...)`` which bypasses local variable lookup.
+    """
+
+    def test_trampoline_non_byref_uses_globals_lookup(self, generate_python):
+        """TRAMPOLINE DO with args uses _globals['SUB'] not bare SUB.
+
+        GOTO triggers TRAMPOLINE strategy; D SUB(1) must use _globals.
+        """
+        code = generate_python("TEST\n G MAIN\nMAIN\n D SUB(1)\n Q\nSUB(A)\n W A\n Q\n")
+        assert "_globals['SUB']" in code
+
+    def test_trampoline_no_args_uses_globals_lookup(self, generate_python):
+        """TRAMPOLINE DO without args uses _globals['SUB'] not bare SUB.
+
+        Even argumentless DO calls in TRAMPOLINE mode must use _globals.
+        """
+        code = generate_python("TEST\n G MAIN\nMAIN\n D SUB\n Q\nSUB\n W 1\n Q\n")
+        assert "_globals['SUB']" in code
+
+    def test_trampoline_byref_uses_globals_lookup(self, generate_python):
+        """TRAMPOLINE DO with by-ref arg uses _globals['SUB'] not bare SUB.
+
+        By-ref path (D SUB(.X)) in TRAMPOLINE must also use _globals.
+        """
+        code = generate_python(
+            "TEST\n G MAIN\nMAIN\n S X=1 D SUB(.X)\n Q\nSUB(N)\n S N=N+1\n Q\n"
+        )
+        assert "_globals['SUB']" in code
+
+    def test_no_bare_label_call_in_do_site(self, generate_python):
+        """DO call site uses _globals['WORKER'], not bare WORKER(_rt, ...).
+
+        The internal trampoline wrapper (_WORKER) is fine — only the
+        DO call site must use _globals[] to avoid parameter shadowing.
+        Note: _WORKER (with underscore) is the trampoline wrapper and
+        is intentionally called bare from the trampoline dispatch loop.
+        """
+        code = generate_python(
+            "TEST\n G MAIN\nMAIN\n D WORKER(1,2)\n Q\nWORKER(A,B)\n W A+B\n Q\n"
+        )
+        # The DO call site must use _globals lookup
+        assert "_globals['WORKER'](_rt" in code
+
+
+@pytest.mark.codegen
+class TestTrampolineParamShadowingRuntime:
+    """Runtime tests: param names shadowing label names in TRAMPOLINE mode.
+
+    These tests exercise the actual fix for the DICOMP bug where
+    EXPR(FILE,DICOMP,I,SUBS) had parameter DICOMP shadowing the DICOMP
+    label function, causing 'str' object is not callable errors.
+    """
+
+    def test_param_shadows_label_with_goto(self, execute_mumps):
+        """Param name = label name works in TRAMPOLINE mode (non-byref).
+
+        GOTO forces TRAMPOLINE. SUB(SUB,B) has param SUB shadowing label SUB.
+        D SUB(10,20) from MAIN must resolve to the label, not the param.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\nMAIN\n D SUB(10,20)\n Q\nSUB(SUB,B)\n W SUB+B\n Q\n"
+        )
+        assert result.output == "30"
+
+    def test_param_shadows_different_label_with_goto(self, execute_mumps):
+        """Param name matches a *different* label (not the one being defined).
+
+        CALLER(WORKER,...) where param WORKER shadows label WORKER.
+        CALLER calls D WORKER(...) — must resolve to the label function.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n D CALLER(5)\n Q\n"
+            "CALLER(WORKER)\n D WORKER(WORKER)\n Q\n"
+            "WORKER(X)\n W X*2\n Q\n"
+        )
+        assert result.output == "10"
+
+    def test_multiple_params_shadow_multiple_labels(self, execute_mumps):
+        """Multiple params each shadow a different label.
+
+        A(B,C) where both B and C are also labels. Calls to B and C
+        from inside A must resolve to label functions, not param values.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n D A(100,200)\n Q\n"
+            "A(B,C)\n D B(B) D C(C) Q\n"
+            "B(X)\n W X\n Q\n"
+            "C(X)\n W X\n Q\n"
+        )
+        assert result.output == "100200"
+
+    def test_param_shadows_label_byref_with_goto(self, execute_mumps):
+        """By-ref DO where param name shadows label in TRAMPOLINE mode.
+
+        GOTO forces TRAMPOLINE. D SUB(.X) where SUB(SUB) has param
+        shadowing label SUB. The by-ref mechanism must still work.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n S X=5 D SUB(.X) W X\n Q\n"
+            "SUB(SUB)\n S SUB=SUB*3\n Q\n"
+        )
+        assert result.output == "15"
+
+    def test_recursive_call_param_shadows_label(self, execute_mumps):
+        """Recursive DO where param name shadows its own label.
+
+        FACT(FACT) — param FACT shadows label FACT. Recursive call
+        D FACT(FACT-1) must resolve to the label, not the param value.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n W $$FACT(5)\n Q\n"
+            "FACT(FACT)\n Q:FACT<2 1\n Q FACT*$$FACT(FACT-1)\n"
+        )
+        assert result.output == "120"
+
+    def test_simple_functions_param_shadowing_still_works(self, execute_mumps):
+        """SIMPLE_FUNCTIONS mode (no GOTO) — param shadowing still works.
+
+        Regression test: the fix unified both strategies to use _globals[].
+        Without GOTO, SIMPLE_FUNCTIONS is used. Must still handle shadows.
+        """
+        result = execute_mumps("TEST\n D B\n Q\nA(A,B)\n W A,B\n Q\nB\n D A(7,8)\n Q\n")
+        assert result.output == "78"
+
+    def test_dicomp_pattern_param_shadows_routine_label(self, execute_mumps):
+        """DICOMP-style pattern: EXPR(FILE,DICOMP,...) where DICOMP is a label.
+
+        This is the exact pattern that caused the original bug. EXPR calls
+        D DICOMP(args) but param DICOMP has value like "1" from the caller.
+        Without _globals[], Python would call "1"(...) → TypeError.
+        """
+        result = execute_mumps(
+            "TEST\n G START\n"
+            'START\n D EXPR("filenum","compval",1)\n Q\n'
+            'EXPR(FILE,DICOMP,I)\n W "EXPR:",FILE,",",DICOMP,",",I,!\n'
+            " D DICOMP(FILE)\n Q\n"
+            'DICOMP(F)\n W "DICOMP:",F\n Q\n'
+        )
+        assert result.output == "EXPR:filenum,compval,1\nDICOMP:filenum"
+
+
+# =============================================================================
+# TRAMPOLINE scope sync fix (_scope = state._locals)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestTrampolineScopeSyncCodegen:
+    """Codegen tests: TRAMPOLINE labels with dynamic_locals emit _scope = state._locals.
+
+    Fix: In TRAMPOLINE mode with dynamic_locals, ``state._locals`` diverges
+    from ``_scope`` after NEW/SET operations. Variables created by SET after
+    NEW exist only in ``state._locals``, so extrinsic calls (``$$FUNC``) that
+    pass ``_scope=_scope`` couldn't see them.
+
+    Solution: Each TRAMPOLINE label function emits ``_scope = state._locals``
+    so that ``_scope`` is always an alias for the live variable scope.
+    """
+
+    def test_trampoline_dynamic_locals_emits_scope_alias(self, generate_python):
+        """TRAMPOLINE labels with dynamic_locals emit '_scope = state._locals'.
+
+        GOTO forces TRAMPOLINE. Argumentless NEW forces dynamic_locals.
+        The generated label functions must alias _scope to state._locals.
+        """
+        code = generate_python(
+            "TEST\n G MAIN\nMAIN\n N  S X=1 D SUB\n Q\nSUB\n W X\n Q\n"
+        )
+        assert "_scope = state._locals" in code
+
+    def test_scope_alias_appears_in_every_trampoline_label(self, generate_python):
+        """Every TRAMPOLINE label function should have the scope alias.
+
+        Multiple labels each need the alias since any could be the GOTO target.
+        Argumentless NEW forces dynamic_locals.
+        """
+        code = generate_python("TEST\n G A\nA\n N  S V=1 G B\nB\n W V\n Q\n")
+        # Both _A and _B label functions should have the alias
+        # Count occurrences in the label function bodies
+        assert code.count("_scope = state._locals") >= 2
+
+
+@pytest.mark.codegen
+class TestTrampolineScopeSyncRuntime:
+    """Runtime tests: NEW'd variables visible to extrinsic calls in TRAMPOLINE mode.
+
+    These tests exercise the DIBTED-style bug where PROCESS NEWs DIBTLINE,
+    SETs it, then calls $$LINE which couldn't see DIBTLINE because _scope
+    was stale.
+    """
+
+    def test_newed_var_visible_to_extrinsic_same_routine(self, execute_mumps):
+        """Variable NEWed and SET in one label visible to $$FUNC in same routine.
+
+        GOTO forces TRAMPOLINE. Argumentless NEW forces dynamic_locals.
+        MAIN NEWs all, SETs X=42, calls $$GETX().
+        GETX must see X=42 via _scope (now aliased to state._locals).
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\nMAIN\n N  S X=42 W $$GETX()\n Q\nGETX()\n Q X\n"
+        )
+        assert result.output == "42"
+
+    def test_newed_var_visible_to_extrinsic_across_goto(self, execute_mumps):
+        """Variable NEWed in one label, accessed by extrinsic after GOTO.
+
+        A NEWs all, SETs X, GOTOs to B. B calls $$READER() which reads X.
+        Argumentless NEW forces dynamic_locals.
+        """
+        result = execute_mumps(
+            "TEST\n G A\nA\n N  S X=99 G B\nB\n W $$READER()\n Q\nREADER()\n Q X\n"
+        )
+        assert result.output == "99"
+
+    def test_multiple_newed_vars_visible_to_extrinsic(self, execute_mumps):
+        """Multiple NEW'd variables all visible to extrinsic calls.
+
+        Argumentless NEW forces dynamic_locals. SETs A, B, C then
+        calls $$SUM() which adds them.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\nMAIN\n N  S A=10,B=20,C=30 W $$SUM()\n Q\nSUM()\n Q A+B+C\n"
+        )
+        assert result.output == "60"
+
+    def test_newed_var_in_for_loop_visible_to_extrinsic(self, execute_mumps):
+        """Variable NEWed before a FOR loop, modified in loop, read by extrinsic.
+
+        Mirrors DIBTED pattern: PROCESS NEWs everything, FOR loop calls $$LINE
+        which reads LINE. Argumentless NEW forces dynamic_locals.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n N  S LINE=1 F  D  Q:LINE>3\n"
+            " . W $$GETLINE(),!\n"
+            " . S LINE=LINE+1\n"
+            " Q\n"
+            "GETLINE()\n Q LINE\n"
+        )
+        assert result.output == "1\n2\n3\n"
+
+    def test_newed_var_visible_to_do_subroutine(self, execute_mumps):
+        """NEW'd variable visible to a regular DO subroutine (not just extrinsic).
+
+        DO SUB where SUB reads a variable created after argumentless NEW.
+        """
+        result = execute_mumps(
+            'TEST\n G MAIN\nMAIN\n N  S MSG="hello" D PRINT\n Q\nPRINT\n W MSG\n Q\n'
+        )
+        assert result.output == "hello"
+
+    def test_extrinsic_with_array_access_on_newed_scope(self, execute_mumps):
+        """Extrinsic accessing array variable set after argumentless NEW.
+
+        Argumentless NEW + array + extrinsic reading it.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            'MAIN\n N  S ARR("A")="alpha",ARR("B")="beta"\n'
+            ' S IDX="A" W $$LOOKUP()\n Q\n'
+            "LOOKUP()\n Q ARR(IDX)\n"
+        )
+        assert result.output == "alpha"
+
+    def test_newed_var_not_leaked_after_quit(self, execute_mumps):
+        """NEW'd variables are properly cleaned up after subroutine returns.
+
+        Ensures the scope alias doesn't break NEW stack unwinding.
+        Uses by-ref call to force dynamic_locals.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n S X=1 D INNER(.X) W X\n Q\n"
+            "INNER(Y)\n N  S X=999\n Q\n"
+        )
+        # X should be restored to 1 after INNER returns (NEW unwound)
+        assert result.output == "1"
+
+    def test_nested_extrinsic_calls_with_new(self, execute_mumps):
+        """Nested extrinsic calls each with their own NEW'd variables.
+
+        MAIN sets A=1. OUTER sets B=2. INNER reads both A and B.
+        Argumentless NEW in MAIN forces dynamic_locals; OUTER uses
+        exclusive NEW to keep A visible while creating B locally.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            "MAIN\n N  S A=1 W $$OUTER()\n Q\n"
+            "OUTER()\n N (A) S B=2 Q A+B+$$INNER()\n"
+            "INNER()\n Q A+B\n"
+        )
+        # OUTER: A=1, B=2, INNER returns A+B=3, OUTER returns 1+2+3=6
+        assert result.output == "6"
+
+    def test_scope_sync_with_do_passing_args(self, execute_mumps):
+        """DO with args + NEW'd variables — both must be accessible.
+
+        Argumentless NEW in MAIN, then calls D PROCESS("X") which reads CTR.
+        """
+        result = execute_mumps(
+            "TEST\n G MAIN\n"
+            'MAIN\n N  S CTR=0 D PROCESS("X")\n W CTR\n Q\n'
+            "PROCESS(VAL)\n S CTR=CTR+1 W VAL\n Q\n"
+        )
+        assert result.output == "X1"

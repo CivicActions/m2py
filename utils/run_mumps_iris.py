@@ -29,14 +29,20 @@ import uuid
 from pathlib import Path
 
 CONTAINER_NAME = "m2py-iris"
+IMAGE_NAME = "m2py-iris-img"
 
-# Select Docker image based on CPU architecture
+# Select base Docker image based on CPU architecture (for building custom image)
 _arch = platform.machine()
-IMAGE = (
+_BASE_IMAGE = (
     "intersystems/iris-community-arm64:latest-cd"
     if _arch in ("aarch64", "arm64")
     else "intersystems/iris-community:latest-cd"
 )
+
+# Path to Dockerfile.iris and project root
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR.parent
+_DOCKERFILE = _PROJECT_ROOT / "Dockerfile.iris"
 
 # Sentinel characters to delimit routine output (unlikely in real output)
 _START_SENTINEL = "\x01\x02\x03"
@@ -88,11 +94,42 @@ def _wait_for_ready(max_wait: int = 120) -> None:
     raise RuntimeError(f"IRIS container did not become ready within {max_wait}s")
 
 
+def _build_image() -> None:
+    """Build the custom IRIS image if it doesn't exist."""
+    result = subprocess.run(
+        ["docker", "image", "inspect", IMAGE_NAME],
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        return  # Image already exists
+
+    print(f"==> Building {IMAGE_NAME} image (first time only)...", file=sys.stderr)
+    result = subprocess.run(
+        [
+            "docker",
+            "build",
+            "-f",
+            str(_DOCKERFILE),
+            "--build-arg",
+            f"BASE_IMAGE={_BASE_IMAGE}",
+            "-t",
+            IMAGE_NAME,
+            str(_PROJECT_ROOT),
+        ],
+        capture_output=False,  # Show build output
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to build {IMAGE_NAME} image")
+    print("==> Image built successfully.", file=sys.stderr)
+
+
 def start_container() -> None:
     """Start the IRIS container if not already running."""
     status = _container_status()
     if status == "running":
         return
+
+    _build_image()
 
     if status == "stopped":
         subprocess.run(
@@ -100,7 +137,7 @@ def start_container() -> None:
             capture_output=True,
         )
     else:
-        # Create new container
+        # Create new container from custom image
         result = subprocess.run(
             [
                 "docker",
@@ -108,7 +145,7 @@ def start_container() -> None:
                 "-d",
                 "--name",
                 CONTAINER_NAME,
-                IMAGE,
+                IMAGE_NAME,
                 "--check-caps",
                 "false",
             ],

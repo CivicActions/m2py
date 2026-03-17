@@ -132,6 +132,58 @@ class TransactionLocalSnapshot:
     saved_test: Optional[bool] = None  # $TEST value at TSTART
 
 
+def _parse_lock_target_string(
+    target: str,
+) -> Tuple[Optional[str], str, Optional[str]]:
+    """Parse a LOCK target string into lock-operation, name, and timeout.
+
+    MUMPS LOCK indirection can produce strings like "+^DD(1,2):TIMEOUT"
+    that include the lock operation prefix and timeout suffix inline.
+    This function extracts those components.
+
+    Args:
+        target: The resolved LOCK argument string.
+            Examples: "+^DD(1,2):n", "^GLOBAL(1)", "-^A:5", "^DD(\"IX\",123)"
+
+    Returns:
+        Tuple of (lockop, name_str, timeout_expr_str):
+        - lockop: "+" or "-" if present, None if no prefix
+        - name_str: The lock name reference (e.g., "^DD(1,2)")
+        - timeout_expr_str: Timeout expression string (variable name or number),
+          None if no timeout
+    """
+    s = target
+    lockop: Optional[str] = None
+
+    # 1. Extract lock operation prefix (+/-)
+    if s.startswith("+"):
+        lockop = "+"
+        s = s[1:]
+    elif s.startswith("-"):
+        lockop = "-"
+        s = s[1:]
+
+    # 2. Find timeout separator (: outside parentheses)
+    # Must handle subscripts like ^DD("IX",DIEN) where commas appear inside parens
+    timeout_expr: Optional[str] = None
+    depth = 0
+    in_quote = False
+    for i, c in enumerate(s):
+        if c == '"':
+            in_quote = not in_quote
+        elif not in_quote:
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+            elif c == ":" and depth == 0:
+                timeout_expr = s[i + 1 :]
+                s = s[:i]
+                break
+
+    return (lockop, s, timeout_expr)
+
+
 def _parse_subscripted_name(name: str) -> Tuple[str, Optional[Tuple[Any, ...]]]:
     """Parse a variable name that may include subscripts.
 
@@ -375,6 +427,50 @@ def _is_mumps_expression(name: str) -> bool:
     return False
 
 
+def _strip_mumps_sub_quotes(s: str) -> str:
+    """Strip MUMPS-style formatting quotes from a subscript string.
+
+    When resolve_to_name() evaluates variable references in a global name
+    string (e.g., ``^UTILITY(U,$J,1009.802)`` → ``^UTILITY("^",77795,1009.802)``),
+    it uses _append_subscripts() which adds double quotes around non-numeric
+    subscripts for MUMPS name syntax.  When we later re-parse the formatted
+    string with _parse_subscripted_name(), those formatting quotes are preserved
+    as part of the subscript string.
+
+    This helper strips the surrounding quotes and unescapes doubled quotes,
+    so that ``'"^"'`` → ``'^'`` and ``'"FOO""BAR"'`` → ``'FOO"BAR'``.
+
+    Plain strings and numeric strings pass through unchanged.
+    """
+    if len(s) >= 2 and s.startswith('"') and s.endswith('"'):
+        return s[1:-1].replace('""', '"')
+    return s
+
+
+def _normalize_parsed_subscript(s: Any) -> str:
+    """Normalize a subscript from _parse_subscripted_name for storage.
+
+    Handles the two kinds of subscripts that come from parsing a MUMPS
+    global reference string:
+
+    1. **Numeric types** (int, float) from bare subscripts like ``.01`` or ``3``:
+       Uses ``canonicalize_numeric()`` so that Python's ``float(0.01)``
+       becomes ``".01"`` (MUMPS canonical form with no leading zero)
+       instead of ``"0.01"`` which ``str()`` produces.
+
+    2. **String types** from quoted subscripts like ``"B"`` or ``"^"``:
+       Strips MUMPS formatting quotes, so ``'"^"'`` → ``'^'``.
+
+    This replaces the previous pattern ``_strip_mumps_sub_quotes(str(s))``
+    which lost MUMPS numeric canonicalization for float subscripts.
+    """
+    from m2py.core.subscripts import SubscriptCanonicalizer
+
+    if isinstance(s, (int, float)):
+        return SubscriptCanonicalizer.canonicalize_numeric(s)
+    return _strip_mumps_sub_quotes(str(s))
+
+
 def _evaluate_subscript(
     sub: Any, _scope: Dict[str, Any], runtime: Optional["MUMPSRuntime"] = None
 ) -> Any:
@@ -424,6 +520,7 @@ def _evaluate_subscript(
             if isinstance(next_raw, MArray):
                 if subs:
                     evaluated_subs = _evaluate_subscripts(subs, _scope)
+                    assert evaluated_subs is not None
                     raw_value = next_raw.get(*evaluated_subs)
                 else:
                     raw_value = next_raw.value
@@ -437,6 +534,7 @@ def _evaluate_subscript(
             if isinstance(final_raw, MArray):
                 if subs:
                     evaluated_subs = _evaluate_subscripts(subs, _scope)
+                    assert evaluated_subs is not None
                     return final_raw.get(*evaluated_subs)
                 return final_raw.value
             return final_raw
@@ -553,12 +651,14 @@ class CallTarget(NamedTuple):
         - "LABEL+5" → CallTarget(label="LABEL", routine=None, offset=5)
         - "LABEL+5^ROUTINE" → CallTarget(label="LABEL", routine="ROUTINE", offset=5)
         - "LABEL:cond" → CallTarget(label="LABEL", postcondition="cond")
+        - 'LABEL("arg")^RTN' → CallTarget(label="LABEL", routine="RTN", args_str='("arg")')
     """
 
     label: Optional[str] = None
     routine: Optional[str] = None
     offset: Optional[int] = None
     postcondition: Optional[str] = None  # Unevaluated postcondition string
+    args_str: Optional[str] = None  # Parenthesized argument string, e.g. '("World")'
 
 
 # Global storage backend protocol
@@ -597,6 +697,11 @@ from m2py.runtime.helpers import (  # noqa: E402
     m_pattern_match,
     m_sorts_after,
 )
+
+# Optimized MUMPS numeric coercion (module-level to avoid per-call import overhead).
+# Imported from core.values (not codegen.helpers) so the runtime layer can be
+# loaded without the codegen package — required by test_runtime_independence.
+from m2py.core.values import m_num as _m_num  # noqa: E402
 
 
 class MArray:
@@ -1109,8 +1214,13 @@ def _create_offset_entry_wrapper(
             def handle_goto_external(_goto, state, uses_dynamic, use_dataclass):
                 # Sync state back to scope BEFORE transferring control
                 sync_state_to_scope(state, uses_dynamic, use_dataclass)
-                # Handle nested external GOTO
-                run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)
+                # Save pending NEW entries for later unwinding
+                if hasattr(state, "_new_stack") and state._new_stack:
+                    _rt._pending_new_entries.extend(state._new_stack)
+                    state._new_stack.clear()
+                # Re-raise to let the outer run_with_goto_support handle
+                # the GOTO iteratively (avoids recursive rwgs depth growth)
+                raise _goto
 
             # Call internal function with offset - wrap in try to catch GotoExternal
             try:
@@ -1222,13 +1332,33 @@ def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
         # G LABEL^ROUTINE - call specific label
         # Translate label name to Python function name (handles digits, %, etc.)
         func_name = translate_name(label)
-        if not hasattr(module, func_name):
-            raise LabelNotFoundError(
-                label,
-                module._routine_name,
-                list(getattr(module, "_label_lines", {}).keys()),
-            )
-        return getattr(module, func_name)
+        if hasattr(module, func_name):
+            return getattr(module, func_name)
+
+        # Label exists in _label_lines but not as a standalone function
+        # (e.g., labels at dot level > 0).  Resolve via _line_map with offset 0.
+        label_lines = getattr(module, "_label_lines", {})
+        if label in label_lines:
+            target_line = label_lines[label] + 1  # 0-indexed → 1-based
+            line_map = getattr(module, "_line_map", {})
+            if target_line in line_map:
+                parent_label, line_offset = line_map[target_line]
+                parent_func_name = translate_name(parent_label)
+                if line_offset > 0:
+                    internal_func_name = "_" + parent_func_name
+                    if hasattr(module, internal_func_name):
+                        internal_func = getattr(module, internal_func_name)
+                        return _create_offset_entry_wrapper(
+                            internal_func, line_offset, module, use_dataclass_sync=True
+                        )
+                if hasattr(module, parent_func_name):
+                    return getattr(module, parent_func_name)
+
+        raise LabelNotFoundError(
+            label,
+            module._routine_name,
+            list(getattr(module, "_label_lines", {}).keys()),
+        )
     else:
         # G ^ROUTINE - call entry label (same name as routine)
         entry_name = translate_name(module._routine_name)
@@ -1236,6 +1366,57 @@ def resolve_goto_target(goto: GotoExternal) -> Callable[..., Any]:
             # Fall back to lowercase
             entry_name = translate_name(module._routine_name.lower())
         return getattr(module, entry_name)
+
+
+def resolve_label_func(module: Any, label: str) -> Callable[..., Any]:
+    """Resolve a label in a module to a callable function.
+
+    Handles labels that exist as standalone functions AND labels that
+    only exist in _label_lines (e.g., labels at dot level > 0).
+    For the latter, uses _line_map to find the parent function and
+    creates an offset wrapper.
+
+    Args:
+        module: The imported module for the routine
+        label: The MUMPS label name (not translated)
+
+    Returns:
+        Callable function for the label
+
+    Raises:
+        LabelNotFoundError: If label doesn't exist at all
+    """
+    from m2py.core.names import translate_name
+
+    func_name = translate_name(label)
+
+    # Direct function lookup (most common case)
+    if hasattr(module, func_name):
+        return getattr(module, func_name)
+
+    # Fallback: label exists in _label_lines but not as a standalone function
+    label_lines = getattr(module, "_label_lines", {})
+    if label in label_lines:
+        target_line = label_lines[label] + 1  # 0-indexed → 1-based
+        line_map = getattr(module, "_line_map", {})
+        if target_line in line_map:
+            parent_label, line_offset = line_map[target_line]
+            parent_func_name = translate_name(parent_label)
+            if line_offset > 0:
+                internal_func_name = "_" + parent_func_name
+                if hasattr(module, internal_func_name):
+                    internal_func = getattr(module, internal_func_name)
+                    return _create_offset_entry_wrapper(
+                        internal_func, line_offset, module, use_dataclass_sync=True
+                    )
+            if hasattr(module, parent_func_name):
+                return getattr(module, parent_func_name)
+
+    raise LabelNotFoundError(
+        label,
+        module._routine_name,
+        list(label_lines.keys()),
+    )
 
 
 def call_external_with_offset(
@@ -1361,11 +1542,70 @@ def call_external_with_offset(
         _rt._current_label_lines = _saved_label_lines
 
 
+def _unwind_pending_news(
+    _rt: "MUMPSRuntime", _scope: Dict[str, Any], mark: int = 0
+) -> None:
+    """Unwind pending NEW stack entries saved by re-raised GotoExternal handlers.
+
+    When entry functions re-raise GotoExternal (to let the outer
+    run_with_goto_support handle GOTOs iteratively), they save their
+    NEW stack entries to _rt._pending_new_entries.  When the GOTO chain
+    eventually QUITs normally, this function unwinds those entries against
+    _scope — simulating the normal return path where innermost routines
+    exit first.
+
+    Only entries at index >= *mark* are processed, so nested
+    ``run_with_goto_support`` calls don't accidentally unwind entries
+    belonging to an outer invocation.  Entries are processed in
+    **reverse** (LIFO) order — matching the normal ``NewScopeManager``
+    exit path which iterates ``reversed(self._restore_actions)``.
+
+    Entry formats (same as runtime.helpers._unwind_one_new_entry):
+        ('all', saved_dict) - Argumentless NEW: restore full snapshot
+        ('excl', keep_set, saved_dict) - Exclusive NEW: restore non-kept vars
+        ('var', name, saved_value) - Selective NEW: restore single variable
+        dict - Legacy: treat as argumentless NEW (full snapshot)
+    """
+    pending = _rt._pending_new_entries
+    if len(pending) <= mark:
+        return
+    # Process entries in LIFO (reverse) order from mark to end.
+    # Within a single GOTO chain, entries are appended innermost-first
+    # (exception propagation order), but each NewScopeManager's
+    # restore_actions are saved in forward order while they need LIFO
+    # unwinding.  Reversing the entire slice matches the normal exit
+    # behavior of reversed(self._restore_actions).
+    for entry in reversed(pending[mark:]):
+        if isinstance(entry, dict):
+            _scope.clear()
+            _scope.update(entry)
+        elif entry[0] == "all":
+            _scope.clear()
+            _scope.update(entry[1])
+        elif entry[0] == "excl":
+            keep_vars = entry[1]
+            saved = entry[2]
+            current_kept = {k: v for k, v in _scope.items() if k in keep_vars}
+            _scope.clear()
+            _scope.update(saved)
+            _scope.update(current_kept)
+        elif entry[0] == "var":
+            name, saved_value = entry[1], entry[2]
+            # saved_value of None or the _UNDEFINED sentinel (a bare object())
+            # means the variable was undefined — remove it from scope.
+            if saved_value is None or type(saved_value) is object:
+                _scope.pop(name, None)
+            else:
+                _scope[name] = saved_value
+    del pending[mark:]
+
+
 def run_with_goto_support(
     entry_func: Callable[..., Any],
     _rt: "MUMPSRuntime",
     _scope: Optional[Dict[str, Any]] = None,
     _args: Optional[list[Any]] = None,
+    _pending_mark: Optional[int] = None,
 ) -> Any:
     """Execute a routine entry point with external GOTO support.
 
@@ -1388,6 +1628,12 @@ def run_with_goto_support(
         _scope: Optional shared scope for cross-routine variable visibility
         _args: Optional list of positional arguments to pass to entry_func
                (used by JOB command to pass actuallist values)
+        _pending_mark: Optional baseline index into _rt._pending_new_entries.
+               When set, only entries at index >= this mark are unwound on
+               normal return.  Used by GotoExternal handlers to include
+               entries added during exception propagation.  When None
+               (the default), the mark is set to the current length of
+               the pending list at entry time.
 
     Returns:
         The return value of the final routine that QUITs normally
@@ -1399,103 +1645,141 @@ def run_with_goto_support(
     if _scope is None:
         _scope = {}
 
+    # Track call depth to prevent segfaults from unbounded recursion.
+    # When entry functions handle GotoExternal by calling rwgs recursively
+    # (e.g., DIP2 ↔ DIP22 GOTO cycle in FileMan PRINT), each cycle adds
+    # stack frames.  A clean RecursionError is raised before hitting the
+    # C-stack limit that causes a segfault.
+    _rwgs_depth = getattr(_rt, "_rwgs_depth", 0)
+    if _rwgs_depth > 500:
+        raise RecursionError(
+            f"run_with_goto_support depth {_rwgs_depth} exceeded limit"
+        )
+    _rt._rwgs_depth = _rwgs_depth + 1
+
     # Save/restore _in_extrinsic for $QUIT tracking
     # DO calls are subroutine invocations, so $QUIT=0 inside them
-    _saved_extrinsic = _rt._in_extrinsic
+    _rt._extrinsic_stack.append(_rt._in_extrinsic)
     _rt._in_extrinsic = False
 
     current_func = entry_func
     current_rt = _rt
     extra_args: list[Any] = _args if _args else []
-    while True:
-        try:
-            _result = current_func(current_rt, *extra_args, _scope=_scope)
-            _rt._in_extrinsic = _saved_extrinsic
-            return _result
-        except GotoExternal as goto:
-            # Transfer to external routine
-            module = goto.module
-            label = goto.label
-            offset = goto.offset
-            # Use _rt from exception if available, else current
-            current_rt = goto._rt if goto._rt is not None else current_rt
+    _goto_iterations = 0
+    _max_goto_iterations = 10_000
+    # Mark the current pending-entries depth so nested rwgs calls only
+    # unwind entries accumulated during *this* invocation.
+    # When called from a GotoExternal handler, _pending_mark is passed
+    # explicitly to include entries added during exception propagation.
+    if _pending_mark is None:
+        _pending_mark = len(_rt._pending_new_entries)
+    try:
+        while True:
+            try:
+                _result = current_func(current_rt, *extra_args, _scope=_scope)
+                # Unwind pending NEW entries accumulated during this
+                # invocation (entries at index >= _pending_mark).
+                _unwind_pending_news(_rt, _scope, _pending_mark)
+                _rt._in_extrinsic = _rt._extrinsic_stack.pop()
+                return _result
+            except GotoExternal as goto:
+                _goto_iterations += 1
+                if _goto_iterations > _max_goto_iterations:
+                    raise RecursionError(
+                        f"run_with_goto_support GOTO iteration limit "
+                        f"({_max_goto_iterations}) exceeded — possible "
+                        f"infinite GOTO cycle"
+                    ) from goto
+                # Transfer to external routine
+                module = goto.module
+                label = goto.label
+                offset = goto.offset
+                # Use _rt from exception if available, else current
+                current_rt = goto._rt if goto._rt is not None else current_rt
 
-            # Get the entry function from target module
-            if offset is not None:
-                # G +N^ROUTINE or G LABEL+N^ROUTINE - use line dispatch
-                if label is not None:
-                    # G LABEL+N^ROUTINE - compute line from label
-                    if label not in module._label_lines:
+                # Get the entry function from target module
+                if offset is not None:
+                    # G +N^ROUTINE or G LABEL+N^ROUTINE - use line dispatch
+                    if label is not None:
+                        # G LABEL+N^ROUTINE - compute line from label
+                        if label not in module._label_lines:
+                            raise LabelNotFoundError(
+                                label,
+                                module._routine_name,
+                                list(module._label_lines.keys()),
+                            ) from goto
+                        # _label_lines uses 0-indexed line numbers, add offset
+                        # Then convert to 1-based for _line_map lookup
+                        target_line = module._label_lines[label] + offset + 1
+                    else:
+                        # G +N^ROUTINE - absolute line offset (already 1-based)
+                        target_line = offset
+
+                    # Look up function via _line_map
+                    if target_line not in module._line_map:
+                        # Find next valid line
+                        valid_lines = [
+                            ln for ln in module._line_map if ln >= target_line
+                        ]
+                        if not valid_lines:
+                            raise ValueError(
+                                f"Entry point +{offset} not valid in {module._routine_name}"
+                            )
+                        target_line = min(valid_lines)
+
+                    # Get the function from line map
+                    label_name, line_offset = module._line_map[target_line]
+                    # Translate label name to Python function name
+                    from m2py.core.names import translate_name
+
+                    func_name = translate_name(label_name)
+                    target_func = getattr(module, func_name)
+
+                    # If there's a line_offset, create a wrapper that passes _start_offset
+                    if line_offset > 0:
+                        # Get the internal function (prefixed with _)
+                        internal_func_name = "_" + func_name
+                        if hasattr(module, internal_func_name):
+                            internal_func = getattr(module, internal_func_name)
+                            # Use factory to create offset wrapper with dir()-based sync
+                            current_func = _create_offset_entry_wrapper(
+                                internal_func,
+                                line_offset,
+                                module,
+                                use_dataclass_sync=False,
+                            )
+                        else:
+                            current_func = target_func
+                    else:
+                        current_func = target_func
+                elif label is not None:
+                    # G LABEL^ROUTINE - call specific label
+                    # Translate label name to Python function name (handles digits, %, etc.)
+                    from m2py.core.names import translate_name
+
+                    label_func_name = translate_name(label)
+                    if not hasattr(module, label_func_name):
                         raise LabelNotFoundError(
                             label,
                             module._routine_name,
-                            list(module._label_lines.keys()),
+                            list(getattr(module, "_label_lines", {}).keys()),
                         ) from goto
-                    # _label_lines uses 0-indexed line numbers, add offset
-                    # Then convert to 1-based for _line_map lookup
-                    target_line = module._label_lines[label] + offset + 1
+                    current_func = getattr(module, label_func_name)
                 else:
-                    # G +N^ROUTINE - absolute line offset (already 1-based)
-                    target_line = offset
+                    # G ^ROUTINE - call entry label (same name as routine)
+                    from m2py.core.names import translate_name
 
-                # Look up function via _line_map
-                if target_line not in module._line_map:
-                    # Find next valid line
-                    valid_lines = [ln for ln in module._line_map if ln >= target_line]
-                    if not valid_lines:
-                        raise ValueError(
-                            f"Entry point +{offset} not valid in {module._routine_name}"
-                        )
-                    target_line = min(valid_lines)
+                    entry_name = translate_name(module._routine_name)
+                    if not hasattr(module, entry_name):
+                        # Fall back to lowercase
+                        entry_name = translate_name(module._routine_name.lower())
+                    current_func = getattr(module, entry_name)
 
-                # Get the function from line map
-                label_name, line_offset = module._line_map[target_line]
-                # Translate label name to Python function name
-                from m2py.core.names import translate_name
-
-                func_name = translate_name(label_name)
-                target_func = getattr(module, func_name)
-
-                # If there's a line_offset, create a wrapper that passes _start_offset
-                if line_offset > 0:
-                    # Get the internal function (prefixed with _)
-                    internal_func_name = "_" + func_name
-                    if hasattr(module, internal_func_name):
-                        internal_func = getattr(module, internal_func_name)
-                        # Use factory to create offset wrapper with dir()-based sync
-                        current_func = _create_offset_entry_wrapper(
-                            internal_func, line_offset, module, use_dataclass_sync=False
-                        )
-                    else:
-                        current_func = target_func
-                else:
-                    current_func = target_func
-            elif label is not None:
-                # G LABEL^ROUTINE - call specific label
-                # Translate label name to Python function name (handles digits, %, etc.)
-                from m2py.core.names import translate_name
-
-                label_func_name = translate_name(label)
-                if not hasattr(module, label_func_name):
-                    raise LabelNotFoundError(
-                        label,
-                        module._routine_name,
-                        list(getattr(module, "_label_lines", {}).keys()),
-                    ) from goto
-                current_func = getattr(module, label_func_name)
-            else:
-                # G ^ROUTINE - call entry label (same name as routine)
-                from m2py.core.names import translate_name
-
-                entry_name = translate_name(module._routine_name)
-                if not hasattr(module, entry_name):
-                    # Fall back to lowercase
-                    entry_name = translate_name(module._routine_name.lower())
-                current_func = getattr(module, entry_name)
-
-            # Clear extra_args — JOB arguments only apply to the initial
-            # entry point, not to subsequent GOTO targets
-            extra_args = []
+                # Clear extra_args — JOB arguments only apply to the initial
+                # entry point, not to subsequent GOTO targets
+                extra_args = []
+    finally:
+        _rt._rwgs_depth = _rwgs_depth
 
 
 @dataclass
@@ -1646,6 +1930,7 @@ class MUMPSRuntime:
         # $IO — tracked via _current_device.name
         # Extrinsic function context for $QUIT
         self._in_extrinsic: bool = False
+        self._extrinsic_stack: list[bool] = []
         # $ZJOB - last JOB'd process ID
         self._zjob: str = "0"
         # Track all JOB'd child processes for cleanup
@@ -1655,7 +1940,7 @@ class MUMPSRuntime:
         # $KEY — tracked per-device on device.key
         # Accessor key() delegates to _current_device.key
         # $SYSTEM - system identification (V,S format)
-        self._system: str = "47,m2py"
+        self._system: str = "47,M2PY"
         # Error processing special variables
         # $ECODE - comma-delimited list of active error codes (empty = no errors)
         self._ecode: str = ""
@@ -1715,6 +2000,44 @@ class MUMPSRuntime:
         # Codegen callback for XECUTE: (code, routine_name) -> python_source
         # If None, auto-discovered from m2py.codegen when first needed.
         self._codegen_callback = codegen_callback
+        # Cache for XECUTE: mumps_code -> (python_source, compiled_code_object)
+        # Old-style cross-references execute the same M code for every entry,
+        # so caching avoids re-parsing and re-generating Python each time.
+        # Bounded to _XECUTE_CACHE_MAX entries (LRU eviction) because FileMan
+        # indirection generates data-dependent XECUTE strings; unbounded
+        # caching consumes ~29 KB/entry (arpeggio parse tree objects + codegen),
+        # causing OOM on large routines like DMUDIC00.
+        self._xecute_cache: Dict[str, Any] = {}
+        self._xecute_cache_max = 1024
+
+        # Function-object cache for XECUTE: mumps_code -> (fn, globals_dict)
+        # When caller_globals is absent (the common case), we cache the compiled
+        # Python *function* extracted from the first exec() and reuse it on
+        # subsequent calls — completely bypassing exec() overhead.
+        # exec(code_obj, namespace) redefines all module-level items on every
+        # call even when code_obj is cached; skipping it saves ~30–100 µs/call,
+        # which is significant for n=3000+ XECUTE loops (e.g. FileMan COUNT).
+        self._xecute_fn_cache: Dict[str, Any] = {}
+        self._xecute_fn_cache_max = 4096
+
+        # Depth counter for run_with_goto_support (prevents segfault from
+        # infinite GOTO recursion cycles like DIP2 <-> DIP22 in FileMan PRINT)
+        self._rwgs_depth: int = 0
+
+        # Pending NEW stack entries from entry functions that re-raised
+        # GotoExternal instead of calling rwgs recursively.  When an entry
+        # function GOTOs to another routine, its NEW stack entries are saved
+        # here so they can be unwound when the GOTO chain eventually QUITs.
+        self._pending_new_entries: list = []
+
+        # MUMPS has no recursion limit — deep DO/XECUTE nesting is normal
+        # (e.g., DICOMP evaluating computed fields that reference other computed
+        # fields via XECUTE → D ^DICOMP chains).  Each MUMPS DO/XECUTE level
+        # consumes ~20-50 Python stack frames, so Python's default limit of 1000
+        # is far too low.  Raise it once, permanently.
+        _min_recursion_limit = 10_000
+        if sys.getrecursionlimit() < _min_recursion_limit:
+            sys.setrecursionlimit(_min_recursion_limit)
 
     def _get_codegen_callback(self) -> Any:
         """Get the codegen callback, using auto-discovery if not explicitly set."""
@@ -1840,37 +2163,75 @@ class MUMPSRuntime:
     def get_text_indirect(self, label: str, offset: int = 0, module: Any = None) -> str:
         """Get source text line with indirected label ($TEXT with @).
 
-        Handles $TEXT(@X) and $TEXT(@X+N) where X contains a label name.
-        The resolved label is used to look up the source line.
+        Handles $TEXT(@X) where X can be:
+        - A simple label name: "LABEL"
+        - A label with offset: "LABEL+N"
+        - An absolute offset: "+N"
+        - An external reference: "+N^ROUTINE", "LABEL^ROUTINE", "LABEL+N^ROUTINE"
+
+        When X contains a full text reference (with ^ for external routines
+        or + for offsets), the string is parsed and the appropriate module and
+        line are resolved dynamically.
 
         Args:
-            label: Label name (resolved from indirection)
-            offset: Line offset from label (default 0)
-            module: Optional external routine module. If provided, use its
-                    _source_lines and _label_lines instead of the current routine's.
+            label: Text reference string (resolved from indirection)
+            offset: Additional line offset from label (default 0).
+                    Combined with any offset parsed from the label string.
+            module: Optional external routine module. If provided AND the
+                    label string does not contain a ``^ROUTINE`` part, this
+                    module's _source_lines/_label_lines are used.
 
         Returns:
-            Source line text, or empty string if label not found or offset
-            is out of bounds.
+            Source line text, or empty string if label/offset not found or
+            out of bounds.
         """
-        if module is not None:
-            lines = getattr(module, "_source_lines", [])
-            label_lines = getattr(module, "_label_lines", {})
-        else:
-            lines = self._current_source_lines or []
-            label_lines = self._current_label_lines or {}
+        import re as _re
 
-        # Look up the label
-        base_idx = label_lines.get(label, -1)
-        if base_idx < 0:
-            return ""  # Label not found
+        ref = str(label).strip()
+        if not ref:
+            return ""
 
-        line_idx = base_idx + offset
+        # Parse the reference: [LABEL][+N][^ROUTINE]
+        parsed_label: Optional[str] = None
+        parsed_offset: int = offset  # start with any additional offset
+        parsed_module: Any = module
 
-        # Bounds check and return
-        if 0 <= line_idx < len(lines):
-            return lines[line_idx].replace("\t", " ")
-        return ""
+        # Check for ^ROUTINE part
+        if "^" in ref:
+            ref_part, routine_part = ref.split("^", 1)
+            routine_part = routine_part.strip()
+            if routine_part:
+                parsed_module = self._get_module_safe(routine_part)
+                if parsed_module is None:
+                    return ""  # External routine not found
+            ref = ref_part
+
+        # Now ref is [LABEL][+N] or +N or LABEL
+        plus_match = _re.match(r"^(\w*)\+(\d+)$", ref)
+        if plus_match:
+            label_part = plus_match.group(1)
+            offset_part = int(plus_match.group(2))
+            if label_part:
+                parsed_label = label_part
+                parsed_offset += offset_part
+            else:
+                # Pure offset like "+1" — absolute line reference
+                parsed_label = None
+                parsed_offset += offset_part
+        elif ref.startswith("+"):
+            # Just "+" with no number? Treat as +0
+            parsed_label = None
+        elif ref:
+            # Pure label name, no offset
+            parsed_label = ref
+
+        # Now resolve using the parsed components — delegate to get_text
+        return self.get_text(
+            offset=parsed_offset,
+            label=parsed_label,
+            module=parsed_module,
+            is_external=(parsed_module is not None and parsed_module is not module),
+        )
 
     def write(self, value: Any) -> None:
         """Capture WRITE output and update $X/$Y position tracking.
@@ -2126,9 +2487,6 @@ class MUMPSRuntime:
         Returns:
             Formatted string suitable for SET @ input
         """
-        from m2py.runtime.helpers import m_format_output
-        import re
-
         if value is None or value == "":
             return '""'
 
@@ -2198,9 +2556,6 @@ class MUMPSRuntime:
         Returns:
             Formatted subscript (quoted if string, unquoted if numeric)
         """
-        from m2py.runtime.helpers import m_format_output
-        import re
-
         # If it's already a Decimal, format it directly
         if isinstance(sub, Decimal):
             return m_format_output(sub)
@@ -2727,7 +3082,7 @@ class MUMPSRuntime:
         pattern 1.N1\",\"1.E.
 
         Returns:
-            System identification string (e.g., "47,m2py")
+            System identification string (e.g., "47,M2PY")
         """
         return self._system
 
@@ -2760,9 +3115,7 @@ class MUMPSRuntime:
         Args:
             value: New column position (coerced to int via MUMPS numeric rules)
         """
-        from m2py.codegen.helpers import m_num
-
-        self._current_device.x_pos = int(m_num(value))
+        self._current_device.x_pos = int(_m_num(value))
 
     def set_y(self, value) -> None:
         """Set cursor line position ($Y).
@@ -2773,9 +3126,7 @@ class MUMPSRuntime:
         Args:
             value: New line position (coerced to int via MUMPS numeric rules)
         """
-        from m2py.codegen.helpers import m_num
-
-        self._current_device.y_pos = int(m_num(value))
+        self._current_device.y_pos = int(_m_num(value))
 
     def device_control(self, keyword: str, *params) -> None:
         """Handle device control mnemonics (W /keyword).
@@ -3216,6 +3567,12 @@ class MUMPSRuntime:
             - Freezes stack snapshot on first error
             - Executes $ETRAP or $ZTRAP code
         """
+        # GotoExternal is a control-flow signal (external GOTO), not a real
+        # MUMPS error.  It must propagate to the run_with_goto_support
+        # trampoline without $ETRAP/$ZTRAP interference.
+        if isinstance(exc, GotoExternal):
+            return False
+
         # Nested error detection with depth counting
         self._error_nesting_depth += 1
         if self._error_nesting_depth > self._max_error_nesting:
@@ -3280,17 +3637,26 @@ class MUMPSRuntime:
                 self._freeze_stack_snapshot()
             # If $ECODE already set, this is a re-fire during unwind — don't re-accumulate
 
+            # Resolve caller_globals from the current routine so that
+            # $ETRAP/$ZTRAP code like "D ERRTRAP" can find labels defined
+            # in the routine where the error occurred.
+            caller_globals = None
+            if self._current_routine:
+                module = self._routines.get(self._current_routine.upper())
+                if module is not None:
+                    caller_globals = module.__dict__
+
             # Try $ETRAP first, then $ZTRAP fallback
             if self._etrap:
                 try:
-                    self.execute_mumps(self._etrap, _scope)
+                    self.execute_mumps(self._etrap, _scope, caller_globals)
                 except Exception:
                     # Error in $ETRAP itself - propagate original error
                     return False
             elif self._ztrap:
                 # $ZTRAP fallback
                 try:
-                    self._dispatch_ztrap(_scope)
+                    self._dispatch_ztrap(_scope, caller_globals)
                 except Exception:
                     return False
 
@@ -3312,7 +3678,7 @@ class MUMPSRuntime:
         r"^[A-Za-z%][A-Za-z0-9]*(?:\+\d+)?(?:\^[A-Za-z%][A-Za-z0-9]*)?$"
     )
 
-    def _dispatch_ztrap(self, _scope: dict) -> None:
+    def _dispatch_ztrap(self, _scope: dict, caller_globals: dict | None = None) -> None:
         """Dispatch $ZTRAP error handler.
 
         Handles $ZTRAP with GOTO vs XECUTE semantics:
@@ -3325,6 +3691,7 @@ class MUMPSRuntime:
 
         Args:
             _scope: Current variable scope
+            caller_globals: Optional caller's globals() for label access
 
         Raises:
             Exception: If $ZTRAP execution fails
@@ -3337,13 +3704,13 @@ class MUMPSRuntime:
         # Check for explicit GOTO syntax: "G label" or "GOTO label"
         if self._ZTRAP_GOTO_RE.match(ztrap):
             # GOTO semantics — execute the full GOTO command
-            self.execute_mumps(ztrap, _scope)
+            self.execute_mumps(ztrap, _scope, caller_globals)
         elif self._ZTRAP_LABEL_RE.match(ztrap):
             # Bare label reference — implicit GOTO semantics
-            self.execute_mumps(f"G {ztrap}", _scope)
+            self.execute_mumps(f"G {ztrap}", _scope, caller_globals)
         else:
             # XECUTE semantics — execute as inline MUMPS code
-            self.execute_mumps(ztrap, _scope)
+            self.execute_mumps(ztrap, _scope, caller_globals)
 
     def _extract_error_code(self, ecode: str) -> str:
         """Extract the primary error code from $ECODE format.
@@ -3519,7 +3886,7 @@ class MUMPSRuntime:
             return ""
 
     def _freeze_stack_snapshot(self) -> None:
-        """Freeze a deep copy of the call stack for $STACK intrinsic function.
+        """Freeze a snapshot of the call stack for $STACK intrinsic function.
 
         When $ECODE transitions from empty to non-empty (first error),
         freeze the current call stack so $STACK(n) queries return the state
@@ -3529,14 +3896,20 @@ class MUMPSRuntime:
         into $ECODE do NOT update the snapshot. The snapshot is cleared when
         $ECODE is reset to "" via SET $ECODE="".
 
+        Uses shallow copies of StackFrame objects (via dataclasses.replace)
+        rather than copy.deepcopy, since StackFrame fields are all immutable
+        (str/int).  This avoids the O(n) deepcopy cost that becomes
+        prohibitive when $ETRAP fires thousands of times during validation
+        loops (e.g., DMUDIC00 → DIO2 → XDY error cycling).
+
         The snapshot includes:
-        - Deep copy of all StackFrame objects
+        - Copy of all StackFrame objects
         - The depth (len) at time of freeze
         """
-        import copy
-
         if self._stack_snapshot is None:
-            self._stack_snapshot = copy.deepcopy(self._stack_frames)
+            from dataclasses import replace as _dc_replace
+
+            self._stack_snapshot = [_dc_replace(f) for f in self._stack_frames]
             self._stack_snapshot_depth = len(self._stack_frames)
 
     def _format_zstatus(
@@ -3718,6 +4091,174 @@ class MUMPSRuntime:
 
         return True
 
+    def open_device_indirected(
+        self,
+        spec: str,
+        _scope: Dict[str, Any],
+    ) -> bool:
+        """Open a device via MUMPS OPEN command argument indirection.
+
+        Handles ``O @VAR`` where VAR contains a full OPEN specification
+        string like ``"device:(params):timeout"``.  The specification is
+        parsed at runtime.
+
+        The spec format follows MUMPS OPEN syntax::
+
+            device                   — just a device name
+            device:(param,param,...) — device with parameters
+            device:(params):timeout  — device with parameters and timeout
+            device::timeout          — device with timeout, no params
+
+        The device component may itself be a variable name (e.g. ``%IO``)
+        that needs resolving from scope.
+
+        Args:
+            spec: Full OPEN specification string
+            _scope: Current variable scope for resolving variable references
+
+        Returns:
+            True if device opened successfully, False on timeout
+        """
+        device_name, params, timeout = self._parse_open_spec(spec, _scope)
+        result = self.open_device(device_name, params, timeout)
+
+        # When a timeout is present, set $TEST
+        if timeout is not None:
+            self._test = result
+
+        return result
+
+    def _parse_open_spec(
+        self,
+        spec: str,
+        _scope: Dict[str, Any],
+    ) -> tuple[str, Optional[List[str]], Optional[float]]:
+        """Parse an OPEN specification string into (device, params, timeout).
+
+        Handles the MUMPS OPEN spec format used by ``O @VAR`` indirection.
+
+        The spec can be:
+        - ``device`` — just a device/file path
+        - ``device:(param1:param2:...):timeout`` — full form
+        - ``device:param:timeout`` — non-parenthesized params
+        - ``device::timeout`` — no params, just timeout
+
+        The device part may be a variable name that needs resolving
+        from scope (e.g. ``%IO`` → ``"/tmp/test.txt"``).
+
+        Returns:
+            Tuple of (device_name, parameters_list_or_None, timeout_or_None)
+        """
+        if not spec:
+            return ("", None, None)
+
+        # Split on top-level colons (not inside parentheses)
+        parts = self._split_open_spec(spec)
+
+        # First part is the device name (may be a variable reference)
+        raw_device = parts[0]
+        device_name = self._resolve_open_device_name(raw_device, _scope)
+
+        # Parse remaining parts: params and/or timeout
+        params: Optional[List[str]] = None
+        timeout: Optional[float] = None
+
+        if len(parts) >= 2:
+            param_part = parts[1]
+            if param_part.startswith("(") and param_part.endswith(")"):
+                # Parenthesized params: (param1:param2:...)
+                inner = param_part[1:-1]
+                if inner:
+                    params = [p.strip() for p in inner.split(":")]
+                else:
+                    params = []
+            elif param_part == "":
+                # Empty param part (device::timeout form)
+                params = None
+            else:
+                # Single non-parenthesized param
+                params = [param_part.strip()]
+
+        if len(parts) >= 3:
+            timeout_str = parts[2].strip()
+            if timeout_str:
+                try:
+                    timeout = float(timeout_str)
+                except ValueError:
+                    timeout = None
+
+        return (device_name, params, timeout)
+
+    @staticmethod
+    def _split_open_spec(spec: str) -> List[str]:
+        """Split an OPEN spec string on top-level colons.
+
+        Respects parentheses so that ``device:(p1:p2):timeout`` splits into
+        ``["device", "(p1:p2)", "timeout"]`` rather than splitting inside
+        the parenthesized group.
+
+        Returns:
+            List of spec components.
+        """
+        parts = []
+        current = []
+        depth = 0
+        for ch in spec:
+            if ch == "(":
+                depth += 1
+                current.append(ch)
+            elif ch == ")":
+                depth -= 1
+                current.append(ch)
+            elif ch == ":" and depth == 0:
+                parts.append("".join(current))
+                current = []
+            else:
+                current.append(ch)
+        parts.append("".join(current))
+        return parts
+
+    def _resolve_open_device_name(
+        self,
+        raw: str,
+        _scope: Dict[str, Any],
+    ) -> str:
+        """Resolve a device name component from an OPEN spec.
+
+        If *raw* looks like a MUMPS variable name (starts with letter or %,
+        no path separators), try to resolve it from scope.  Otherwise return
+        it as-is (already a file path or literal).
+
+        Returns:
+            Resolved device name / file path.
+        """
+        from m2py.core.names import NameTranslator
+
+        # If it's already a path (contains / or .), return as-is
+        if "/" in raw or "\\" in raw:
+            return raw
+
+        # If it's a quoted string, strip quotes
+        if raw.startswith('"') and raw.endswith('"') and len(raw) >= 2:
+            return raw[1:-1]
+
+        # Try to resolve as a variable name
+        # Common patterns: %IO, IO, DEVICE, etc.
+        try:
+            py_name = NameTranslator.to_python(raw)
+            if py_name in _scope:
+                from m2py.runtime import MArray
+
+                val = _scope[py_name]
+                if isinstance(val, MArray):
+                    return str(val.value) if val.value is not None else ""
+                return str(val)
+        except Exception:
+            pass
+
+        # Return raw value as-is (might be a literal device name)
+        return raw
+
     def close_device(self, device: str, parameters: Optional[List[str]] = None) -> None:
         """Close a device (MUMPS CLOSE command).
 
@@ -3726,13 +4267,25 @@ class MUMPSRuntime:
         Closing $PRINCIPAL is a no-op. Closing the current device reverts
         to $PRINCIPAL. $IO is set to "0" after close.
 
+        Parameters:
+            DELETE — delete the file after closing (GT.M/YDB extension,
+                     used by ``C device:DELETE`` in %ZISH for file removal)
+            RENAME=newname — rename after close (not yet implemented)
+
         Args:
             device: Device name to close
-            parameters: Optional close parameters (usually ignored)
+            parameters: Optional close parameters
         """
+        import os
+
         # $PRINCIPAL cannot be closed
         if device == "0" or device == self._principal:
             return
+
+        # Parse parameters for DELETE
+        params = parameters or []
+        upper_params = [p.upper() for p in params]
+        should_delete = "DELETE" in upper_params
 
         # Close via device_table (preferred path — FileDevice.close() closes file handle)
         if device in self._device_table:
@@ -3742,6 +4295,13 @@ class MUMPSRuntime:
             except (OSError, IOError):
                 pass
             del self._device_table[device]
+
+        # DELETE parameter: remove the file after closing
+        if should_delete:
+            try:
+                os.remove(device)
+            except OSError:
+                pass
 
         # If closing current device, switch back to principal device
         if self._current_device.name == device:
@@ -3805,10 +4365,46 @@ class MUMPSRuntime:
 
         routine_name = routine or self._current_routine
 
-        # Check if we have SQLiteGlobalStorage (cross-process capable)
+        # Detect active backend type for cross-process global sharing.
+        # YDB and IRIS backends share a single database natively —
+        # the child process just connects to the same database.
+        # SQLite also shares via a file path.
+        # InMemory creates a temporary SQLite for the child.
+        backend_type = type(self._globals).__name__
         db_path = getattr(self._globals, "_db_path", None)
 
-        if db_path is None:
+        if backend_type == "YottaDBGlobalStorage":
+            return self._start_job_subprocess(
+                label,
+                routine_name,
+                args,
+                params,
+                timeout,
+                db_path=None,
+                backend_name="yottadb",
+            )
+        elif backend_type == "IRISGlobalStorage":
+            return self._start_job_subprocess(
+                label,
+                routine_name,
+                args,
+                params,
+                timeout,
+                db_path=None,
+                backend_name="iris",
+            )
+        elif db_path is not None:
+            # SQLiteGlobalStorage — pass the shared DB path
+            return self._start_job_subprocess(
+                label,
+                routine_name,
+                args,
+                params,
+                timeout,
+                db_path=db_path,
+                backend_name=None,
+            )
+        else:
             # InMemoryGlobalStorage — create a temporary SQLite DB for the
             # subprocess. The child process won't share in-memory globals,
             # but this is the expected behavior: JOB requires cross-process
@@ -3827,7 +4423,13 @@ class MUMPSRuntime:
             os.close(fd)
 
         return self._start_job_subprocess(
-            label, routine_name, args, params, timeout, db_path
+            label,
+            routine_name,
+            args,
+            params,
+            timeout,
+            db_path=db_path,
+            backend_name=None,
         )
 
     def _start_job_subprocess(
@@ -3837,12 +4439,17 @@ class MUMPSRuntime:
         args: List[Any],
         params: Optional[List[str]],
         timeout: Optional[float],
-        db_path: str,
+        db_path: str | None,
+        backend_name: str | None = None,
     ) -> bool:
         """Start JOB as a real subprocess using job_runner.py.
 
         Creates a real process with independent locals
-        and shared globals via SQLite.
+        and shared globals via the specified backend.
+
+        Args:
+            db_path: SQLite database path (for sqlite backend)
+            backend_name: Backend name ('yottadb', 'iris') or None for sqlite
         """
         import json
         import os
@@ -3864,9 +4471,12 @@ class MUMPSRuntime:
             routine_name,
             "--label",
             entry_label,
-            "--db-path",
-            db_path,
         ]
+
+        if backend_name:
+            cmd.extend(["--backend", backend_name])
+        elif db_path:
+            cmd.extend(["--db-path", db_path])
 
         if args:
             cmd.extend(["--args", json.dumps([str(a) for a in args])])
@@ -4008,6 +4618,25 @@ class MUMPSRuntime:
                     pass
         self._job_processes.clear()
 
+    def cleanup(self) -> None:
+        """Release all resources: close open devices and kill JOB processes.
+
+        Call this in test teardown to prevent ResourceWarnings from
+        unclosed file handles and orphaned subprocesses.
+        """
+        # Close all non-principal devices
+        for device_name in list(self._device_table):
+            if device_name != "0":
+                try:
+                    self._device_table[device_name].close()
+                except Exception:
+                    pass
+        self._device_table = {"0": self._principal_device}
+        self._current_device = self._principal_device
+
+        # Kill any JOB'd child processes
+        self.kill_job_processes()
+
     def get_data(self, name: str, _scope: Dict[str, Any]) -> int:
         """Get $DATA value for variable by name (indirection support).
 
@@ -4044,7 +4673,12 @@ class MUMPSRuntime:
         base_name, subscripts = _parse_subscripted_name(name)
         # Evaluate subscripts - resolve variable references like A(3) to their values
         evaluated_subs = _evaluate_subscripts(subscripts, _scope, runtime=self)
-        subs = tuple(str(s) for s in evaluated_subs) if evaluated_subs else ()
+        # Normalize subscripts: canonicalize numeric types and strip MUMPS quotes.
+        subs = (
+            tuple(_normalize_parsed_subscript(s) for s in evaluated_subs)
+            if evaluated_subs
+            else ()
+        )
 
         # Handle global variables
         if base_name.startswith("^"):
@@ -4055,8 +4689,13 @@ class MUMPSRuntime:
                 return m_data_global(self._globals, resolved_name, full_subs)
             return m_data_global(self._globals, key, subs)
 
-        # Handle local variables
-        arr = _scope.get(base_name, MArray())
+        # Handle local variables – translate MUMPS name to Python scope key
+        # (e.g. "I" → "_a_I", "%D" → "_pct_D") so we match the entries that
+        # codegen stores under translated names.
+        from m2py.core.names import NameTranslator
+
+        py_name = NameTranslator.to_python(base_name)
+        arr = _scope.get(py_name, MArray())
         if not isinstance(arr, MArray):
             # Non-MArray value: defined with no descendants if truthy, else undefined
             if arr:
@@ -4064,6 +4703,58 @@ class MUMPSRuntime:
             else:
                 return 0
         return m_data(arr, subs)
+
+    def data_indirected(
+        self,
+        source: str,
+        _scope: Dict[str, Any],
+        levels: int = 1,
+        per_level_subscripts: Optional[List[List[Any]]] = None,
+    ) -> int:
+        """$DATA via indirection with proper subscript merging.
+
+        Parallels get_indirected() but returns $DATA value instead of the
+        variable's value.  Resolves the indirection chain to a final name,
+        then delegates to get_data().
+
+        Args:
+            source: Source variable name for indirection (e.g., "X" for @X)
+            _scope: Current scope dictionary
+            levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+            per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
+
+        Returns:
+            $DATA value (0, 1, 10, or 11)
+        """
+        from m2py.core.scope import CurrentScope
+        from m2py.core.indirection import IndirectionResolver
+
+        if levels == 0:
+            # Source is already the resolved target name
+            if per_level_subscripts and any(per_level_subscripts):
+                cs = CurrentScope.from_generated_context(_scope)
+                resolver = IndirectionResolver(self, cs)
+                target_name = source
+                for sub_list in per_level_subscripts:
+                    if sub_list:
+                        target_name = resolver._append_subscripts(target_name, sub_list)
+                return self.get_data(target_name, _scope)
+            else:
+                return self.get_data(source, _scope)
+
+        cs = CurrentScope.from_generated_context(_scope)
+        resolver = IndirectionResolver(self, cs)
+
+        try:
+            target_name = resolver.resolve_to_name(
+                source,
+                levels=levels,
+                per_level_subscripts=per_level_subscripts,
+            )
+        except Exception:
+            return 0  # Undefined on resolution failure
+
+        return self.get_data(target_name, _scope)
 
     def resolve_order_name(
         self,
@@ -4165,9 +4856,6 @@ class MUMPSRuntime:
         Returns:
             Next subscript in collation order, or "" if no more
         """
-        from m2py.core.values import m_num as _m_num
-        from m2py.runtime.helpers import m_order, m_order_global
-
         # Coerce direction to int - MUMPS $ORDER direction is always numeric
         # This handles cases where direction comes from a function returning a string
         # e.g., $O(ref, $O(V(""))) where $O(V("")) returns "1" as a string
@@ -4177,6 +4865,9 @@ class MUMPSRuntime:
             direction = 1
 
         if not name:
+            # $O("") with no extra subscripts → name-level: return first local
+            if additional_subscripts is None:
+                return self._name_level_order("", _scope, direction)
             return ""
 
         # Handle nested indirection: if name starts with @, resolve it first
@@ -4199,6 +4890,17 @@ class MUMPSRuntime:
             else:
                 evaluated_subs = list(additional_subscripts)
 
+        # Name-level $ORDER: when the resolved name is a bare local variable
+        # (no subscripts, no additional subscripts, not global), iterate the
+        # local symbol table names.  In GT.M/YDB, $O(X) where X is
+        # unsubscripted returns the next local variable name after "X".
+        if (
+            not evaluated_subs
+            and not additional_subscripts
+            and not base_name.startswith("^")
+        ):
+            return self._name_level_order(base_name, _scope, direction)
+
         subs = tuple(evaluated_subs) if evaluated_subs else ("",)
 
         if base_name.startswith("^"):
@@ -4207,15 +4909,55 @@ class MUMPSRuntime:
             if not key:
                 # Naked reference - resolve using the naked indicator
                 resolved_name, full_subs = self._globals.resolve_naked(subs)
-                return m_order_global(
+                _result = m_order_global(
                     self._globals, resolved_name, full_subs, direction
                 )
-            return m_order_global(self._globals, key, subs, direction)
+                return _result
+            _result = m_order_global(self._globals, key, subs, direction)
+            return _result
 
         arr = _scope.get(base_name, MArray())
         if not isinstance(arr, MArray):
             return ""
         return m_order(arr, subs, direction)
+
+    def _name_level_order(
+        self, after_name: str, _scope: Dict[str, Any], direction: int
+    ) -> str:
+        """Name-level $ORDER: iterate local variable names in scope.
+
+        In GT.M/YDB, ``$ORDER(X)`` where X is an unsubscripted local
+        variable returns the next local variable name in ASCII collation
+        order.  This is used by CHKLEAKS^%utcover (M-Unit leak detection)
+        to enumerate variables in the symbol table.
+
+        Args:
+            after_name: MUMPS variable name to start after (e.g. "%")
+            _scope: Current scope dictionary (Python-safe keys)
+            direction: 1 for forward, -1 for reverse
+
+        Returns:
+            Next MUMPS variable name, or "" if no more
+        """
+        from m2py.core.names import NameTranslator
+
+        mumps_names = []
+        for key in _scope:
+            mname = NameTranslator.from_python(key)
+            if mname and NameTranslator.is_valid_varname(mname):
+                mumps_names.append(mname)
+
+        mumps_names.sort()
+
+        if direction >= 0:
+            for name in mumps_names:
+                if name > after_name:
+                    return name
+        else:
+            for name in reversed(mumps_names):
+                if name < after_name:
+                    return name
+        return ""
 
     def m_next_local(
         self,
@@ -4235,8 +4977,6 @@ class MUMPSRuntime:
         Returns:
             Next subscript, or -1 if no more
         """
-        from m2py.runtime.helpers import m_order
-
         if array is None or not subscripts:
             return -1
 
@@ -4268,8 +5008,6 @@ class MUMPSRuntime:
         Returns:
             Next subscript, or -1 if no more
         """
-        from m2py.runtime.helpers import m_order_global
-
         if not subscripts:
             return -1
 
@@ -4423,8 +5161,11 @@ class MUMPSRuntime:
                 return m_query_global(self._globals, resolved_name, full_subs)
             return m_query_global(self._globals, key, all_subs)
 
-        # Handle local variables
-        arr = _scope.get(base_name, MArray())
+        # Handle local variables – translate MUMPS name to Python scope key
+        from m2py.core.names import NameTranslator
+
+        py_name = NameTranslator.to_python(base_name)
+        arr = _scope.get(py_name, MArray())
         if not isinstance(arr, MArray):
             return ""
         return m_query(arr, base_name, all_subs)
@@ -4559,8 +5300,16 @@ class MUMPSRuntime:
         # Pass self as runtime to handle complex indirection like @@@@@@@@X
         eval_subs = _evaluate_subscripts(subscripts, _scope, runtime=self)
 
-        # Use the GlobalStorageBackend interface
-        subs = () if eval_subs is None else tuple(str(s) for s in eval_subs)
+        # Strip MUMPS-style formatting quotes from subscripts.
+        # When the name string came from resolve_to_name(), string subscripts
+        # are quoted (e.g., "^" → '"^"') by _append_subscripts().  After
+        # _parse_subscripted_name() re-parses, those quotes are preserved.
+        # Strip them so the backend key matches direct (non-indirection) code.
+        subs = (
+            ()
+            if eval_subs is None
+            else tuple(_normalize_parsed_subscript(s) for s in eval_subs)
+        )
         result = self._globals.get(key, subs)
         return result if result is not None else ""
 
@@ -4621,7 +5370,7 @@ class MUMPSRuntime:
             eval_subs = _evaluate_subscripts(subscripts, _scope)
             naked_subs = tuple(str(s) for s in eval_subs) if eval_subs else ()
             resolved_name, full_subs = self._globals.resolve_naked(naked_subs)
-            self._globals.set(resolved_name, full_subs, value)
+            self._globals.set(resolved_name, full_subs, str(value))
             return
 
         # Validate the base name
@@ -4737,7 +5486,18 @@ class MUMPSRuntime:
         if target.startswith("^"):
             # Parse subscripts from target if present
             base_name, subscripts = _parse_subscripted_name(target)
-            subs = tuple(str(s) for s in subscripts) if subscripts else ()
+            # Strip MUMPS-style quotes from subscripts.
+            # resolve_to_name() formats the target string with _append_subscripts()
+            # which adds quotes around string subscripts for MUMPS name syntax.
+            # When we re-parse, those formatting quotes must be stripped so the
+            # subscripts stored in the backend match what direct (non-indirection)
+            # code paths use.  E.g., ^UTILITY("^",77795,1009.802) must store
+            # subscript "^" (1 char) not '"^"' (3 chars with quotes).
+            subs = (
+                tuple(_normalize_parsed_subscript(s) for s in subscripts)
+                if subscripts
+                else ()
+            )
             key = base_name[1:]  # Remove ^ prefix
             self._globals.set(key, subs, str_value)
             return
@@ -4909,13 +5669,22 @@ class MUMPSRuntime:
         # Handle global variables
         if target.startswith("^"):
             base_name, subscripts = _parse_subscripted_name(target)
-            subs = tuple(str(s) for s in subscripts) if subscripts else ()
+            # Normalize subscripts: canonicalize numeric types and strip MUMPS quotes.
+            subs = (
+                tuple(_normalize_parsed_subscript(s) for s in subscripts)
+                if subscripts
+                else ()
+            )
             key = base_name[1:]  # Remove ^ prefix
             return m_increment_global(self.globals, key, subs, increment)
 
         # Local variable — parse name and any subscripts
         base_name, subscripts = _parse_subscripted_name(target)
-        subs = tuple(str(s) for s in subscripts) if subscripts else ()
+        subs = (
+            tuple(_normalize_parsed_subscript(s) for s in subscripts)
+            if subscripts
+            else ()
+        )
         from m2py.core.names import NameTranslator
 
         python_name = NameTranslator.to_python(base_name)
@@ -4938,11 +5707,15 @@ class MUMPSRuntime:
         the existing lock()/unlock() methods in globals.
 
         Args:
-            source: Source variable name for indirection (e.g., "X" for @X)
+            source: Source variable name for indirection (e.g., "X" for @X),
+                or a pre-evaluated LOCK argument string when levels=0
+                (e.g., "+^DD(1,2):TIMEOUT" from LOCK @(expr)).
             _scope: Current scope dictionary
             lockop: Lock operation - "" (exclusive), "+" (incremental), "-" (release)
             timeout: Optional timeout in seconds. Sets $TEST on timeout.
             levels: Number of indirection levels (1 for @X, 2 for @@X, etc.)
+                Use levels=0 when source is already the evaluated LOCK argument
+                string (from expression-based indirection like @(expr)).
             per_level_subscripts: Subscripts per level for @X@(s1)@(s2) form
 
         Behavior:
@@ -4955,6 +5728,14 @@ class MUMPSRuntime:
             - If timeout is specified, $TEST is set to 1 on success, 0 on timeout
             - If no timeout, $TEST is not modified
             - LOCK - with timeout always sets $TEST=1 (unlock never fails)
+
+            LOCK argument parsing:
+            The resolved target string may contain LOCK-specific syntax:
+            - Leading +/- (lock operation override)
+            - Trailing :expr (timeout expression — variable name or number)
+            These are parsed out and override the lockop/timeout parameters.
+            This handles MUMPS patterns like LOCK @("+"_REF_":n") where
+            the indirected string contains the full LOCK argument.
         """
         from m2py.core.scope import CurrentScope
         from m2py.core.indirection import IndirectionResolver
@@ -4964,32 +5745,72 @@ class MUMPSRuntime:
         resolver = IndirectionResolver(self, cs)
 
         # Resolve to get target variable NAME (the lock target)
-        target = resolver.resolve_to_name(
-            source, levels=levels, per_level_subscripts=per_level_subscripts
-        )
+        if levels <= 0:
+            # Source is already the evaluated LOCK argument string
+            # (from expression-based indirection like @(expr))
+            target = source
+        else:
+            target = resolver.resolve_to_name(
+                source, levels=levels, per_level_subscripts=per_level_subscripts
+            )
+
+        # Parse LOCK-specific syntax from the target string.
+        # The resolved string may contain:
+        #   +/- prefix (lock operation)
+        #   :timeout_expr suffix (timeout as number or variable name)
+        # E.g., "+^DD(\"IX\",123):DILOCKTM" → lock="+", name="^DD(\"IX\",123)",
+        #        timeout_var="DILOCKTM"
+        effective_lockop, name_str, timeout_expr_str = _parse_lock_target_string(target)
+
+        # Lock operation: string-embedded value overrides parameter
+        if effective_lockop is not None:
+            lockop = effective_lockop
+
+        # Timeout: string-embedded value overrides parameter
+        if timeout_expr_str is not None:
+            try:
+                timeout = float(timeout_expr_str)
+            except (ValueError, TypeError):
+                # It's a variable name — look it up in scope
+                from m2py.core.exceptions import LVUNDEFError
+
+                try:
+                    val = cs.get(timeout_expr_str)
+                    timeout = float(str(val))
+                except (KeyError, ValueError, TypeError, LVUNDEFError):
+                    timeout = 0
 
         # Parse the target to get name and subscripts
         # Target can be: "GLO", "^GLO", "^GLO(1,2)", "A(1,2)"
-        if target.startswith("^"):
+        if name_str.startswith("^"):
             # Global name - strip the caret for lock table
-            name_part = target[1:]
+            name_part = name_str[1:]
         else:
-            name_part = target
+            name_part = name_str
 
-        # Parse subscripts from name_part
-        base_name, subscripts = _parse_subscripted_name(name_part)
+        # Parse subscripts from name_part.
+        # LOCK targets may contain unresolvable references (e.g., when
+        # ^DD metadata is incomplete and DIROOT is malformed), so handle
+        # parse failures gracefully.  In single-process mode all locks
+        # succeed unconditionally, matching MUMPS behaviour.
+        try:
+            base_name, subscripts = _parse_subscripted_name(name_part)
+        except IndirectionError:
+            # Treat as successful lock.  The original LOCK likely had a
+            # timeout (embedded in the malformed string that we couldn't
+            # fully parse), so set $TEST=1 to indicate success.
+            self._test = True
+            return
         subs = tuple(str(s) for s in subscripts) if subscripts else ()
 
         # For exclusive lock (no + or -), release all locks first
         if lockop == "":
             self.globals.unlock_all()
             # After releasing all, we acquire with "+"
-            effective_lockop = "+"
-        else:
-            effective_lockop = lockop
+            lockop = "+"
 
         # Perform the lock operation
-        if effective_lockop == "-":
+        if lockop == "-":
             # Release lock
             self.globals.lock(base_name, subs, lock_type="-")
             # LOCK - with timeout always succeeds
@@ -5000,12 +5821,12 @@ class MUMPSRuntime:
             if timeout is not None:
                 # Timed lock - sets $TEST
                 result = self.globals.lock(
-                    base_name, subs, timeout=timeout, lock_type=effective_lockop
+                    base_name, subs, timeout=timeout, lock_type=lockop
                 )
                 self._test = result
             else:
                 # Untimed lock - does NOT modify $TEST
-                self.globals.lock(base_name, subs, lock_type=effective_lockop)
+                self.globals.lock(base_name, subs, lock_type=lockop)
 
     # =========================================================================
     # Transaction Restart Variable Snapshots
@@ -5919,8 +6740,12 @@ class MUMPSRuntime:
         # Evaluate subscripts - resolve variable references like "I" to their values
         eval_subs = _evaluate_subscripts(subscripts, _scope)
 
-        # Use the GlobalStorageBackend interface
-        subs = () if eval_subs is None else tuple(str(s) for s in eval_subs)
+        # Normalize subscripts: canonicalize numeric types and strip MUMPS quotes.
+        subs = (
+            ()
+            if eval_subs is None
+            else tuple(_normalize_parsed_subscript(s) for s in eval_subs)
+        )
         self._globals.set(key, subs, str(value))
 
     def kill_var(self, name: str, _scope: Dict[str, Any]) -> None:
@@ -5983,7 +6808,12 @@ class MUMPSRuntime:
         # Handle global variables
         if base_name.startswith("^"):
             key = base_name[1:]
-            subs = () if eval_subs is None else tuple(str(s) for s in eval_subs)
+            # Normalize subscripts: canonicalize numeric types and strip MUMPS quotes.
+            subs = (
+                ()
+                if eval_subs is None
+                else tuple(_normalize_parsed_subscript(s) for s in eval_subs)
+            )
             self._globals.kill(key, subs)
             return
 
@@ -7035,12 +7865,33 @@ class MUMPSRuntime:
 
         # Parse routine (^ROUTINE part)
         routine: Optional[str] = None
+        args_str: Optional[str] = None
         if "^" in target_str:
             parts = target_str.split("^", 1)
             target_str = parts[0]  # Label part (may be empty)
             routine = parts[1]
             if not routine:
                 raise IndirectionError(target_str, "empty routine name after ^")
+            # Extract parenthesized arguments from routine part.
+            # In MUMPS, D @("LABEL^ROUTINE(.P1)") means call LABEL^ROUTINE
+            # with .P1 as by-ref argument.  The args belong to the DO call,
+            # not the routine name.
+            if "(" in routine:
+                paren_pos = routine.index("(")
+                remainder = routine[paren_pos:]
+                depth = 0
+                balanced = False
+                for i, c in enumerate(remainder):
+                    if c == "(":
+                        depth += 1
+                    elif c == ")":
+                        depth -= 1
+                        if depth == 0 and i == len(remainder) - 1:
+                            balanced = True
+                            break
+                if balanced:
+                    args_str = remainder
+                    routine = routine[:paren_pos]
             # Validate routine name
             if not _is_valid_varname(routine):
                 raise IndirectionError(
@@ -7071,6 +7922,33 @@ class MUMPSRuntime:
         else:
             label = target_str if target_str else None
 
+        # Extract parenthesized arguments from the label.
+        # In MUMPS, D @X where X="LABEL(args)^RTN" embeds actual parameters
+        # in the indirection string. Extract them so the dispatch code can
+        # pass them when calling the resolved function.
+        # e.g. 'GREET("World")' → label='GREET', args_str='("World")'
+        # Note: if args were already extracted from the routine part (above),
+        # skip this — args attach to the last component in the target string.
+        if args_str is None and label and "(" in label:
+            paren_pos = label.index("(")
+            # Verify the parentheses are balanced and at the end
+            remainder = label[paren_pos:]
+            depth = 0
+            balanced = False
+            for i, c in enumerate(remainder):
+                if c == "(":
+                    depth += 1
+                elif c == ")":
+                    depth -= 1
+                    if depth == 0:
+                        # Check this closing paren is at the end
+                        if i == len(remainder) - 1:
+                            balanced = True
+                        break
+            if balanced:
+                args_str = remainder
+                label = label[:paren_pos]
+
         # Validate label name if present
         # Note: use _is_valid_label, not _is_valid_varname, since labels can be numeric
         if label and not _is_valid_label(label):
@@ -7080,7 +7958,11 @@ class MUMPSRuntime:
             )
 
         return CallTarget(
-            label=label, routine=routine, offset=offset, postcondition=postcondition
+            label=label,
+            routine=routine,
+            offset=offset,
+            postcondition=postcondition,
+            args_str=args_str,
         )
 
     def execute_mumps(
@@ -7137,7 +8019,7 @@ class MUMPSRuntime:
 
         # Handle MArray objects (from TRAMPOLINE scope sync)
         if hasattr(mumps_code, "value"):
-            mumps_code = str(mumps_code.value or "")  # type: ignore[union-attr]
+            mumps_code = str(mumps_code.value or "")
 
         # Ensure mumps_code is a string
         mumps_code = str(mumps_code)
@@ -7165,14 +8047,72 @@ class MUMPSRuntime:
             # Already has structure, use as-is
             wrapped_code = mumps_code
 
-        # Generate Python code
-        try:
-            python_code = generate_python(wrapped_code, routine_name="XECUTE")
-        except Exception as e:
-            # Provide useful context in XECUTE syntax error message
-            # Include the original MUMPS code so user knows what failed
-            error_msg = f"XECUTE parse error in '{mumps_code}': {e}"
-            raise SyntaxError(error_msg) from e
+        # --- Fast path: reuse a cached function object (no parse/compile/exec overhead) ---
+        # Check fn_cache FIRST before any expensive parse+compile operations.
+        # Critical ordering: _xecute_cache (max 1024) evicts entries before
+        # _xecute_fn_cache (max 4096), so checking fn_cache first avoids
+        # unnecessary recompilation when xecute_cache has evicted an entry
+        # that fn_cache still holds.
+        cache_key = wrapped_code
+        fn_cached = self._xecute_fn_cache.get(cache_key)
+        if fn_cached is not None:
+            fn, _fn_globals = fn_cached
+            # The persistent globals dict is shared; _test is per-invocation.
+            _fn_globals["_test"] = _scope.get("_test", False)
+            # Merge caller labels (callable, non-dunder) so DO/GOTO inside
+            # XECUTE can find module-level labels if needed.
+            # Use id-based caching to avoid re-iterating caller_globals when
+            # the dict identity hasn't changed (O(1) amortized per fn per caller).
+            if caller_globals:
+                _cg_id = id(caller_globals)
+                if getattr(fn, "_last_caller_id", None) != _cg_id:
+                    for _n, _v in caller_globals.items():
+                        if callable(_v) and _n[:2] != "__":
+                            _fn_globals[_n] = _v
+                    fn._last_caller_id = _cg_id
+            _saved_routine = self._current_routine
+            _saved_source_lines = self._current_source_lines
+            _saved_label_lines = self._current_label_lines
+            self.push_stack_frame("XECUTE", mcode=mumps_code)
+            try:
+                result = fn(self, _scope=_scope)
+            finally:
+                self.pop_stack_frame()
+                self._current_routine = _saved_routine
+                self._current_source_lines = _saved_source_lines
+                self._current_label_lines = _saved_label_lines
+            # Sync $TEST back
+            _test_val = _fn_globals.get("_test", False)
+            _scope["_test"] = _test_val
+            self._test = _test_val
+            return result
+
+        # --- Get or generate code_obj (only reached when fn_cache misses) ---
+        # Generate Python code (cached to avoid re-parsing identical XECUTE strings)
+        cached = self._xecute_cache.get(cache_key)
+        if cached is not None:
+            python_code, code_obj = cached
+        else:
+            try:
+                python_code = generate_python(wrapped_code, routine_name="XECUTE")
+            except Exception as e:
+                # Provide useful context in XECUTE syntax error message
+                # Include the original MUMPS code so user knows what failed
+                error_msg = f"XECUTE parse error in '{mumps_code}': {e}"
+                raise SyntaxError(error_msg) from e
+            code_obj = compile(python_code, "<xecute>", "exec")
+            # LRU eviction: discard oldest entries when cache is full.
+            # Each entry retains ~29 KB (arpeggio parse tree, codegen, code_obj).
+            if len(self._xecute_cache) >= self._xecute_cache_max:
+                # Remove oldest 25% to amortize eviction cost
+                to_remove = self._xecute_cache_max // 4
+                keys = list(self._xecute_cache)[:to_remove]
+                for k in keys:
+                    del self._xecute_cache[k]
+            self._xecute_cache[cache_key] = (python_code, code_obj)
+
+        # --- Slow path: exec the compiled code object into a fresh namespace ---
+        # Used on the first call (to populate the function cache).
 
         # Create execution namespace with shared scope
         namespace: Dict[str, Any] = {
@@ -7195,17 +8135,27 @@ class MUMPSRuntime:
         # This allows DO/GOTO to labels in the calling routine
         # Add callables AFTER scope so labels override variables
         if caller_globals:
-            # Only include callable items (functions) to avoid polluting namespace
+            # Include callable items (functions/classes) but skip Python dunders.
+            # Translated label names like _a_O, _pct_ut, _n_01 must pass through
+            # so they override any same-named MArray entries from _scope.
             for name, value in caller_globals.items():
-                if callable(value) and not name.startswith("_"):
+                if callable(value) and not name.startswith("__"):
                     namespace[name] = value
 
         try:
-            # Execute the generated code
-            exec(python_code, namespace)
+            # Execute the generated code (use pre-compiled code object)
+            exec(code_obj, namespace)
 
             # The generated code defines a function, we need to call it
             if "XECUTE" in namespace and callable(namespace["XECUTE"]):
+                # Save caller's routine context — the XECUTE'd code will
+                # overwrite _current_source_lines / _current_label_lines /
+                # _current_routine, and we must restore them so that $TEXT
+                # references in the calling routine still work.
+                _saved_routine = self._current_routine
+                _saved_source_lines = self._current_source_lines
+                _saved_label_lines = self._current_label_lines
+
                 # Push XECUTE stack frame with MUMPS source as mcode
                 self.push_stack_frame("XECUTE", mcode=mumps_code)
                 try:
@@ -7213,6 +8163,26 @@ class MUMPSRuntime:
                 finally:
                     # Pop XECUTE stack frame
                     self.pop_stack_frame()
+
+                    # Restore caller's routine context
+                    self._current_routine = _saved_routine
+                    self._current_source_lines = _saved_source_lines
+                    self._current_label_lines = _saved_label_lines
+
+                # Cache the function for future calls (when no caller_globals).
+                # The function's __globals__ is exactly `namespace` — we keep
+                # that dict alive so subsequent calls share stable module-level
+                # state (imports, _test, …).  We must NOT call namespace.clear()
+                # when caching the function.
+                if len(self._xecute_fn_cache) < self._xecute_fn_cache_max:
+                    self._xecute_fn_cache[cache_key] = (namespace["XECUTE"], namespace)
+                    # Sync $TEST before returning (namespace is now owned by cache,
+                    # so don't clear it, but we still need to propagate _test).
+                    _test_val = namespace.get("_test", False)
+                    _scope["_test"] = _test_val
+                    self._test = _test_val
+                    # Don't clear namespace here — it's now owned by the cache.
+                    return result
             else:
                 result = None
 
@@ -7231,6 +8201,18 @@ class MUMPSRuntime:
         except Exception:
             # Re-raise with context
             raise
+
+        finally:
+            # Break reference cycle: exec() sets XECUTE.__globals__ = namespace,
+            # and namespace["XECUTE"] = XECUTE, creating a cycle that prevents
+            # prompt GC.  Clearing the dict breaks this immediately.
+            # Skip clearing if namespace was transferred to the function cache.
+            if (
+                cache_key not in self._xecute_fn_cache
+                or self._xecute_fn_cache.get(cache_key, (None, None))[1]
+                is not namespace
+            ):
+                namespace.clear()
 
     def execute_mumps_indirected(
         self,
@@ -7495,6 +8477,7 @@ __all__ = [
     "LabelNotFoundError",
     "run_with_goto_support",
     "resolve_goto_target",
+    "_unwind_pending_news",
     "call_external_with_offset",
     # Data structures
     "StackFrame",

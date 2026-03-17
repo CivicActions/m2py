@@ -50,7 +50,9 @@ def storage(db_path):
 @pytest.fixture
 def rt(storage):
     """Create a MUMPSRuntime with SQLiteGlobalStorage."""
-    return MUMPSRuntime(global_storage=storage)
+    runtime = MUMPSRuntime(global_storage=storage)
+    yield runtime
+    runtime.cleanup()
 
 
 @pytest.fixture
@@ -212,6 +214,8 @@ class TestJobZjob:
             assert rt.zjob() != "0"
             assert int(rt.zjob()) > 0
         finally:
+            for _p in rt._job_processes:
+                _p.wait(timeout=10)
             sys.path.remove(str(routine_dir))
             storage.close()
 
@@ -318,6 +322,8 @@ class TestJobHaltSafety:
             val = wait_for_global(storage, "HALTED")
             assert val == "yes"
         finally:
+            for _p in rt._job_processes:
+                _p.wait(timeout=10)
             sys.path.remove(str(routine_dir))
             storage.close()
 
@@ -345,6 +351,8 @@ class TestJobHaltSafety:
             val = wait_for_global(storage, "BEFORE_ERROR")
             assert val == "yes"
         finally:
+            for _p in rt._job_processes:
+                _p.wait(timeout=10)
             sys.path.remove(str(routine_dir))
             storage.close()
 
@@ -391,6 +399,8 @@ class TestJobLockRelease:
             assert got_lock is True
             storage.unlock("HELD_LOCK", ())
         finally:
+            for _p in rt._job_processes:
+                _p.wait(timeout=10)
             sys.path.remove(str(routine_dir))
             storage.close()
 
@@ -459,6 +469,8 @@ class TestJobTimeout:
             result = rt.start_job("entry", "test_no_timeout_module", [], None, None)
             assert result is True
         finally:
+            for _p in rt._job_processes:
+                _p.wait(timeout=10)
             sys.path.remove(str(routine_dir))
             storage.close()
 

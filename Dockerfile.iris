@@ -1,0 +1,45 @@
+# Dockerfile.iris — Pre-configured IRIS container for m2py testing
+#
+# Bakes password setup, null subscript enablement, and other VistA-compatible
+# settings into the image so the container is ready immediately on first start.
+#
+# Usage (built automatically by utils/iris.sh on first run):
+#   docker build -f Dockerfile.iris -t m2py-iris-img .
+#   docker run -d --name m2py-iris -p 1972:1972 m2py-iris-img --check-caps false
+#
+# Based on configuration from WorldVistA docker-vista:
+#   https://github.com/WorldVistA/docker-vista/blob/master/IRIS/iris.cpf
+#
+# Architecture note: the base image is selected at build time via --build-arg.
+# utils/iris.sh passes the correct image for the host CPU.
+
+ARG BASE_IMAGE=intersystems/iris-community:latest-cd
+FROM ${BASE_IMAGE}
+
+USER root
+
+# Copy the merge CPF that enables VistA-compatible settings
+COPY iris-merge.cpf /tmp/iris-merge.cpf
+RUN chown irisowner:irisowner /tmp/iris-merge.cpf
+
+USER irisowner
+
+# Apply CPF merge at build time and configure password.
+# iris merge applies the settings from iris-merge.cpf into the instance CPF.
+# Then set the _SYSTEM password to "SYS" with no expiry, so fresh containers
+# from this image don't require runtime password setup.
+# Finally, QuiesceForBundling prepares the instance for clean image creation.
+RUN iris start IRIS \
+    && iris merge IRIS /tmp/iris-merge.cpf \
+    && printf '%s\n' \
+        'set p("Password")="SYS"' \
+        'set p("PasswordNeverExpires")=1' \
+        'set sc=##class(Security.Users).Modify("_SYSTEM",.p)' \
+        'if $$$ISERR(sc) write "ERROR modifying _SYSTEM: ",sc,!' \
+        'set p2("Password")="SYS"' \
+        'set p2("PasswordNeverExpires")=1' \
+        'set sc=##class(Security.Users).Modify("SuperUser",.p2)' \
+        'halt' \
+      | iris session IRIS -U "%SYS" \
+    && iris stop IRIS quietly \
+    && rm -f /tmp/iris-merge.cpf

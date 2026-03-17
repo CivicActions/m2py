@@ -321,8 +321,8 @@ class TestSelfLoopPattern:
         assert "while True:" in code
         # Self-loop GOTO becomes continue
         assert "continue" in code
-        # QUIT becomes break
-        assert "break" in code
+        # QUIT exits the label function (return), not just the while loop (break)
+        assert "return" in code
 
     def test_self_loop_with_cross_label_entry(self, execute_mumps):
         """T069a: Self-loop with cross-label entry works correctly.
@@ -383,6 +383,64 @@ loop S Q=Q+1 W Q G loop:Q<3
         assert "if m_truth(" in code
         # Should still have while True for the self-loop structure
         assert "while True:" in code
+
+    def test_self_loop_quit_does_not_fall_through(self, execute_mumps):
+        """Regression: QUIT in a self-loop label must NOT fall through to next label.
+
+        This is the exact bug pattern from DIK^IXALL: label D has a self-loop
+        (G D), but QUIT should exit the routine entirely, not just break out
+        of the while-True wrapper and fall through to label I.
+
+        Before the fix, QUIT generated 'break' which exited the while loop
+        and then hit the fallthrough 'return ("NEXT", state)' going to the
+        next label — creating an infinite D→NEXT→D cycle.
+        """
+        source = """TEST S X=0 G LOOP
+LOOP S X=X+1 W X Q:X>2  G LOOP
+NEXT W "BAD"
+ Q"""
+        result = execute_mumps(source)
+        # Should print "123" and exit. Must NOT print "BAD".
+        assert result.output == "123"
+        assert result.success is True
+
+    def test_self_loop_quit_no_fallthrough_codegen(self, generate_python):
+        """Codegen: self-loop QUIT generates return, not break.
+
+        In trampoline mode, QUIT should generate 'return (None, state)'
+        rather than 'break' so it doesn't fall through to the next label.
+        """
+        source = """TEST G LOOP
+LOOP S X=$G(X)+1 Q:X>2  G LOOP
+NEXT W "BAD" Q"""
+        code = generate_python(source)
+        # The QUIT in the self-loop label must NOT generate a bare 'break'
+        # It should generate 'return (None, state)' (trampoline) or 'return'
+        assert "while True:" in code
+        assert "continue" in code
+        # Verify 'return' appears (not just 'break')
+        assert "return (None, state)" in code
+
+    def test_self_loop_for_quit_still_breaks_for(self, execute_mumps):
+        """FOR-QUIT inside a self-loop label should break the FOR, not exit the label.
+
+        Priority: exits_for (break) is checked before has_self_loop (return).
+        The FOR loop should terminate normally, then the self-loop continues
+        until the label-level QUIT fires.
+        """
+        # LOOP has self-loop (G LOOP). FOR runs 1..9 but QUIT:I>3 breaks FOR.
+        # After FOR, writes accumulated R. If N<2, GOTOs LOOP again.
+        # Otherwise falls through to Q.
+        source = """TEST S N=0 G LOOP
+LOOP S N=N+1,R="" F I=1:1:9 Q:I>3  S R=R_I
+ W R I N<2 G LOOP
+ Q"""
+        result = execute_mumps(source)
+        # Each FOR iteration: I=1,2,3 (QUIT at I=4), so R="123"
+        # N=1: writes "123", N<2 → GOTO LOOP
+        # N=2: writes "123", N<2 false → falls to Q
+        assert result.output == "123123"
+        assert result.success is True
 
 
 @pytest.mark.codegen
@@ -896,6 +954,138 @@ NEXT
 
         # Should have scope sync for external GOTO
         assert "_scope" in code
+
+
+@pytest.mark.codegen
+class TestCrossLabelGotoPostcondition:
+    """Tests for cross-label GOTO with postconditions.
+
+    Single-target cross-label GOTOs must honor postconditions.
+    When the postcondition is false, the GOTO should not execute
+    and control should fall through to the next label.
+    """
+
+    def test_cross_label_goto_with_true_postcondition(self, runtime):
+        """Cross-label GOTO fires when postcondition is true.
+
+        MUMPS: TEST S X=1 G DONE:X=1 / SKIP W "skip" Q / DONE W "done" Q
+        Expected: "done" (postcondition X=1 is true, so GOTO fires)
+        """
+        source = """TEST S X=1 G DONE:X=1
+SKIP W "skip" Q
+DONE W "done" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "done"
+
+    def test_cross_label_goto_with_false_postcondition(self, runtime):
+        """Cross-label GOTO does NOT fire when postcondition is false.
+
+        MUMPS: TEST S X=0 G DONE:X=1 / SKIP W "skip" Q / DONE W "done" Q
+        Expected: "skip" (postcondition X=1 is false, fall through to SKIP)
+        """
+        source = """TEST S X=0 G DONE:X=1
+SKIP W "skip" Q
+DONE W "done" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "skip"
+
+    def test_cross_label_goto_pattern_match_postcondition(self, runtime):
+        """Cross-label GOTO with pattern match postcondition.
+
+        MUMPS: TEST S X=123 G DONE:X?3N / SKIP W "skip" Q / DONE W "done" Q
+        Expected: "done" (X=123 matches 3 numeric chars)
+        """
+        source = """TEST S X=123 G DONE:X?3N
+SKIP W "skip" Q
+DONE W "done" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "done"
+
+    def test_cross_label_goto_negated_pattern_match_false(self, runtime):
+        """Cross-label GOTO with NOT pattern match — condition false.
+
+        MUMPS: TEST S X=123 G ERR:X'?3N / OK W "ok" Q / ERR W "err" Q
+        The condition X'?3N is false because X=123 IS 3 numeric chars.
+        Expected: "ok" (fall through since NOT match is false)
+        """
+        source = """TEST S X=123 G ERR:X'?3N
+OK W "ok" Q
+ERR W "err" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "ok"
+
+    def test_cross_label_goto_negated_pattern_match_true(self, runtime):
+        """Cross-label GOTO with NOT pattern match — condition true.
+
+        MUMPS: TEST S X="AB" G ERR:X'?3N / OK W "ok" Q / ERR W "err" Q
+        The condition X'?3N is true because "AB" is NOT 3 numeric chars.
+        Expected: "err" (GOTO fires since NOT match is true)
+        """
+        source = """TEST S X="AB" G ERR:X'?3N
+OK W "ok" Q
+ERR W "err" Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "err"
+
+    def test_cross_label_goto_postcondition_with_set_on_same_line(self, runtime):
+        """SET followed by postconditioned cross-label GOTO on same line.
+
+        This mirrors %DT line 82: S %I(3)=%I(3)-1700 G 1:%I(3)'?3N
+        Tests that the SET executes AND the postcondition is evaluated.
+
+        MUMPS: TEST / SET S X=2010 S X=X-1700 G ERR:X'?3N / OK W X Q / ERR W -1 Q
+        X=2010-1700=310. 310?3N is true (3 numeric chars), so X'?3N is false.
+        Expected: "310" (fall through to OK)
+        """
+        source = """TEST
+SET S X=2010 S X=X-1700 G ERR:X'?3N
+OK W X Q
+ERR W -1 Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "310"
+
+    def test_cross_label_goto_postcondition_with_subscript(self, runtime):
+        """Cross-label GOTO with subscripted variable in postcondition.
+
+        MUMPS: TEST S A(3)=310 G ERR:A(3)'?3N / OK W A(3) Q / ERR W -1 Q
+        A(3)=310 matches 3N, so A(3)'?3N is false, fall through.
+        Expected: "310"
+        """
+        source = """TEST S A(3)=310 G ERR:A(3)'?3N
+OK W A(3) Q
+ERR W -1 Q"""
+        output = execute_mumps(source, runtime)
+        assert output == "310"
+
+    def test_codegen_includes_postcondition_in_trampoline_return(self):
+        """Verify generated code contains 'if m_truth' before cross-label return.
+
+        The postconditioned GOTO should generate:
+            if m_truth(<condition>):
+                return ("label", state)
+        NOT just:
+            return ("label", state)
+        """
+        source = """TEST S X=1 G DONE:X=1
+SKIP W "skip" Q
+DONE W "done" Q"""
+        code = generate_python(source)
+        # The GOTO DONE:X=1 should produce a conditional return
+        # Find the return for DONE — it should be inside an if m_truth block
+        lines = code.splitlines()
+        for i, line in enumerate(lines):
+            if 'return ("DONE", state)' in line:
+                # Check that the preceding non-blank line is an if statement
+                for j in range(i - 1, max(0, i - 5), -1):
+                    if lines[j].strip():
+                        assert "if m_truth" in lines[j], (
+                            f"Expected 'if m_truth' before DONE return, got: {lines[j]!r}"
+                        )
+                        break
+                break
+        else:
+            # Also check for DONE in case it's a different format
+            assert 'return ("DONE"' in code, "DONE return not found in generated code"
 
 
 @pytest.mark.codegen

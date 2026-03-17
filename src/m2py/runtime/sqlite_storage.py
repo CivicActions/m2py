@@ -19,7 +19,8 @@ import os
 import sqlite3
 import tempfile
 import time
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, TextIO
 
 from m2py.core.subscripts import SubscriptCanonicalizer
 from m2py.runtime.helpers import (
@@ -205,6 +206,7 @@ class SQLiteGlobalStorage:
 
     def set(self, name: str, subscripts: tuple[str, ...], value: str) -> None:
         """Set value at ^NAME(subscripts)."""
+        value = str(value)  # MUMPS canonical: all values are strings
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -441,6 +443,24 @@ class SQLiteGlobalStorage:
     # $QUERY
     # =========================================================================
 
+    def iter_keys(
+        self,
+        name: str,
+        prefix_subscripts: tuple[str, ...],
+        direction: int = 1,
+    ):
+        """Yield all subscripts at one level — fallback via repeated order()."""
+        prefix_subscripts = self._canonicalize_subscripts(prefix_subscripts)
+        current = ""
+        while True:
+            nxt = self.order(
+                name, (*prefix_subscripts, current), direction, update_naked=False
+            )
+            if nxt == "":
+                return
+            yield nxt
+            current = nxt
+
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
         """Return full reference of next node with data ($QUERY)."""
         subscripts = self._canonicalize_subscripts(subscripts)
@@ -574,7 +594,7 @@ class SQLiteGlobalStorage:
     ) -> None:
         """Recursively merge MArray node into global storage."""
         if node._value is not None:
-            self.set(name, subscripts, node._value)
+            self.set(name, subscripts, str(node._value))
         for key, child in node._children.items():
             child_sub = str(key)
             self._merge_tree_recursive(name, subscripts + (child_sub,), child)
@@ -752,7 +772,18 @@ class SQLiteGlobalStorage:
         pid: int,
         timeout: float | None,
     ) -> bool:
-        """Acquire a lock with hierarchical conflict checking."""
+        """Acquire a lock with hierarchical conflict checking.
+
+        Uses an atomic INSERT … WHERE NOT EXISTS to prevent the TOCTOU
+        race that would otherwise let a fast-cycling process always beat
+        a waiting process to the INSERT after the same conflict-free
+        check.  When the atomic INSERT reports rowcount==0 but our own
+        conflict check found no rows, we know another process won the
+        race — we retry with a short random jitter to break the
+        synchronisation pattern and avoid starvation.
+        """
+        import random as _random
+
         deadline = None
         if timeout is not None:
             deadline = time.monotonic() + timeout
@@ -760,39 +791,51 @@ class SQLiteGlobalStorage:
         backoff = 0.001  # Start at 1ms, exponential up to 128ms
 
         while True:
-            # Check if we can acquire (no conflicts from other PIDs)
+            # ---- fast path: we already own this exact lock -----------------
+            row = self._conn.execute(
+                "SELECT lock_count FROM locks "
+                "WHERE lock_name = ? AND subscripts = ? AND owner_pid = ?",
+                (name, json_subs, pid),
+            ).fetchone()
+            if row is not None:
+                self._conn.execute(
+                    "UPDATE locks SET lock_count = lock_count + 1 "
+                    "WHERE lock_name = ? AND subscripts = ? AND owner_pid = ?",
+                    (name, json_subs, pid),
+                )
+                return True
+
+            # ---- hierarchical conflict check (read-only) -------------------
             conflict_pid = self._check_lock_conflict(name, json_subs, subscripts, pid)
 
             if conflict_pid is None:
-                # No conflict — acquire or increment
-                row = self._conn.execute(
-                    "SELECT lock_count FROM locks WHERE lock_name = ? AND subscripts = ?",
-                    (name, json_subs),
-                ).fetchone()
+                # No conflict detected — try an *atomic* INSERT that re-checks
+                # inside the same statement so another writer cannot slip in
+                # between our SELECT and INSERT.
+                now = time.time()
+                cursor = self._conn.execute(
+                    "INSERT INTO locks "
+                    "  (lock_name, subscripts, owner_pid, lock_count, acquired_at) "
+                    "SELECT ?, ?, ?, 1, ? "
+                    "WHERE NOT EXISTS ("
+                    "  SELECT 1 FROM locks "
+                    "  WHERE lock_name = ? AND subscripts = ? AND owner_pid != ?"
+                    ")",
+                    (name, json_subs, pid, now, name, json_subs, pid),
+                )
+                if cursor.rowcount > 0:
+                    return True
 
-                if row is not None:
-                    # We own it (otherwise _check_lock_conflict would have returned)
-                    self._conn.execute(
-                        "UPDATE locks SET lock_count = lock_count + 1 WHERE lock_name = ? AND subscripts = ?",
-                        (name, json_subs),
-                    )
-                else:
-                    try:
-                        self._conn.execute(
-                            "INSERT INTO locks (lock_name, subscripts, owner_pid, lock_count, acquired_at) "
-                            "VALUES (?, ?, ?, 1, ?)",
-                            (name, json_subs, pid, time.time()),
-                        )
-                    except Exception:
-                        # Race condition: another process inserted between our
-                        # conflict check and INSERT.  Retry the whole loop so
-                        # _check_lock_conflict detects the new owner properly.
-                        continue
-                return True
+                # INSERT did nothing — another process acquired between our
+                # conflict check and the INSERT.  Add random jitter to break
+                # the synchronisation pattern, then retry quickly.
+                time.sleep(_random.uniform(0.0001, 0.002))
+                continue
 
             # Conflict exists — check if blocking process is still alive
             if self._clear_dead_process_locks(conflict_pid):
                 # Cleared orphaned lock — retry immediately
+                backoff = 0.001
                 continue
 
             # Process is alive — must wait
@@ -1052,3 +1095,26 @@ class SQLiteGlobalStorage:
     ) -> str:
         """$QUERY for namespace-qualified global."""
         return self.query(self._ns_name(name, namespace), subscripts)
+
+    # =========================================================================
+    # ZWR Import
+    # =========================================================================
+
+    def import_zwr(self, source: Path | TextIO) -> int:
+        """Import ZWR data via line-by-line ``parse_zwr_stream`` + ``set()``."""
+        from m2py.runtime.zwr import parse_zwr_stream
+
+        count = 0
+
+        def _load(stream: TextIO) -> int:
+            nonlocal count
+            for name, subs, value in parse_zwr_stream(stream):
+                bare_name = name[1:] if name.startswith("^") else name
+                self.set(bare_name, tuple(subs), value)
+                count += 1
+            return count
+
+        if isinstance(source, Path):
+            with open(source, errors="replace") as f:
+                return _load(f)
+        return _load(source)

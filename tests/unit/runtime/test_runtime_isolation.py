@@ -211,13 +211,13 @@ class TestLockSingleProcess:
         # Lock table should show count of 2
         entry = storage._lock_table.get(("RESOURCE", ()))
         assert entry is not None
-        assert entry[1] == 2
+        assert entry == 2
 
         storage.unlock("RESOURCE", ())
         # Count should be 1 after one unlock
         entry = storage._lock_table.get(("RESOURCE", ()))
         assert entry is not None
-        assert entry[1] == 1
+        assert entry == 1
 
         storage.unlock("RESOURCE", ())
         # Lock should be fully released

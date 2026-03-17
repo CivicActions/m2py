@@ -60,6 +60,9 @@ MANIFEST
 # YottaDB local installation (created by utils/yottadb-install.sh)
 .yottadb/
 
+# VistA dependency downloads (M-Unit tests)
+.vista-deps/
+
 # Reference directories
 /mumps-reference
 /proleap-research

@@ -50,6 +50,29 @@ class MStatement(ASGElement):
 
 
 # =============================================================================
+# Parse Error Statement
+# =============================================================================
+
+
+@dataclass
+class MParseErrorStatement(MStatement):
+    """Placeholder for a line that failed to parse.
+
+    Instead of silently dropping unparseable lines, the parser inserts
+    this statement so the codegen can emit a runtime error. This makes
+    syntax errors visible at runtime (caught by $ETRAP/$ZTRAP) rather
+    than silently disappearing.
+
+    In YDB, executing a line with a syntax error raises %YDB-E-EXPR or
+    similar at runtime. This statement replicates that behavior.
+    """
+
+    error_code: str = "EXPR"
+    error_message: str = "Expression expected but not found"
+    line_content: str = ""  # Original MUMPS line text
+
+
+# =============================================================================
 # Assignment Statements
 # =============================================================================
 
@@ -223,6 +246,42 @@ class MForParameter:
 
 
 @dataclass
+class OrderIterInfo:
+    """Describes a detected $ORDER-iteration pattern on a FOR loop.
+
+    Populated by the for-analysis pass when a FOR body matches the
+    canonical MUMPS pattern:
+
+        F var=<any> S var=$O(^GLOBAL(subs...,var)) Q:var=""  <body>
+
+    When this flag is set, code generation can emit the optimised form:
+
+        for var in _rt.globals.iter_keys('GLOBAL', (prefix_subs,)):
+            <body>
+
+    which sorts sibling keys once instead of on every $ORDER call,
+    eliminating the O(N²·log N) cost that naive repeated order() incurs.
+
+    Attributes:
+        global_name: Name of the global being iterated (no caret).
+        prefix_exprs: ASG expressions for the stable prefix subscripts
+            (i.e. all subscripts *except* the loop variable itself).
+        is_local: True when $ORDER targets a local variable instead of a global.
+        local_name: Local variable name (when is_local=True).
+        direction: Iteration direction: 1 = forward, -1 = reverse.
+        body_stmt_offset: Index in body.statements of the first *real* body
+            statement (skips the S var=$O and Q:var="" setup pair).
+    """
+
+    global_name: str = ""
+    prefix_exprs: List["MExpr"] = field(default_factory=list)
+    is_local: bool = False
+    local_name: str = ""
+    direction: int = 1
+    body_stmt_offset: int = 0
+
+
+@dataclass
 class MForStatement(MStatement):
     """FOR command with loop body.
 
@@ -258,6 +317,9 @@ class MForStatement(MStatement):
     exit_target: Optional[str] = (
         None  # Target label name (MUMPS name, codegen translates)
     )
+
+    # $ORDER-iteration optimisation (populated by for_analysis pass)
+    order_iter_info: Optional["OrderIterInfo"] = field(default=None, repr=False)
 
 
 # =============================================================================
@@ -753,7 +815,7 @@ class MJobTarget:
     Note: This is a sub-component of MJobStatement, not a standalone ASG node.
     """
 
-    call: "MCall" = field(default_factory=lambda: None)  # type: ignore
+    call: "MCall" = field(default_factory=lambda: None)
     processparameters: List["MExpr"] = field(default_factory=list)
     timeout: Optional["MExpr"] = None
 

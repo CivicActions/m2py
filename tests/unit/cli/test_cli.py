@@ -1,7 +1,7 @@
 """Tests for the m2py CLI entry point (Phases 3-4, T012-T022).
 
 Tests cover:
-- argparse argument parsing
+- click argument parsing
 - main() exit codes and stderr output
 - Single-file transpilation (US1)
 - Directory transpilation (US2)
@@ -17,8 +17,9 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
-from m2py.cli import _build_parser, main
+from m2py.cli import cli, main
 from m2py.cli.transpile import (
     TranspileResult,
     TranspileSummary,
@@ -84,48 +85,50 @@ def batch_dir(tmp_dir: Path) -> Path:
 
 
 class TestArgParse:
-    """Test argument parser construction."""
+    """Test click CLI argument parsing via CliRunner."""
 
-    def test_single_path(self):
-        parser = _build_parser()
-        args = parser.parse_args(["FILE.m"])
-        assert args.paths == ["FILE.m"]
-        assert args.output is None
-        assert args.verbose is False
-        assert args.no_format is False
+    def test_single_path(self, sample_m_file: Path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["transpile", str(sample_m_file)])
+        assert result.exit_code == 0
 
-    def test_multiple_paths(self):
-        parser = _build_parser()
-        args = parser.parse_args(["A.m", "B.m", "dir/"])
-        assert args.paths == ["A.m", "B.m", "dir/"]
+    def test_multiple_paths(self, sample_m_file: Path, batch_dir: Path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["transpile", str(sample_m_file), str(batch_dir)])
+        assert result.exit_code == 0
 
-    def test_output_flag(self):
-        parser = _build_parser()
-        args = parser.parse_args(["FILE.m", "-o", "/tmp/out"])
-        assert args.output == "/tmp/out"
+    def test_output_flag(self, sample_m_file: Path, tmp_dir: Path):
+        runner = CliRunner()
+        out = tmp_dir / "out"
+        result = runner.invoke(cli, ["transpile", str(sample_m_file), "-o", str(out)])
+        assert result.exit_code == 0
+        assert (out / "HELLO.py").exists()
 
-    def test_output_long_flag(self):
-        parser = _build_parser()
-        args = parser.parse_args(["FILE.m", "--output", "/tmp/out"])
-        assert args.output == "/tmp/out"
+    def test_output_long_flag(self, sample_m_file: Path, tmp_dir: Path):
+        runner = CliRunner()
+        out = tmp_dir / "out"
+        result = runner.invoke(
+            cli, ["transpile", str(sample_m_file), "--output", str(out)]
+        )
+        assert result.exit_code == 0
+        assert (out / "HELLO.py").exists()
 
-    def test_verbose_flag(self):
-        parser = _build_parser()
-        args = parser.parse_args(["FILE.m", "-v"])
-        assert args.verbose is True
+    def test_verbose_flag(self, sample_m_file: Path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["transpile", str(sample_m_file), "-v"])
+        assert result.exit_code == 0
 
-    def test_no_format_flag(self):
-        parser = _build_parser()
-        args = parser.parse_args(["FILE.m", "--no-format"])
-        assert args.no_format is True
+    def test_no_format_flag(self, sample_m_file: Path):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["transpile", str(sample_m_file), "--no-format"])
+        assert result.exit_code == 0
 
-    def test_all_flags(self):
-        parser = _build_parser()
-        args = parser.parse_args(["A.m", "dir/", "-o", "out", "-v", "--no-format"])
-        assert args.paths == ["A.m", "dir/"]
-        assert args.output == "out"
-        assert args.verbose is True
-        assert args.no_format is True
+    def test_no_command_shows_help(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, [])
+        assert result.exit_code == 0
+        assert "transpile" in result.output
+        assert "globals" in result.output
 
 
 # =============================================================================
@@ -388,50 +391,50 @@ class TestMain:
     """Test CLI main() entry point."""
 
     def test_success_exit_code(self, sample_m_file: Path):
-        rc = main([str(sample_m_file)])
+        rc = main(["transpile", str(sample_m_file)])
         assert rc == 0
 
     def test_failure_exit_code(self, broken_m_file: Path):
-        rc = main([str(broken_m_file)])
+        rc = main(["transpile", str(broken_m_file)])
         assert rc == 1
 
     def test_no_files_exit_code(self, tmp_dir: Path):
         empty = tmp_dir / "empty"
         empty.mkdir()
-        rc = main([str(empty)])
+        rc = main(["transpile", str(empty)])
         assert rc == 1
 
     def test_verbose_flag(self, sample_m_file: Path, capsys):
-        rc = main([str(sample_m_file), "-v"])
+        rc = main(["transpile", str(sample_m_file), "-v"])
         assert rc == 0
         captured = capsys.readouterr()
         assert "Transpiling" in captured.err
 
     def test_output_dir(self, sample_m_file: Path, tmp_dir: Path):
         out = tmp_dir / "cli_out"
-        rc = main([str(sample_m_file), "-o", str(out)])
+        rc = main(["transpile", str(sample_m_file), "-o", str(out)])
         assert rc == 0
         assert (out / "HELLO.py").exists()
 
     def test_no_format_flag(self, sample_m_file: Path):
-        rc = main([str(sample_m_file), "--no-format"])
+        rc = main(["transpile", str(sample_m_file), "--no-format"])
         assert rc == 0
 
     def test_directory_batch(self, batch_dir: Path, tmp_dir: Path, capsys):
         out = tmp_dir / "cli_batch_out"
-        rc = main([str(batch_dir), "-o", str(out)])
+        rc = main(["transpile", str(batch_dir), "-o", str(out)])
         assert rc == 0
         captured = capsys.readouterr()
         assert "3/3" in captured.err
 
     def test_summary_output(self, sample_m_file: Path, broken_m_file: Path, capsys):
-        rc = main([str(sample_m_file), str(broken_m_file)])
+        rc = main(["transpile", str(sample_m_file), str(broken_m_file)])
         assert rc == 1
         captured = capsys.readouterr()
         assert "1 failed" in captured.err
 
     def test_nonexistent_path_error(self, tmp_dir: Path, capsys):
-        rc = main([str(tmp_dir / "MISSING.m")])
+        rc = main(["transpile", str(tmp_dir / "MISSING.m")])
         assert rc == 1
         captured = capsys.readouterr()
         assert "Path not found" in captured.err
@@ -441,7 +444,7 @@ class TestMain:
         f = tmp_dir / "EMPTY.m"
         f.write_text("\n")
         out = tmp_dir / "out"
-        rc = main([str(f), "-o", str(out)])
+        rc = main(["transpile", str(f), "-o", str(out)])
         assert rc == 0
         import ast
 
@@ -513,7 +516,7 @@ class TestEdgeCases:
         out = tmp_dir / "verbose_out"
 
         # Use main with verbose flag
-        rc = main([str(f), "-o", str(out), "-v"])
+        rc = main(["transpile", str(f), "-o", str(out), "-v"])
         assert rc == 0
 
         captured = capsys.readouterr()
@@ -632,3 +635,131 @@ class TestTranspileSources:
         code, err = results[0]
         assert err is None
         assert len(code) > 0
+
+
+# =============================================================================
+# Overrides-dir tests
+# =============================================================================
+
+
+class TestOverridesDir:
+    """Tests for the --overrides-dir CLI option."""
+
+    def test_override_replaces_transpilation(self, tmp_dir: Path):
+        """Override .py file is copied instead of transpiling the .m source."""
+        m_file = tmp_dir / "HELLO.m"
+        m_file.write_text('HELLO\n WRITE "Hello",!\n QUIT\n')
+
+        ov_dir = tmp_dir / "overrides"
+        ov_dir.mkdir()
+        (ov_dir / "HELLO.py").write_text("# custom override\n")
+
+        out_dir = tmp_dir / "out"
+        summary = transpile_paths(
+            [str(m_file)],
+            output_dir=str(out_dir),
+            overrides_dir=str(ov_dir),
+            no_format=True,
+        )
+        assert summary.succeeded == 1
+        assert summary.failed == 0
+        output = out_dir / "HELLO.py"
+        assert output.read_text() == "# custom override\n"
+
+    def test_override_case_insensitive_stem(self, tmp_dir: Path):
+        """Override matching is case-insensitive on the routine stem."""
+        m_file = tmp_dir / "hello.m"
+        m_file.write_text("HELLO\n QUIT\n")
+
+        ov_dir = tmp_dir / "overrides"
+        ov_dir.mkdir()
+        (ov_dir / "HELLO.py").write_text("# uppercase override\n")
+
+        out_dir = tmp_dir / "out"
+        summary = transpile_paths(
+            [str(m_file)],
+            output_dir=str(out_dir),
+            overrides_dir=str(ov_dir),
+            no_format=True,
+        )
+        assert summary.succeeded == 1
+        assert (out_dir / "hello.py").read_text() == "# uppercase override\n"
+
+    def test_no_override_falls_through(self, tmp_dir: Path):
+        """Files without an override are transpiled normally."""
+        m_file = tmp_dir / "NOOP.m"
+        m_file.write_text("NOOP\n QUIT\n")
+
+        ov_dir = tmp_dir / "overrides"
+        ov_dir.mkdir()
+        # No NOOP.py in overrides
+
+        out_dir = tmp_dir / "out"
+        summary = transpile_paths(
+            [str(m_file)],
+            output_dir=str(out_dir),
+            overrides_dir=str(ov_dir),
+            no_format=True,
+        )
+        assert summary.succeeded == 1
+        content = (out_dir / "NOOP.py").read_text()
+        assert "NOOP" in content  # transpiled, not an override
+
+    def test_underscore_files_ignored(self, tmp_dir: Path):
+        """Override files starting with _ are ignored."""
+        m_file = tmp_dir / "INIT.m"
+        m_file.write_text("INIT\n QUIT\n")
+
+        ov_dir = tmp_dir / "overrides"
+        ov_dir.mkdir()
+        (ov_dir / "__init__.py").write_text("# should be ignored\n")
+
+        out_dir = tmp_dir / "out"
+        summary = transpile_paths(
+            [str(m_file)],
+            output_dir=str(out_dir),
+            overrides_dir=str(ov_dir),
+            no_format=True,
+        )
+        assert summary.succeeded == 1
+        content = (out_dir / "INIT.py").read_text()
+        assert "should be ignored" not in content
+
+    def test_override_verbose_output(self, tmp_dir: Path):
+        """Verbose mode reports overrides on stderr."""
+        m_file = tmp_dir / "FOO.m"
+        m_file.write_text("FOO\n QUIT\n")
+
+        ov_dir = tmp_dir / "overrides"
+        ov_dir.mkdir()
+        (ov_dir / "FOO.py").write_text("# foo override\n")
+
+        out_dir = tmp_dir / "out"
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "transpile",
+                str(m_file),
+                "-o",
+                str(out_dir),
+                "--overrides-dir",
+                str(ov_dir),
+                "-v",
+                "--no-format",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Override" in result.output
+
+    def test_cli_overrides_dir_nonexistent(self, tmp_dir: Path):
+        """--overrides-dir with nonexistent path fails."""
+        m_file = tmp_dir / "X.m"
+        m_file.write_text("X\n QUIT\n")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["transpile", str(m_file), "--overrides-dir", "/no/such/dir"],
+        )
+        assert result.exit_code != 0

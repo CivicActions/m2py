@@ -9,8 +9,9 @@ Phase 11 (US12): offset_wrapper Consolidation
 import types
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
+import pytest
 
 from m2py.runtime import MArray, _create_offset_entry_wrapper, GotoExternal
 
@@ -325,7 +326,7 @@ class TestGotoExternalHandling:
     """Test handling of GotoExternal exceptions."""
 
     def test_goto_external_syncs_state_before_transfer(self):
-        """Should sync state to scope before handling external GOTO."""
+        """Should sync state to scope before re-raising external GOTO."""
         module = create_mock_module(state_class=MockRoutineStateDynamic)
         target_module = create_mock_module(
             routine_name="TARGET", state_class=MockRoutineStateDynamic
@@ -343,16 +344,15 @@ class TestGotoExternalHandling:
         rt = create_mock_runtime()
         scope = {}
 
-        with patch("m2py.runtime.run_with_goto_support"):
-            with patch("m2py.runtime.resolve_goto_target"):
-                wrapper(rt, _scope=scope)
+        with pytest.raises(GotoExternal):
+            wrapper(rt, _scope=scope)
 
-        # State should be synced to scope
+        # State should be synced to scope before re-raise
         assert "X" in scope
         assert scope["X"].value == 999
 
     def test_goto_external_in_trampoline_syncs_and_stops(self):
-        """Should sync state and stop trampoline on GotoExternal."""
+        """Should sync state and re-raise GotoExternal from trampoline."""
         call_sequence = []
         module = create_mock_module(state_class=MockRoutineStateDynamic)
         target_module = create_mock_module(
@@ -373,9 +373,8 @@ class TestGotoExternalHandling:
         wrapper = _create_offset_entry_wrapper(internal_func, 5, module)
         rt = create_mock_runtime()
 
-        with patch("m2py.runtime.run_with_goto_support"):
-            with patch("m2py.runtime.resolve_goto_target"):
-                wrapper(rt, _scope={})
+        with pytest.raises(GotoExternal):
+            wrapper(rt, _scope={})
 
         assert call_sequence == ["internal", "next"]
 

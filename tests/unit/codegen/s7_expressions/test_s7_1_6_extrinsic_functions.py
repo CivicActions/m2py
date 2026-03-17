@@ -4,6 +4,10 @@ Reference: MUMPS 1995 ANSI Standard, Section 7.1.6
 Spec 010 Phase 4: Extrinsic functions with by-reference parameter support
 """
 
+import sys
+import tempfile
+from pathlib import Path
+
 import pytest
 
 
@@ -23,7 +27,7 @@ ADD(A,B)
  Q A+B
 """
         code = generate_python(source)
-        assert "_call_extrinsic(_rt, ADD" in code
+        assert "_call_extrinsic(_rt, _globals['ADD']" in code
         # Verify the generated code is syntactically valid
         compile(code, "<test>", "exec")
 
@@ -40,7 +44,7 @@ CALC(A,B,C)
 """
         code = generate_python(source)
         # Arguments should be passed to _call_extrinsic with _scope
-        assert "_call_extrinsic(_rt, CALC, 1, 2, 3, _scope=_scope)" in code
+        assert "_call_extrinsic(_rt, _globals['CALC'], 1, 2, 3, _scope=_scope)" in code
 
     def test_external_routine_call(self, generate_python):
         """External routine generates module import and call (§7.1.6).
@@ -435,3 +439,211 @@ class TestActualParamByVariableNamePass2:
         """$$FN(X) — pass variable by value to extrinsic."""
         result = execute_mumps("TEST\n S X=5 W $$FN(X) Q\nFN(A)\n Q A*2\n")
         assert result.output == "10"
+
+
+# =============================================================================
+# Extrinsic context save/restore (_call_extrinsic runtime context)
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestExtrinsicContextSaveRestoreCodegen:
+    """Verify _call_extrinsic saves/restores runtime context (codegen level).
+
+    When an extrinsic function calls into another routine ($$FUNC^ROUTINE),
+    the callee sets _rt._current_routine to its own name.  Without save/restore,
+    $TEXT(+0) in the caller returns the wrong routine name after the extrinsic
+    returns.
+
+    The fix adds save/restore of _current_routine, _current_source_lines, and
+    _current_label_lines inside the generated _call_extrinsic helper, mirroring
+    the pattern used in external DO calls.
+    """
+
+    def test_call_extrinsic_saves_current_routine(self, generate_python):
+        """_call_extrinsic saves _rt._current_routine before the call."""
+        source = "TEST\n S X=$$ADD(1,2)\n Q X\nADD(A,B)\n Q A+B\n"
+        code = generate_python(source)
+        assert "_saved_routine = _rt._current_routine" in code
+
+    def test_call_extrinsic_restores_current_routine(self, generate_python):
+        """_call_extrinsic restores _rt._current_routine in finally block."""
+        source = "TEST\n S X=$$ADD(1,2)\n Q X\nADD(A,B)\n Q A+B\n"
+        code = generate_python(source)
+        assert "_rt._current_routine = _saved_routine" in code
+
+    def test_call_extrinsic_saves_source_lines(self, generate_python):
+        """_call_extrinsic saves _rt._current_source_lines."""
+        source = "TEST\n S X=$$ADD(1,2)\n Q X\nADD(A,B)\n Q A+B\n"
+        code = generate_python(source)
+        assert "_saved_source_lines = _rt._current_source_lines" in code
+
+    def test_call_extrinsic_saves_label_lines(self, generate_python):
+        """_call_extrinsic saves _rt._current_label_lines."""
+        source = "TEST\n S X=$$ADD(1,2)\n Q X\nADD(A,B)\n Q A+B\n"
+        code = generate_python(source)
+        assert "_saved_label_lines = _rt._current_label_lines" in code
+
+    def test_call_extrinsic_restore_in_finally(self, generate_python):
+        """Save/restore are in try/finally for exception safety."""
+        source = "TEST\n S X=$$ADD(1,2)\n Q X\nADD(A,B)\n Q A+B\n"
+        code = generate_python(source)
+        lines = code.split("\n")
+
+        # Find finally: block within _call_extrinsic
+        in_call_extrinsic = False
+        found_finally = False
+        found_restore_after_finally = False
+        for line in lines:
+            if "def _call_extrinsic" in line:
+                in_call_extrinsic = True
+            if in_call_extrinsic and "finally:" in line:
+                found_finally = True
+            if found_finally and "_rt._current_routine = _saved_routine" in line:
+                found_restore_after_finally = True
+                break
+
+        assert found_restore_after_finally, (
+            "_rt._current_routine restore should be in the finally block"
+        )
+
+
+@pytest.mark.codegen
+class TestExtrinsicContextSaveRestoreExecution:
+    """Verify $TEXT(+0) returns correct routine after external extrinsic call.
+
+    End-to-end test: create two routines, have the caller invoke an extrinsic
+    in the callee, then verify $TEXT(+0) still returns the caller's name.
+    """
+
+    def test_text_plus_zero_after_external_extrinsic(self):
+        """$TEXT(+0) returns caller routine name after $$FUNC^OTHER.
+
+        CALLER calls $$ADD^HELPER(1,2) then writes $TEXT(+0).
+        Without save/restore, $TEXT(+0) would return "HELPER" instead of "CALLER".
+        """
+        from m2py.codegen import generate_python
+
+        caller_source = """\
+CALLER
+ S X=$$ADD^HELPER(1,2)
+ W $T(+0)
+ Q
+"""
+        helper_source = """\
+HELPER
+ Q
+ADD(A,B)
+ Q A+B
+"""
+        caller_code = generate_python(caller_source)
+        helper_code = generate_python(helper_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            helper_path = Path(tmpdir) / "HELPER.py"
+            helper_path.write_text(helper_code)
+            sys.path.insert(0, tmpdir)
+            try:
+                if "HELPER" in sys.modules:
+                    del sys.modules["HELPER"]
+
+                ns = {}
+                exec(caller_code, ns)
+                runtime = ns["MUMPSRuntime"]()
+                ns["CALLER"](runtime)
+                output = runtime.get_output()
+                assert output == "CALLER", (
+                    f"$TEXT(+0) should return 'CALLER' but got '{output}'"
+                )
+            finally:
+                sys.path.remove(tmpdir)
+                sys.modules.pop("HELPER", None)
+
+    def test_text_plus_zero_after_multiple_external_extrinsics(self):
+        """$TEXT(+0) correct after multiple external extrinsic calls.
+
+        MAIN calls $$F1^R1(1) then $$F2^R2(2) then writes $TEXT(+0).
+        """
+        from m2py.codegen import generate_python
+
+        main_source = """\
+MAIN
+ S A=$$F1^ROUT1(1)
+ S B=$$F2^ROUT2(2)
+ W $T(+0)
+ Q
+"""
+        rout1_source = """\
+ROUT1
+ Q
+F1(X)
+ Q X*10
+"""
+        rout2_source = """\
+ROUT2
+ Q
+F2(X)
+ Q X*20
+"""
+        main_code = generate_python(main_source)
+        rout1_code = generate_python(rout1_source)
+        rout2_code = generate_python(rout2_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "ROUT1.py").write_text(rout1_code)
+            Path(tmpdir, "ROUT2.py").write_text(rout2_code)
+            sys.path.insert(0, tmpdir)
+            try:
+                for mod in ("ROUT1", "ROUT2"):
+                    sys.modules.pop(mod, None)
+
+                ns = {}
+                exec(main_code, ns)
+                runtime = ns["MUMPSRuntime"]()
+                ns["MAIN"](runtime)
+                output = runtime.get_output()
+                assert output == "MAIN", (
+                    f"$TEXT(+0) should return 'MAIN' but got '{output}'"
+                )
+            finally:
+                sys.path.remove(tmpdir)
+                for mod in ("ROUT1", "ROUT2"):
+                    sys.modules.pop(mod, None)
+
+    def test_extrinsic_return_value_preserved(self):
+        """External extrinsic returns correct value with context save/restore.
+
+        Ensures the save/restore doesn't interfere with the return value.
+        """
+        from m2py.codegen import generate_python
+
+        caller_source = """\
+CALLER
+ S X=$$DOUBLE^MATHLIB(21)
+ W X
+ Q
+"""
+        mathlib_source = """\
+MATHLIB
+ Q
+DOUBLE(N)
+ Q N*2
+"""
+        caller_code = generate_python(caller_source)
+        mathlib_code = generate_python(mathlib_source)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "MATHLIB.py").write_text(mathlib_code)
+            sys.path.insert(0, tmpdir)
+            try:
+                sys.modules.pop("MATHLIB", None)
+
+                ns = {}
+                exec(caller_code, ns)
+                runtime = ns["MUMPSRuntime"]()
+                ns["CALLER"](runtime)
+                output = runtime.get_output()
+                assert output == "42", f"Expected '42' but got '{output}'"
+            finally:
+                sys.path.remove(tmpdir)
+                sys.modules.pop("MATHLIB", None)

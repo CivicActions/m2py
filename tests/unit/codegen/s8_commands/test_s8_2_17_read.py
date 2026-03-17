@@ -233,5 +233,117 @@ class TestReadCodegen:
 
 
 # =============================================================================
+# Subscripted READ targets
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestReadSubscriptedTarget:
+    """READ into subscripted local variables.
+
+    MUMPS allows READ into subscripted variables (e.g., R ARR(I):0).
+    The codegen must generate a subscript assignment, not a root value
+    assignment.  Bug fix: previously R ARR(I) generated
+    ``_scope['ARR'].value = _read_val`` instead of
+    ``_scope['ARR'][I] = _read_val``.
+    """
+
+    def test_read_into_subscripted_var_codegen(self):
+        """R ARR(I):0 generates subscript assignment, not .value."""
+        from m2py.codegen import generate_python
+
+        code = generate_python("TEST\n N I,ARR F I=1:1 R ARR(I):0 Q\n Q\n")
+        # Must NOT assign to .value for the ARR variable in the READ
+        # It should use subscript syntax like _scope['ARR'][...]
+        assert "read_line_timeout" in code
+        # The subscripted assignment should NOT be ARR.value
+        # It should be ARR[something] = _read_val
+        lines = code.split("\n")
+        read_assign_lines = [l for l in lines if "_read_val" in l and "ARR" in l]
+        assert len(read_assign_lines) >= 1, (
+            "Expected a line assigning _read_val to ARR with subscript"
+        )
+        for line in read_assign_lines:
+            # Should use subscript [] not .value
+            assert "[" in line, f"Expected subscript access in: {line.strip()}"
+            assert ".value" not in line, (
+                f"Should not assign to .value for subscripted READ: {line.strip()}"
+            )
+
+    def test_read_into_multisub_var_codegen(self):
+        """R A(I,J):0 generates multi-subscript assignment."""
+        from m2py.codegen import generate_python
+
+        code = generate_python("TEST\n N I,J S I=1,J=2 R A(I,J):0\n Q\n")
+        lines = code.split("\n")
+        read_assign_lines = [l for l in lines if "_read_val" in l and "'A'" in l]
+        assert len(read_assign_lines) >= 1, (
+            "Expected a line assigning _read_val to A with subscripts"
+        )
+        for line in read_assign_lines:
+            assert "[" in line, f"Expected subscript access in: {line.strip()}"
+
+    def test_read_non_subscripted_still_uses_value(self):
+        """R X:0 still assigns to .value (no subscripts)."""
+        from m2py.codegen import generate_python
+
+        code = generate_python("TEST\n R X:0\n Q\n")
+        lines = code.split("\n")
+        read_assign_lines = [l for l in lines if "_read_val" in l and "'X'" in l]
+        assert len(read_assign_lines) >= 1
+        for line in read_assign_lines:
+            assert ".value" in line, (
+                f"Non-subscripted READ should use .value: {line.strip()}"
+            )
+
+    def test_read_subscripted_runtime_execution(self):
+        """R ARR(I):0 at runtime actually stores in the subscripted node."""
+        from m2py.codegen import generate_python
+        from m2py.runtime import MArray, MUMPSRuntime
+
+        # Build a routine that reads into ARR(1), ARR(2), ARR(3)
+        # Don't NEW ARR so it persists in scope after subroutine return.
+        # NEW I so the counter is local to the label.
+        source = """\
+TEST
+ N I
+ F I=1:1:3 R ARR(I):0
+ Q
+"""
+        code = generate_python(source)
+        mod = {}
+        exec(code, mod)  # noqa: S102
+
+        rt = MUMPSRuntime()
+
+        # Set up a file device with test content so READ has data to read
+        import os
+        import tempfile
+
+        tmpfile = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
+        tmpfile.write("alpha\nbeta\ngamma\n")
+        tmpfile.close()
+        try:
+            rt.open_device(tmpfile.name, ["readonly"], 0)
+            rt.use_device(tmpfile.name)
+
+            scope: dict[str, MArray] = {}
+            mod["TEST"](rt, _scope=scope)
+
+            # ARR should have subscripted children
+            arr = scope.get("ARR")
+            assert arr is not None, "ARR should exist in scope"
+            # Verify subscripted nodes exist (values are from file reads)
+            assert "1" in arr._children, "ARR(1) should exist as subscripted child"
+            assert "2" in arr._children, "ARR(2) should exist as subscripted child"
+            assert "3" in arr._children, "ARR(3) should exist as subscripted child"
+            # Root value should NOT be set (only subscripted children)
+            assert arr._value is None, "ARR root value should be unset"
+        finally:
+            rt.close_device(tmpfile.name)
+            os.unlink(tmpfile.name)
+
+
+# =============================================================================
 # Extrinsic functions with by-ref
 # =============================================================================

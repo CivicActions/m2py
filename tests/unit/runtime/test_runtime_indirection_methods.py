@@ -948,3 +948,67 @@ class TestMergeNameSubscriptsQuoting:
         """No additional subscripts returns name unchanged."""
         result = rt._merge_name_subscripts("^V(1)", [], {})
         assert result == "^V(1)"
+
+
+# =============================================================================
+# Name translation in get_data() and query_indirected()
+# =============================================================================
+
+
+class TestGetDataNameTranslation:
+    """Tests for MUMPS→Python name translation in get_data().
+
+    The get_data() method must translate MUMPS names (e.g. "I", "O", "%D")
+    to their Python scope key equivalents (e.g. "_a_I", "_a_O", "_pct_D")
+    because codegen stores variables under translated names.
+
+    Without this fix, get_data("I", scope) would look for scope["I"] when
+    the actual key is scope["_a_I"], causing $DATA to incorrectly return 0.
+    """
+
+    @pytest.fixture
+    def rt(self):
+        return MUMPSRuntime()
+
+    def test_ambiguous_single_letter_I(self, rt):
+        """$DATA(I) finds variable stored as _a_I in scope."""
+        scope = {"_a_I": MArray()}
+        scope["_a_I"].value = "5"
+        assert rt.get_data("I", scope) == 1
+
+    def test_ambiguous_single_letter_O(self, rt):
+        """$DATA(O) finds variable stored as _a_O in scope."""
+        scope = {"_a_O": MArray()}
+        scope["_a_O"].value = "1"
+        assert rt.get_data("O", scope) == 1
+
+    def test_percent_variable(self, rt):
+        """$DATA(%D) finds variable stored as _pct_D in scope."""
+        scope = {"_pct_D": MArray()}
+        scope["_pct_D"].value = "test"
+        assert rt.get_data("%D", scope) == 1
+
+    def test_regular_name_unchanged(self, rt):
+        """$DATA(X) works unchanged for normal variable names."""
+        scope = {"X": MArray()}
+        scope["X"].value = "hello"
+        assert rt.get_data("X", scope) == 1
+
+    def test_subscripted_ambiguous_var(self, rt):
+        """$DATA(I(1)) finds subscripted ambiguous variable."""
+        scope = {"_a_I": MArray()}
+        scope["_a_I"][1].value = "val"
+        # get_data parses subscripts — the base "I" should translate to "_a_I"
+        assert rt.get_data("I(1)", scope) == 1
+
+    def test_undefined_translated_var_returns_0(self, rt):
+        """$DATA(I) returns 0 when _a_I is not in scope."""
+        scope = {}
+        assert rt.get_data("I", scope) == 0
+
+    def test_global_var_not_translated(self, rt):
+        """$DATA(^G) does NOT translate the global name."""
+        scope = {}
+        rt.globals.set("G", (), "val")
+        # Global names should not be translated
+        assert rt.get_data("^G", scope) == 1

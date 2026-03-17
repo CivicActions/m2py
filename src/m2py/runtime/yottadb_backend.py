@@ -12,11 +12,13 @@ Features:
     - Tracks known globals for reliable kill_all()
 """
 
-from __future__ import annotations
+# All methods call _ensure_connected() which guarantees self._ydb is set,
+# but type checkers cannot track this narrowing across method boundaries.
 
 import os
 import threading
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, TextIO
 
 from m2py.core.subscripts import SubscriptCanonicalizer
 from m2py.runtime.helpers import (
@@ -47,7 +49,7 @@ class YottaDBGlobalStorage:
         self._naked_indicator_value: tuple[str, tuple[str, ...]] | None = None
 
         # Lock tracking: {(name, subscripts): count}
-        self._locks_held: dict[tuple[str, tuple[str, ...]], int] = {}
+        self._lock_table: dict[tuple[str, tuple[str, ...]], int] = {}
 
         # Transaction state
         self._tlevel: int = 0
@@ -61,6 +63,38 @@ class YottaDBGlobalStorage:
 
         # Track known global names for kill_all()
         self._known_globals: set[str] = set()
+
+    # Class-level set tracking all global names written by ANY instance.
+    # YDB shares a single database so kill_all() on any instance must
+    # be able to clean up globals created by other instances.
+    _all_known_globals: set[str] = set()
+
+    @property
+    def _naked_indicator(self) -> tuple[str, tuple[str, ...]] | None:
+        """Naked indicator for global reference resolution."""
+        return self._naked_indicator_value
+
+    @_naked_indicator.setter
+    def _naked_indicator(self, value: tuple[str, tuple[str, ...]] | None) -> None:
+        self._naked_indicator_value = value
+
+    def _resolve_ns_name(
+        self, name: str, subscripts: tuple[str, ...]
+    ) -> tuple[str, tuple[str, ...]]:
+        """Resolve namespace-prefixed names like ``"NS:X"`` into (name, subs).
+
+        Codegen may emit ``set("NS:X", subs, val)`` using the ``NS:name``
+        convention from the InMemory backend.  YDB/IRIS global names cannot
+        contain ``:``, so we translate:
+
+            ("NS:X", ("a",)) → ("X", ("~NS:NS", "a"))
+
+        Plain names (no ``:``) pass through unchanged.
+        """
+        if ":" in name:
+            ns, real_name = name.split(":", 1)
+            return real_name, (f"~NS:{ns}", *subscripts)
+        return name, subscripts
 
     def _ensure_initialized(self) -> None:
         """Lazily import yottadb SDK on first use."""
@@ -135,6 +169,23 @@ class YottaDBGlobalStorage:
                 return err
         return e
 
+    def _is_lock_timeout(self, e: Exception) -> bool:
+        """Check if exception is a YDB lock timeout error."""
+        ydb = self._ydb
+        if ydb is not None:
+            if isinstance(e, ydb.YDBError):
+                msg = str(e)
+                if "TIME" in msg or "LOCKTIME" in msg:
+                    return True
+            try:
+                import _yottadb
+
+                if isinstance(e, _yottadb.YDBLockTimeoutError):
+                    return True
+            except ImportError:
+                pass
+        return False
+
     # =========================================================================
     # Basic CRUD Operations
     # =========================================================================
@@ -143,6 +194,7 @@ class YottaDBGlobalStorage:
         self, name: str, subscripts: tuple[str, ...], update_naked: bool = True
     ) -> str | None:
         """Get value at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         if update_naked:
             self._update_naked_indicator(name, subscripts)
@@ -169,9 +221,12 @@ class YottaDBGlobalStorage:
 
     def set(self, name: str, subscripts: tuple[str, ...], value: str) -> None:
         """Set value at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
         self._known_globals.add(name)
+        YottaDBGlobalStorage._all_known_globals.add(name)
+        value = str(value)  # MUMPS canonical: all values are strings
 
         with self._lock:
             self._ensure_initialized()
@@ -189,6 +244,7 @@ class YottaDBGlobalStorage:
 
     def kill(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Kill node and all descendants at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -210,22 +266,40 @@ class YottaDBGlobalStorage:
                 raise self._translate_exception(e)
 
     def kill_all(self) -> None:
-        """Kill all known globals. Used for testing/reset."""
+        """Kill all globals in the database. Used for testing/reset.
+
+        Enumerates all globals via $ORDER on the global directory so that
+        globals created in child processes (e.g. multiprocessing workers)
+        are also cleaned up, not just those tracked in _known_globals.
+        """
         with self._lock:
             self._ensure_initialized()
             ydb = self._ydb
-            for gname in list(self._known_globals):
-                try:
-                    ydb.Key(f"^{gname}").delete_tree()
-                except Exception:
-                    pass
+            # Enumerate all globals starting from ^%
+            try:
+                name = ydb.subscript_next("^%")
+                while True:
+                    try:
+                        ydb.Key(
+                            name.decode() if isinstance(name, bytes) else name
+                        ).delete_tree()
+                    except Exception:
+                        pass
+                    name = ydb.subscript_next(
+                        name.decode() if isinstance(name, bytes) else name
+                    )
+            except Exception:
+                # YDBNodeEnd or similar — enumeration finished
+                pass
             self._known_globals.clear()
+            YottaDBGlobalStorage._all_known_globals.clear()
 
         self._naked_indicator_value = None
         self._last_global_ref = ""
 
     def data(self, name: str, subscripts: tuple[str, ...]) -> int:
         """Return $DATA value for ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -283,6 +357,7 @@ class YottaDBGlobalStorage:
         update_naked: bool = True,
     ) -> str:
         """Return next/previous subscript in MUMPS collation order."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         if update_naked:
             self._update_naked_indicator(name, subscripts)
@@ -322,11 +397,30 @@ class YottaDBGlobalStorage:
                         return ""
                 raise self._translate_exception(e)
 
+    def iter_keys(
+        self,
+        name: str,
+        prefix_subscripts: tuple[str, ...],
+        direction: int = 1,
+    ):
+        """Yield all subscripts at one level — fallback via repeated order()."""
+        prefix_subscripts = self._canonicalize_subscripts(prefix_subscripts)
+        current = ""
+        while True:
+            nxt = self.order(
+                name, (*prefix_subscripts, current), direction, update_naked=False
+            )
+            if nxt == "":
+                return
+            yield nxt
+            current = nxt
+
     def query(self, name: str, subscripts: tuple[str, ...]) -> str:
         """Return full reference of next node with data ($QUERY).
 
         Uses yottadb.node_next() for $QUERY equivalent.
         """
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -397,6 +491,7 @@ class YottaDBGlobalStorage:
         """Get subtree as MArray for MERGE source."""
         from m2py.runtime import MArray
 
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
 
@@ -476,9 +571,11 @@ class YottaDBGlobalStorage:
         self, name: str, subscripts: tuple[str, ...], source: "MArray"
     ) -> None:
         """Merge MArray tree into global at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
         self._known_globals.add(name)
+        YottaDBGlobalStorage._all_known_globals.add(name)
         self._merge_tree_recursive(name, subscripts, source)
 
     def _merge_tree_recursive(
@@ -486,7 +583,7 @@ class YottaDBGlobalStorage:
     ) -> None:
         """Recursively merge MArray node into YDB global."""
         if node._value is not None:
-            self.set(name, subscripts, node._value)
+            self.set(name, subscripts, str(node._value))
         for key, child in node._children.items():
             child_sub = str(key)
             self._merge_tree_recursive(name, subscripts + (child_sub,), child)
@@ -497,9 +594,11 @@ class YottaDBGlobalStorage:
 
     def incr(self, name: str, subscripts: tuple[str, ...], increment: str = "1") -> str:
         """Atomically increment value at ^NAME(subscripts)."""
+        name, subscripts = self._resolve_ns_name(name, subscripts)
         subscripts = self._canonicalize_subscripts(subscripts)
         self._update_naked_indicator(name, subscripts)
         self._known_globals.add(name)
+        YottaDBGlobalStorage._all_known_globals.add(name)
 
         with self._lock:
             self._ensure_initialized()
@@ -535,10 +634,10 @@ class YottaDBGlobalStorage:
 
         if lock_type == "-":
             # Decremental unlock
-            if lock_key in self._locks_held:
-                self._locks_held[lock_key] -= 1
-                if self._locks_held[lock_key] <= 0:
-                    del self._locks_held[lock_key]
+            if lock_key in self._lock_table:
+                self._lock_table[lock_key] -= 1
+                if self._lock_table[lock_key] <= 0:
+                    del self._lock_table[lock_key]
 
             with self._lock:
                 self._ensure_initialized()
@@ -553,39 +652,62 @@ class YottaDBGlobalStorage:
             return True
 
         # Incremental lock (+)
+        #
+        # YDB timeout semantics: timeout_nsec=0 means "non-blocking" (try once
+        # and fail immediately).  MUMPS untimed LOCK waits indefinitely, so we
+        # must pass a real timeout.  For an explicit `timeout` we convert to
+        # nanoseconds; for `timeout is None` (indefinite) we retry in a loop
+        # with per-attempt timeouts (matching MUMPS semantics where untimed
+        # LOCK waits until the lock is available).
+        _PER_ATTEMPT_NS = 10_000_000_000  # 10 seconds per attempt
+
         with self._lock:
             self._ensure_initialized()
             ydb = self._ydb
-            try:
-                timeout_nsec = int(timeout * 1_000_000_000) if timeout is not None else 0
-                ydb.lock_incr(
-                    f"^{name}",
-                    list(subscripts),
-                    timeout_nsec=timeout_nsec,
-                )
-                self._locks_held[lock_key] = self._locks_held.get(lock_key, 0) + 1
-                return True
-            except Exception as e:
-                ydb_mod = self._ydb
-                if ydb_mod is not None:
-                    import _yottadb
 
-                    if isinstance(e, ydb_mod.YDBError):
-                        msg = str(e)
-                        if "TIME" in msg or "LOCKTIME" in msg:
-                            return False
-                    if isinstance(e, _yottadb.YDBLockTimeoutError):
+            if timeout is not None:
+                # Explicit timeout — single attempt
+                timeout_nsec = int(timeout * 1_000_000_000)
+                try:
+                    ydb.lock_incr(
+                        f"^{name}",
+                        list(subscripts),
+                        timeout_nsec=timeout_nsec,
+                    )
+                    self._lock_table[lock_key] = self._lock_table.get(lock_key, 0) + 1
+                    return True
+                except Exception as e:
+                    if self._is_lock_timeout(e):
                         return False
-                raise self._translate_exception(e)
+                    raise self._translate_exception(e)
+            else:
+                # Indefinite wait — retry with per-attempt timeouts.
+                # Per MUMPS spec, untimed LOCK waits until the lock is
+                # available. We approximate this by retrying in a loop.
+                while True:
+                    try:
+                        ydb.lock_incr(
+                            f"^{name}",
+                            list(subscripts),
+                            timeout_nsec=_PER_ATTEMPT_NS,
+                        )
+                        self._lock_table[lock_key] = (
+                            self._lock_table.get(lock_key, 0) + 1
+                        )
+                        return True
+                    except Exception as e:
+                        if self._is_lock_timeout(e):
+                            continue  # retry indefinitely
+                        raise self._translate_exception(e)
 
     def unlock(self, name: str, subscripts: tuple[str, ...]) -> None:
         """Release a lock on ^NAME(subscripts)."""
         subscripts = self._canonicalize_subscripts(subscripts)
         lock_key = (name, subscripts)
-        if lock_key in self._locks_held:
-            self._locks_held[lock_key] -= 1
-            if self._locks_held[lock_key] <= 0:
-                del self._locks_held[lock_key]
+        if lock_key in self._lock_table:
+            self._lock_table[lock_key] -= 1
+            if self._lock_table[lock_key] <= 0:
+                del self._lock_table[lock_key]
 
         with self._lock:
             self._ensure_initialized()
@@ -600,7 +722,7 @@ class YottaDBGlobalStorage:
 
     def unlock_all(self) -> None:
         """Release all locks held by current process."""
-        self._locks_held.clear()
+        self._lock_table.clear()
         with self._lock:
             self._ensure_initialized()
             ydb = self._ydb
@@ -614,7 +736,7 @@ class YottaDBGlobalStorage:
         import json
 
         result = []
-        for (lock_name, lock_subs), count in self._locks_held.items():
+        for (lock_name, lock_subs), count in self._lock_table.items():
             subs_json = json.dumps(list(lock_subs))
             result.append((lock_name, subs_json, count))
         return result
@@ -647,7 +769,13 @@ class YottaDBGlobalStorage:
             d = key.data
             if d in (1, 11):
                 val = key.get()
-                v = val.decode("utf-8") if isinstance(val, bytes) else str(val) if val is not None else None
+                v = (
+                    val.decode("utf-8")
+                    if isinstance(val, bytes)
+                    else str(val)
+                    if val is not None
+                    else None
+                )
                 nodes.append((subscripts, v))
             elif d == 0:
                 nodes.append((subscripts, None))
@@ -678,13 +806,23 @@ class YottaDBGlobalStorage:
                 break
             if next_sub_b is None or next_sub_b == b"":
                 break
-            sub_str = next_sub_b.decode("utf-8") if isinstance(next_sub_b, bytes) else str(next_sub_b)
+            sub_str = (
+                next_sub_b.decode("utf-8")
+                if isinstance(next_sub_b, bytes)
+                else str(next_sub_b)
+            )
             child_subs = subscripts + (sub_str,)
             child_ydb = parent_key[sub_str]
             d = child_ydb.data
             if d in (1, 11):
                 val = child_ydb.get()
-                v = val.decode("utf-8") if isinstance(val, bytes) else str(val) if val is not None else None
+                v = (
+                    val.decode("utf-8")
+                    if isinstance(val, bytes)
+                    else str(val)
+                    if val is not None
+                    else None
+                )
                 nodes.append((child_subs, v))
             if d in (10, 11):
                 self._snapshot_children(name, child_subs, nodes)
@@ -698,7 +836,7 @@ class YottaDBGlobalStorage:
         """
         # Snapshot lock state at outermost TSTART only
         if self._tlevel == 0:
-            self._lock_snapshot = dict(self._locks_held)
+            self._lock_snapshot = dict(self._lock_table)
 
         self._transaction_journal.append([])
         self._tlevel += 1
@@ -767,7 +905,7 @@ class YottaDBGlobalStorage:
             # Restore lock state to what it was at outermost TSTART
             if self._lock_snapshot is not None:
                 # Release native locks that were acquired during the transaction
-                for lock_key, count in self._locks_held.items():
+                for lock_key, count in self._lock_table.items():
                     if lock_key not in self._lock_snapshot:
                         # This lock was acquired during the txn — release it
                         name, subs = lock_key
@@ -788,7 +926,7 @@ class YottaDBGlobalStorage:
                                 except Exception:
                                     pass
                 # Restore the Python-side lock tracking dict
-                self._locks_held = dict(self._lock_snapshot)
+                self._lock_table = dict(self._lock_snapshot)
                 self._lock_snapshot = None
 
     def get_tlevel(self) -> int:
@@ -828,7 +966,7 @@ class YottaDBGlobalStorage:
 
     def ssvn_lock(self, subscript: str) -> str:
         """Query ^$LOCK(lockname) for lock information."""
-        for (lock_name, _), count in self._locks_held.items():
+        for (lock_name, _), count in self._lock_table.items():
             if lock_name == subscript:
                 return str(count)
         return ""
@@ -857,5 +995,146 @@ class YottaDBGlobalStorage:
             return "1"
 
         return ""
+
+    # =========================================================================
+    # Namespace (Extended Global References)
+    # =========================================================================
+
+    def _ns_subs(self, subscripts: tuple[str, ...], namespace: str) -> tuple[str, ...]:
+        """Prepend namespace qualifier as first subscript.
+
+        YDB/IRIS global names only allow alphanumeric chars, so we cannot
+        embed the namespace in the name (e.g. ``NS:X`` is invalid).  Instead,
+        we prepend a namespace tag as the first subscript:
+
+            _ns_subs(("a",), "NS") → ("~NS:NS", "a")
+
+        The ``~NS:`` prefix sorts after all normal subscripts and is never
+        generated by user code, guaranteeing isolation.
+        """
+        if namespace:
+            return (f"~NS:{namespace}", *subscripts)
+        return subscripts
+
+    def set_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        value: str,
+        namespace: str = "",
+    ) -> None:
+        """Set a global variable in a specific namespace."""
+        self.set(name, self._ns_subs(subscripts, namespace), value)
+
+    def get_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        namespace: str = "",
+    ) -> str | None:
+        """Get a global variable from a specific namespace."""
+        return self.get(name, self._ns_subs(subscripts, namespace))
+
+    def data_ns(
+        self, name: str, subscripts: tuple[str, ...], namespace: str = ""
+    ) -> int:
+        """$DATA for namespace-qualified global."""
+        return self.data(name, self._ns_subs(subscripts, namespace))
+
+    def order_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        namespace: str = "",
+    ) -> str:
+        """$ORDER for namespace-qualified global."""
+        return self.order(name, self._ns_subs(subscripts, namespace), direction)
+
+    def kill_ns(
+        self, name: str, subscripts: tuple[str, ...], namespace: str = ""
+    ) -> None:
+        """KILL for namespace-qualified global."""
+        self.kill(name, self._ns_subs(subscripts, namespace))
+
+    def query_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        direction: int = 1,
+        namespace: str = "",
+    ) -> str:
+        """$QUERY for namespace-qualified global."""
+        return self.query(name, self._ns_subs(subscripts, namespace))
+
+    def merge_tree_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        source: "MArray",
+        namespace: str = "",
+    ) -> None:
+        """MERGE for namespace-qualified global."""
+        self.merge_tree(name, self._ns_subs(subscripts, namespace), source)
+
+    def get_tree_ns(
+        self,
+        name: str,
+        subscripts: tuple[str, ...],
+        namespace: str = "",
+    ) -> "MArray | None":
+        """Get subtree for namespace-qualified global."""
+        return self.get_tree(name, self._ns_subs(subscripts, namespace))
+
+    # =========================================================================
+    # ZWR Import
+    # =========================================================================
+
+    def import_zwr(self, source: "Path | TextIO") -> int:
+        """Import ZWR data, using MUPIP LOAD when available.
+
+        Falls back to line-by-line ``set()`` if MUPIP is unavailable or
+        the source is a stream rather than a file path.
+        """
+        import logging
+
+        from m2py.runtime.zwr import (
+            _is_ydb_environment,
+            _mupip_available,
+            import_zwr_ydb_native,
+            parse_zwr_stream,
+        )
+
+        log = logging.getLogger(__name__)
+
+        # Fast path: file + MUPIP available
+        if isinstance(source, Path) and _is_ydb_environment() and _mupip_available():
+            try:
+                n = import_zwr_ydb_native(source)
+                log.info("Loaded %d nodes via mupip load from %s", n, source.name)
+                return n
+            except RuntimeError:
+                log.warning(
+                    "mupip load failed for %s; falling back to line-by-line",
+                    source.name,
+                    exc_info=True,
+                )
+
+        # Fallback: line-by-line
+        count = 0
+
+        def _load(stream: TextIO) -> int:
+            nonlocal count
+            for name, subs, value in parse_zwr_stream(stream):
+                bare_name = name[1:] if name.startswith("^") else name
+                self.set(bare_name, tuple(subs), value)
+                count += 1
+            return count
+
+        if isinstance(source, Path):
+            with open(source, errors="replace") as f:
+                return _load(f)
+        return _load(source)
+
         """Close the backend (no-op for in-process YDB)."""
         pass

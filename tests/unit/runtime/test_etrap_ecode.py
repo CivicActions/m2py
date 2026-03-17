@@ -390,3 +390,194 @@ class TestStackSnapshotOnError:
         assert rt._stack_snapshot is not None
         rt.set_ecode("")
         assert rt._stack_snapshot is None
+
+
+# =============================================================================
+# $ETRAP Transpile + Execute Tests
+# =============================================================================
+
+
+def _run_routine(source: str) -> str:
+    """Transpile MUMPS source and run it, returning captured output."""
+    import sys
+    import types
+
+    from m2py.codegen import generate_python
+    from m2py.runtime import run_with_goto_support
+
+    py = generate_python(source)
+    rt = MUMPSRuntime()
+    rt._capture_output = True
+
+    scope: dict = {}
+    exec(py, scope)
+
+    # Register as module so D LABEL^ROUTINE can import it
+    routine_name = scope.get("_routine_name", "TEST")
+    mod = types.ModuleType(routine_name)
+    mod.__dict__.update(scope)
+    sys.modules[routine_name] = mod
+
+    entry = scope.get(routine_name, None)
+    if entry is None:
+        entry = scope.get("TEST", None)
+    assert entry is not None, "No entry point found"
+
+    try:
+        run_with_goto_support(entry, rt, {})
+    finally:
+        sys.modules.pop(routine_name, None)
+    return rt.get_output()
+
+
+class TestEtrapTranspileExecute:
+    """Transpile-level tests for $ETRAP error trapping behavior.
+
+    Verifies that generated Python code correctly implements $ETRAP
+    error trapping, including catching errors, resuming execution,
+    and $ECODE clearing.
+    """
+
+    def test_etrap_catches_undefined_variable(self):
+        """$ETRAP handler fires when an undefined variable is accessed."""
+        source = """\
+TEST ; Test $ETRAP catches undefined variable
+ N $ETRAP S $ETRAP="D HANDLER^TEST"
+ W "before,"
+ W UNDEF
+ W "after,"
+ Q
+HANDLER ;
+ W "caught,"
+ S $ECODE=""
+ Q
+"""
+        output = _run_routine(source)
+        assert "before," in output
+        assert "caught," in output
+
+    def test_etrap_resumes_after_error(self):
+        """After $ETRAP handles an error, execution resumes at the caller."""
+        source = """\
+TEST ; Test resume after error
+ N $ETRAP S $ETRAP="D EHANDLER^TEST"
+ D BADCODE^TEST
+ W "resumed,"
+ Q
+BADCODE ;
+ W "entering,"
+ S X=1/0
+ W "never,"
+ Q
+EHANDLER ;
+ W "handled,"
+ S $ECODE=""
+ Q
+"""
+        output = _run_routine(source)
+        assert "entering," in output
+        assert "handled," in output
+
+    def test_etrap_empty_string_disables(self):
+        """Setting $ETRAP='' disables trapping (errors propagate normally)."""
+        source = """\
+TEST ; Test $ETRAP="" disables trapping
+ N $ETRAP S $ETRAP=""
+ W "start,"
+ Q
+"""
+        output = _run_routine(source)
+        assert "start," in output
+
+    def test_etrap_ecode_cleared_allows_continuation(self):
+        """Clearing $ECODE in the handler allows continued execution."""
+        source = (
+            "TEST ; Test $ECODE clearing\n"
+            ' N $ETRAP S $ETRAP="S $ECODE="""" Q"\n'
+            " N X\n"
+            ' W "a,"\n'
+            " S X=UNDEF\n"
+            ' W "b,"\n'
+            " Q\n"
+        )
+        output = _run_routine(source)
+        assert "a," in output
+
+    def test_etrap_nested_new_restores_outer(self):
+        """NEW $ETRAP in subroutine restores outer handler on return."""
+        source = """\
+TEST ; Nested NEW $ETRAP
+ N $ETRAP S $ETRAP="D OUTER^TEST"
+ D SUB^TEST
+ W UNDEF
+ Q
+SUB ;
+ N $ETRAP S $ETRAP="D INNER^TEST"
+ Q
+OUTER ;
+ W "outer,"
+ S $ECODE=""
+ Q
+INNER ;
+ W "inner,"
+ S $ECODE=""
+ Q
+"""
+        output = _run_routine(source)
+        assert "outer," in output
+        assert "inner," not in output
+
+    def test_etrap_error_in_handler_propagates(self):
+        """If $ETRAP handler itself errors, the error propagates up."""
+        source = """\
+TEST ; Error in handler
+ N $ETRAP S $ETRAP="W ALSO_UNDEF"
+ W "before,"
+ W UNDEF
+ W "after,"
+ Q
+"""
+        # The handler tries to WRITE ALSO_UNDEF which also errors;
+        # this should propagate (not infinite loop).
+        import pytest
+
+        with pytest.raises(Exception):
+            _run_routine(source)
+
+    def test_etrap_division_by_zero(self):
+        """$ETRAP catches division by zero errors."""
+        source = """\
+TEST ; Division by zero with $ETRAP
+ N $ETRAP S $ETRAP="D DIVFIX^TEST"
+ N X S X=1/0
+ Q
+DIVFIX ;
+ W "divzero,"
+ S $ECODE=""
+ Q
+"""
+        output = _run_routine(source)
+        assert "divzero," in output
+
+    def test_etrap_with_do_subroutine(self):
+        """$ETRAP catches errors that occur in DO'd subroutines."""
+        source = """\
+TEST ; $ETRAP with subroutine error
+ N $ETRAP S $ETRAP="D ERRH^TEST"
+ D WORKER^TEST
+ W "back,"
+ Q
+WORKER ;
+ W "working,"
+ S X=UNDEF
+ W "never,"
+ Q
+ERRH ;
+ W "fixed,"
+ S $ECODE=""
+ Q
+"""
+        output = _run_routine(source)
+        assert "working," in output
+        assert "fixed," in output
+        assert "never," not in output

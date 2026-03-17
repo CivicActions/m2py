@@ -256,3 +256,105 @@ class TestByRefCrossStrategy:
         result = execute_mumps(source)
         # After KILL Y, $DATA(X) should be 0 (no value, no descendants)
         assert result.output == "0\n"
+
+    def test_byref_percent_variable_extrinsic(self, execute_mumps):
+        """Extrinsic call with %-prefixed variable passed by reference.
+
+        Verifies that .%VAR byref arguments correctly resolve in scope
+        when the variable name requires _pct_ encoding.
+        """
+        source = (
+            "TEST ;\n"
+            " N %1\n"
+            ' S %1("type")="japaense"\n'
+            ' S %1("origin")="japan"\n'
+            ' W $$FN("name",.%1),!\n'
+            " Q\n"
+            "FN(NAME,ATTRS) ;\n"
+            ' N I,S S S="",I=""\n'
+            ' F  S I=$O(ATTRS(I)) Q:I=""  S S=S_" "_I_"="_ATTRS(I)\n'
+            ' Q "<"_NAME_S_">"\n'
+        )
+        result = execute_mumps(source)
+        assert result.output == "<name origin=japan type=japaense>\n"
+
+    def test_byref_percent_variable_do_call(self, execute_mumps):
+        """DO call with %-prefixed variable passed by reference.
+
+        Verifies that .%VAR byref works for DO (non-extrinsic) calls too.
+        """
+        source = (
+            "TEST ;\n"
+            " N %A\n"
+            ' S %A("x")=10,%A("y")=20\n'
+            " D SUB(.%A)\n"
+            ' W %A("sum"),!\n'
+            " Q\n"
+            "SUB(P) ;\n"
+            ' S P("sum")=P("x")+P("y")\n'
+            " Q\n"
+        )
+        result = execute_mumps(source)
+        assert result.output == "30\n"
+
+    def test_byref_with_omitted_args_positional(self, execute_mumps):
+        """DO call with omitted args + byref preserves positional mapping.
+
+        MUMPS: D START("Books",,"G",,.%1) — args 2 and 4 are omitted.
+        Verifies that None placeholders are generated for omitted args
+        so that byref arg %1 lands at position 5 (ATT), not position 3.
+        """
+        source = (
+            "TEST ;\n"
+            ' N %1 S %1("ver")="2.5"\n'
+            ' D START("Books",,"G",,.%1)\n'
+            " W $G(^X(1)),!\n"
+            " Q\n"
+            "START(A,B,C,D,ATT) ;\n"
+            " K ^X\n"
+            ' S ^X("DOC")=A\n'
+            ' I $G(C)["G" S ^X("CNT")=1\n'
+            ' N V S V=$G(^X("CNT"))\n'
+            ' I V S ^X(V)="first",^X("CNT")=V+1\n'
+            " Q\n"
+        )
+        result = execute_mumps(source)
+        assert result.output == "first\n"
+
+    def test_extrinsic_label_variable_name_collision(self, execute_mumps):
+        """Extrinsic call where label name matches a formal parameter.
+
+        MUMPS allows $$ATT(.ATT) — calling label ATT while passing variable
+        ATT by reference.  Labels and variables live in separate namespaces
+        in MUMPS.  The generated code must use _globals['ATT'] to avoid the
+        formal parameter shadowing the module-level function.
+        """
+        source = (
+            "TEST ;\n"
+            ' N ATT S ATT("x")="hello"\n'
+            " W $$ATT(.ATT),!\n"
+            " Q\n"
+            "ATT(A) ;\n"
+            ' Q $G(A("x"))_" world"\n'
+        )
+        result = execute_mumps(source)
+        assert result.output == "hello world\n"
+
+    def test_new_dedup_clears_subscripts(self, execute_mumps):
+        """Repeated NEW at same scope level clears variable subscripts.
+
+        In real MUMPS (YDB/GT.M), a second N %1 at the same stack level
+        makes the variable undefined (clears subscripts) while keeping
+        the original restore point.
+        """
+        source = (
+            "TEST ;\n"
+            ' N X S X("a")="1",X("b")="2"\n'
+            " N X\n"
+            ' S X("c")="3"\n'
+            ' W $G(X("a")),":",$G(X("b")),":",X("c"),!\n'
+            " Q\n"
+        )
+        result = execute_mumps(source)
+        # After second NEW, X("a") and X("b") should be gone; only X("c") set
+        assert result.output == "::3\n"

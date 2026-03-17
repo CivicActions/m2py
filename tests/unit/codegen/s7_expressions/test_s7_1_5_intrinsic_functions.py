@@ -1397,5 +1397,159 @@ class TestExtractEmptyThirdArg:
 
 
 # =============================================================================
+# $GET with TRAMPOLINE strategy / dynamic locals
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestGetTrampolineDynamicLocals:
+    """$GET in routines with dynamic locals (TRAMPOLINE strategy).
+
+    Fix: _gen_get() was hardcoded to use _scope.get() regardless of
+    codegen strategy. Now uses var_base_expr() which returns
+    state._locals.get() for TRAMPOLINE+dynamic_locals routines.
+
+    The symptom was $GET failing to read formal parameters in routines
+    selected for TRAMPOLINE strategy (e.g. routines with cross-label GOTO).
+    """
+
+    def test_get_in_routine_with_argumentless_kill(self, execute_mumps):
+        """$G(X) reads variable correctly in routine with argumentless KILL.
+
+        Argumentless KILL forces dynamic_locals=True → TRAMPOLINE strategy.
+        $GET must read from state._locals, not _scope.
+        """
+        result = execute_mumps('TEST\n K\n S X="hello" W $G(X,"default") Q\n')
+        assert result.output == "hello"
+
+    def test_get_undefined_with_default_dynamic_locals(self, execute_mumps):
+        """$G(X,"DEF") returns default for undefined var in dynamic locals."""
+        result = execute_mumps('TEST\n K\n W $G(X,"DEF") Q\n')
+        assert result.output == "DEF"
+
+    def test_get_subscripted_dynamic_locals(self, execute_mumps):
+        """$G(X(1)) works correctly with dynamic locals.
+
+        Subscripted $GET must resolve the base array from state._locals.
+        """
+        result = execute_mumps('TEST\n K\n S X(1)="V1",X(2)="V2" W $G(X(1),"none") Q\n')
+        assert result.output == "V1"
+
+    def test_get_undefined_subscript_dynamic_locals(self, execute_mumps):
+        """$G(X(3),"DEF") returns default for undefined subscript in dynamic locals."""
+        result = execute_mumps('TEST\n K\n S X(1)="V1" W $G(X(3),"DEF") Q\n')
+        assert result.output == "DEF"
+
+    def test_get_codegen_uses_state_locals(self, generate_python):
+        """$G(X) in TRAMPOLINE+dynamic_locals generates state._locals.get().
+
+        Codegen-level check: the generated code should reference
+        state._locals, not _scope, when the routine uses TRAMPOLINE
+        strategy with dynamic locals. GOTO forces TRAMPOLINE; argumentless
+        KILL forces dynamic_locals.
+        """
+        # GOTO forces TRAMPOLINE, K forces dynamic_locals
+        code = generate_python(
+            'TEST\n K\n S X=1\n G NEXT\n Q\nNEXT\n W $G(X,"DEF")\n Q\n'
+        )
+        assert "state._locals" in code
+
+    def test_get_codegen_simple_functions_uses_scope(self, generate_python):
+        """$G(X) in SIMPLE_FUNCTIONS generates _scope.get() (non-GOTO routine).
+
+        Without GOTO, the routine uses SIMPLE_FUNCTIONS strategy and
+        $GET should generate _scope.get().
+        """
+        code = generate_python('TEST\n W $G(X,"DEF")\n Q\n')
+        assert "_scope.get(" in code
+
+    def test_get_in_for_loop_with_kill(self, execute_mumps):
+        """$G inside FOR loop with argumentless KILL reads correctly."""
+        result = execute_mumps(
+            'TEST\n K\n S X(1)="a",X(2)="b",X(3)="c"\n'
+            ' S I="" F  S I=$O(X(I)) Q:I=""  W $G(X(I),"?")\n'
+            " Q\n"
+        )
+        assert result.output == "abc"
+
+    def test_get_with_goto_and_kill(self, execute_mumps):
+        """$G in routine with GOTO+KILL reads from state._locals.
+
+        Both GOTO (TRAMPOLINE) and K (dynamic_locals) are present.
+        This exercises the exact code path fixed in _gen_get.
+        """
+        result = execute_mumps(
+            'TEST\n K\n S X="val"\n G SHOW\n Q\nSHOW\n W $G(X,"none")\n Q\n'
+        )
+        assert result.output == "val"
+
+    def test_get_default_with_goto_and_kill(self, execute_mumps):
+        """$G returns default for undefined var in TRAMPOLINE+dynamic_locals."""
+        result = execute_mumps(
+            'TEST\n K\n G SHOW\n Q\nSHOW\n W $G(UNDEF,"fallback")\n Q\n'
+        )
+        assert result.output == "fallback"
+
+    def test_get_subscripted_with_goto_and_kill(self, execute_mumps):
+        """$G(X(1)) with GOTO+KILL reads subscripted variable correctly."""
+        result = execute_mumps(
+            'TEST\n K\n S X(1)="abc"\n G SHOW\n Q\nSHOW\n W $G(X(1),"none")\n Q\n'
+        )
+        assert result.output == "abc"
+
+
+# =============================================================================
+# $ORDER indirection with TRAMPOLINE strategy
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestOrderIndirectionTrampolineScope:
+    """$ORDER with indirection in TRAMPOLINE/dynamic_locals routines.
+
+    Fix: _gen_order() indirection path was hardcoded to _scope for
+    resolve_for_target, resolve_order_name, and get_order calls.
+    Now uses scope_dict_expr(ctx) which returns state._locals for
+    TRAMPOLINE+dynamic_locals routines.
+    """
+
+    def test_order_indirection_traversal_dynamic_locals(self, execute_mumps):
+        """$O(@X) traversal loop in routine with argumentless KILL.
+
+        This exercises the $ORDER path with correct scope resolution
+        when dynamic_locals is active (via argumentless KILL).
+        """
+        result = execute_mumps(
+            "TEST\n K\n"
+            ' S A(1)="x",A(2)="y",A(3)="z"\n'
+            ' S R=""\n'
+            ' S I="" F  S I=$O(A(I)) Q:I=""  S R=R_I\n'
+            " W R\n"
+            " Q\n"
+        )
+        assert result.output == "123"
+
+    def test_order_indirection_codegen_uses_state_locals(self, generate_python):
+        """$O(@X) in TRAMPOLINE+dynamic_locals generates state._locals.
+
+        GOTO forces TRAMPOLINE, K forces dynamic_locals. The generated
+        code for $ORDER with indirection should reference state._locals.
+        """
+        code = generate_python('TEST\n K\n S X="A"\n G NEXT\n Q\nNEXT\n W $O(@X)\n Q\n')
+        assert "state._locals" in code
+
+    def test_order_indirection_codegen_simple_uses_scope(self, generate_python):
+        """$O(@X) in SIMPLE_FUNCTIONS generates _scope (non-GOTO routine).
+
+        Without GOTO, routine uses SIMPLE_FUNCTIONS strategy and
+        $ORDER indirection should use _scope.
+        """
+        code = generate_python('TEST\n S X="A"\n W $O(@X)\n Q\n')
+        # Should use _scope, not state._locals
+        assert "_scope" in code
+        assert "state._locals" not in code
+
+
+# =============================================================================
 # Indirection: pattern match, name kill, name write
 # =============================================================================

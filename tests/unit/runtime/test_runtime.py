@@ -796,6 +796,110 @@ class TestGetTextIndirect:
 
         assert rt.get_text_indirect("TEST", module=None) == "TEST W 1 Q"
 
+    def test_indirect_full_reference_plus_n_caret_routine(self):
+        """$TEXT(@X) where X='+1^ROUTINE' parses offset and resolves module."""
+        import sys
+        import types
+
+        from m2py.codegen import generate_python
+        from m2py.runtime import MUMPSRuntime
+
+        source = "MYROU ; This is line one\n W 1,!\n Q\n"
+        py = generate_python(source)
+        mod = types.ModuleType("MYROU")
+        exec(py, mod.__dict__)
+        sys.modules["MYROU"] = mod
+
+        rt = MUMPSRuntime()
+        result = rt.get_text_indirect("+1^MYROU")
+        assert "This is line one" in result
+
+    def test_indirect_full_reference_plus_zero_returns_name(self):
+        """$TEXT(@X) where X='+0^ROUTINE' returns routine name."""
+        import sys
+        import types
+
+        from m2py.codegen import generate_python
+        from m2py.runtime import MUMPSRuntime
+
+        source = "MYROU2 ; comment\n Q\n"
+        py = generate_python(source)
+        mod = types.ModuleType("MYROU2")
+        exec(py, mod.__dict__)
+        sys.modules["MYROU2"] = mod
+
+        rt = MUMPSRuntime()
+        assert rt.get_text_indirect("+0^MYROU2") == "MYROU2"
+
+    def test_indirect_full_reference_label_caret_routine(self):
+        """$TEXT(@X) where X='LABEL^ROUTINE' returns label line."""
+        import sys
+        import types
+
+        from m2py.codegen import generate_python
+        from m2py.runtime import MUMPSRuntime
+
+        source = "R3 ; first\n Q\nFOO ; the foo label\n Q\n"
+        py = generate_python(source)
+        mod = types.ModuleType("R3")
+        exec(py, mod.__dict__)
+        sys.modules["R3"] = mod
+
+        rt = MUMPSRuntime()
+        result = rt.get_text_indirect("FOO^R3")
+        assert "the foo label" in result
+
+    def test_indirect_full_reference_label_plus_n(self):
+        """$TEXT(@X) where X='LABEL+1^ROUTINE' returns line after label."""
+        import sys
+        import types
+
+        from m2py.codegen import generate_python
+        from m2py.runtime import MUMPSRuntime
+
+        source = "R4 ; first\n Q\nDATA ;\n ;;item1\n ;;item2\n"
+        py = generate_python(source)
+        mod = types.ModuleType("R4")
+        exec(py, mod.__dict__)
+        sys.modules["R4"] = mod
+
+        rt = MUMPSRuntime()
+        result = rt.get_text_indirect("DATA+1^R4")
+        assert "item1" in result
+
+    def test_indirect_full_reference_nonexistent_routine(self):
+        """$TEXT(@X) where X='+1^NOEXIST' returns empty for missing routine."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt.get_text_indirect("+1^NOSUCHROUTINE") == ""
+
+    def test_indirect_full_reference_scan_all_lines(self):
+        """Scan all lines of a routine via $TEXT(@('+N^ROUTINE')) loop."""
+        import sys
+        import types
+
+        from m2py.codegen import generate_python
+        from m2py.runtime import MUMPSRuntime
+
+        source = "SCANME ; first\n ; @TEST test one\nT1 ; @TEST test two\n Q\n"
+        py = generate_python(source)
+        mod = types.ModuleType("SCANME")
+        exec(py, mod.__dict__)
+        sys.modules["SCANME"] = mod
+
+        rt = MUMPSRuntime()
+        lines = []
+        for i in range(1, 100):
+            line = rt.get_text_indirect(f"+{i}^SCANME")
+            if not line:
+                break
+            lines.append(line)
+
+        assert len(lines) == 4
+        test_lines = [l for l in lines if "@TEST" in l]
+        assert len(test_lines) == 2
+
 
 @pytest.mark.runtime
 class TestExecuteMumpsWithMArray:
@@ -1421,6 +1525,346 @@ class TestGetOrderMethod:
         result = rt.get_order("A(1)", _scope, -1, additional_subscripts=(2, 4))
         assert result == "3"
 
+    # --- Name-level $ORDER (iterate local variable names in scope) ---
+
+    def test_name_level_order_forward(self):
+        """$O(X) with bare name returns next variable name (forward)."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {
+            "A": MArray(value="1"),
+            "B": MArray(value="2"),
+            "X": MArray(value="3"),
+        }
+
+        assert rt.get_order("A", _scope, 1) == "B"
+        assert rt.get_order("B", _scope, 1) == "X"
+        assert rt.get_order("X", _scope, 1) == ""
+
+    def test_name_level_order_reverse(self):
+        """$O(X,-1) with bare name returns previous variable name."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {
+            "A": MArray(value="1"),
+            "B": MArray(value="2"),
+            "X": MArray(value="3"),
+        }
+
+        assert rt.get_order("X", _scope, -1) == "B"
+        assert rt.get_order("B", _scope, -1) == "A"
+        assert rt.get_order("A", _scope, -1) == ""
+
+    def test_name_level_order_with_percent_prefix(self):
+        """Name-level $ORDER translates _pct_ scope keys to MUMPS % names."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        # Scope has Python-safe names; name-level $ORDER returns MUMPS names
+        _scope = {
+            "_pct_ut": MArray(value="1"),  # %ut
+            "_pct_utA": MArray(value="2"),  # %utA
+            "X": MArray(value="3"),
+        }
+
+        # "%" → first variable after "%" in ASCII order → "%ut"
+        assert rt.get_order("%", _scope, 1) == "%ut"
+        assert rt.get_order("%ut", _scope, 1) == "%utA"
+        assert rt.get_order("%utA", _scope, 1) == "X"
+        assert rt.get_order("X", _scope, 1) == ""
+
+    def test_name_level_order_skips_internal_keys(self):
+        """Name-level $ORDER skips non-MUMPS scope keys like _test."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {
+            "A": MArray(value="1"),
+            "_test": True,  # not a valid MUMPS var
+            "_preamble": "x",  # translates to empty string
+            "X": MArray(value="2"),
+        }
+
+        assert rt.get_order("A", _scope, 1) == "X"
+        assert rt.get_order("X", _scope, 1) == ""
+
+    def test_name_level_order_chkleaks_scenario(self):
+        """Simulate CHKLEAKS^%utcover: $O(%) finds leaked variable X."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        # After exclusive NEW + XECUTE "S X=$$NOW^%utt4()"
+        _scope = {
+            "IO": MArray(value="0"),
+            "U": MArray(value="^"),
+            "X": MArray(value="12345"),  # leaked variable
+            "ZZUTVAR": MArray(value="%"),
+            "_pct_ut": MArray(value="1"),  # framework var
+            "_pct_utCODE": MArray(value="S X=$$NOW^%utt4()"),
+            "_pct_utINPT": MArray(),
+            "_pct_utLOC": MArray(value="LEAKSBAD TEST"),
+            "_pct_utVAR": MArray(value=""),
+            "_test": True,
+        }
+
+        # $O(%) iterating forward should find variables after "%"
+        found = []
+        name = "%"
+        while True:
+            name = rt.get_order(name, _scope, 1)
+            if not name:
+                break
+            found.append(name)
+
+        # Should find %ut, %utCODE, %utINPT, %utLOC, %utVAR, IO, U, X, ZZUTVAR
+        assert "X" in found
+        assert "%ut" in found
+        assert "IO" in found
+
+    # --- Edge cases for name-level $ORDER ---
+
+    def test_name_level_order_empty_scope(self):
+        """$O(X) on empty scope returns ''."""
+        from m2py.runtime import MUMPSRuntime
+
+        rt = MUMPSRuntime()
+        assert rt.get_order("A", {}, 1) == ""
+        assert rt.get_order("A", {}, -1) == ""
+
+    def test_name_level_order_empty_start_forward(self):
+        """$O('') forward returns first variable name."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {"B": MArray(value="1"), "A": MArray(value="2")}
+        # "" < "A" in ASCII, so forward from "" → "A"
+        assert rt.get_order("", _scope, 1) == "A"
+
+    def test_name_level_order_empty_start_reverse(self):
+        """$O('',-1) reverse returns '' (nothing before empty string)."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {"A": MArray(value="1"), "B": MArray(value="2")}
+        assert rt.get_order("", _scope, -1) == ""
+
+    def test_name_level_order_single_var_forward(self):
+        """$O('') finds the only variable; $O(that_var) returns ''."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {"X": MArray(value="1")}
+        assert rt.get_order("", _scope, 1) == "X"
+        assert rt.get_order("X", _scope, 1) == ""
+
+    def test_name_level_order_single_var_reverse(self):
+        """$O with single var, reverse iteration."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {"X": MArray(value="1")}
+        # Reverse from beyond X finds X
+        assert rt.get_order("Z", _scope, -1) == "X"
+        # Reverse from X finds nothing
+        assert rt.get_order("X", _scope, -1) == ""
+
+    def test_name_level_order_between_names(self):
+        """$O(B) where B not in scope but between A and C returns C."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {
+            "A": MArray(value="1"),
+            "C": MArray(value="2"),
+            "D": MArray(value="3"),
+        }
+        assert rt.get_order("B", _scope, 1) == "C"
+        assert rt.get_order("B", _scope, -1) == "A"
+
+    def test_name_level_order_after_all_names(self):
+        """$O(Z) when all names < Z returns ''."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {"A": MArray(value="1"), "B": MArray(value="2")}
+        assert rt.get_order("Z", _scope, 1) == ""
+
+    def test_name_level_order_before_all_names_reverse(self):
+        """$O('A',-1) when A is the first name returns ''."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {"B": MArray(value="1"), "C": MArray(value="2")}
+        assert rt.get_order("A", _scope, -1) == ""
+
+    def test_name_level_order_direction_zero(self):
+        """Direction=0 treated as forward (direction >= 0 branch)."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {"A": MArray(value="1"), "B": MArray(value="2")}
+        assert rt.get_order("A", _scope, 0) == "B"
+
+    def test_name_level_order_keyword_vars(self):
+        """MUMPS vars matching Python keywords (_m_ prefix) iterated correctly."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        # _m_if → "if", _m_for → "for" — valid MUMPS variable names
+        _scope = {
+            "_m_if": MArray(value="1"),
+            "_m_for": MArray(value="2"),
+            "X": MArray(value="3"),
+        }
+        # ASCII order: X, for, if (uppercase < lowercase)
+        assert rt.get_order("", _scope, 1) == "X"
+        assert rt.get_order("X", _scope, 1) == "for"
+        assert rt.get_order("for", _scope, 1) == "if"
+        assert rt.get_order("if", _scope, 1) == ""
+
+    def test_name_level_order_numeric_prefix_filtered(self):
+        """Numeric-starting names (_n_ prefix) filtered: not valid MUMPS vars."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        # _n_01 → "01" — starts with digit, NOT a valid MUMPS local variable
+        _scope = {
+            "_n_01": MArray(value="1"),
+            "A": MArray(value="2"),
+        }
+        # "01" is filtered out; only "A" appears
+        assert rt.get_order("", _scope, 1) == "A"
+        assert rt.get_order("A", _scope, 1) == ""
+
+    def test_name_level_order_preamble_filtered(self):
+        """_preamble translates to '' which is_valid_varname rejects."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {
+            "_preamble": MArray(value="x"),
+            "A": MArray(value="1"),
+        }
+        # _preamble → "" → not valid MUMPS name → filtered
+        assert rt.get_order("", _scope, 1) == "A"
+        assert rt.get_order("A", _scope, 1) == ""
+
+    def test_name_level_order_non_marray_values(self):
+        """Non-MArray values in scope are still iterated as variable names."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {
+            "A": MArray(value="1"),
+            "B": "just a string",  # not MArray
+            "C": 42,  # not MArray
+        }
+        # All valid MUMPS names should appear regardless of value type
+        result = []
+        name = ""
+        while True:
+            name = rt.get_order(name, _scope, 1)
+            if not name:
+                break
+            result.append(name)
+        assert result == ["A", "B", "C"]
+
+    def test_name_level_order_case_sensitivity(self):
+        """MUMPS variable names are case-sensitive; ASCII sort order."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        # ASCII: uppercase (65-90) before lowercase (97-122)
+        _scope = {
+            "a": MArray(value="1"),
+            "A": MArray(value="2"),
+            "Z": MArray(value="3"),
+            "z": MArray(value="4"),
+        }
+        result = []
+        name = ""
+        while True:
+            name = rt.get_order(name, _scope, 1)
+            if not name:
+                break
+            result.append(name)
+        assert result == ["A", "Z", "a", "z"]
+
+    def test_name_level_order_percent_sorts_first(self):
+        """% variables sort before alphabetic in ASCII order."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {
+            "A": MArray(value="1"),
+            "_pct_Z": MArray(value="2"),  # %Z
+        }
+        # "%" (37) < "A" (65) in ASCII
+        assert rt.get_order("", _scope, 1) == "%Z"
+        assert rt.get_order("%Z", _scope, 1) == "A"
+
+    def test_name_level_order_full_iteration_reverse(self):
+        """Full reverse iteration from beyond last name back to start."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        _scope = {
+            "_pct_A": MArray(value="1"),  # %A
+            "B": MArray(value="2"),
+            "C": MArray(value="3"),
+        }
+        result = []
+        name = "~"  # beyond all var names in ASCII
+        while True:
+            name = rt.get_order(name, _scope, -1)
+            if not name:
+                break
+            result.append(name)
+        # Reverse: C, B, %A
+        assert result == ["C", "B", "%A"]
+
+    def test_name_level_not_triggered_with_subscripts(self):
+        """$O(A(1)) does subscript-level, not name-level $ORDER."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        arr = MArray()
+        arr[("1",)] = "x"
+        arr[("3",)] = "y"
+        _scope = {"A": arr, "B": MArray(value="2")}
+        # $O(A(1)) → next subscript of A after "1" → "3"
+        assert rt.get_order("A(1)", _scope, 1) == "3"
+
+    def test_name_level_not_triggered_with_additional_subscripts(self):
+        """$O(@ref@(subs)) pattern does subscript-level, not name-level."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        arr = MArray()
+        arr[("a",)] = "x"
+        arr[("c",)] = "y"
+        _scope = {"V": arr}
+        # Passing additional_subscripts makes it subscript-level
+        result = rt.get_order("V", _scope, 1, additional_subscripts=("a",))
+        assert result == "c"
+
+    def test_name_level_order_stdlib_conflict_vars(self):
+        """Variables with stdlib name conflicts (trailing _) iterated correctly."""
+        from m2py.runtime import MUMPSRuntime, MArray
+
+        rt = MUMPSRuntime()
+        # time_ → "time" in MUMPS (time is in PYTHON_STDLIB_CONFLICTS)
+        _scope = {
+            "time_": MArray(value="1"),
+            "A": MArray(value="2"),
+        }
+        # "A" < "time" in ASCII
+        assert rt.get_order("", _scope, 1) == "A"
+        assert rt.get_order("A", _scope, 1) == "time"
+        assert rt.get_order("time", _scope, 1) == ""
+
 
 @pytest.mark.runtime
 class TestResolveGotoTarget:
@@ -1591,6 +2035,116 @@ class TestResolveGotoTarget:
         assert callable(result)
         # The wrapper has a docstring indicating it's an offset wrapper
         assert "offset" in result.__doc__.lower()
+
+    def test_resolve_goto_dot_level_label(self):
+        """G DOTLABEL^ROUTINE resolves dot-level label via _label_lines fallback.
+
+        Dot-level labels (e.g., OV at dot level 1 inside parent ST) don't get
+        standalone Python functions. resolve_goto_target must fall back to
+        _label_lines + _line_map to find the parent function and create an
+        offset wrapper.
+        """
+        from m2py.runtime import GotoExternal, resolve_goto_target
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        # ST at line 10 (0-indexed), OV at line 15 (0-indexed, dot level 1 inside ST)
+        module._label_lines = {"TESTRTN": 0, "ST": 10, "OV": 15}
+        # _line_map: 1-based line → (parent_label, offset_within_parent)
+        module._line_map = {
+            1: ("TESTRTN", 0),
+            11: ("ST", 0),
+            12: ("ST", 1),
+            13: ("ST", 2),
+            14: ("ST", 3),
+            15: ("ST", 4),
+            16: ("ST", 5),  # OV is at offset 5 within ST
+        }
+
+        def st_internal(_rt, state, _scope, _start_offset=0):
+            return (None, state)
+
+        def st_entry(_rt, _scope=None):
+            pass
+
+        module.ST = st_entry
+        module._ST = st_internal
+        # OV has NO standalone function — it's a dot-level label
+
+        goto = GotoExternal(module=module, label="OV", offset=None)
+        result = resolve_goto_target(goto)
+
+        # Should return an offset wrapper (not LabelNotFoundError)
+        assert callable(result)
+        assert result is not module.ST
+        assert "offset" in result.__doc__.lower()
+
+
+@pytest.mark.runtime
+class TestResolveLabelFunc:
+    """Tests for resolve_label_func() helper.
+
+    resolve_label_func resolves a MUMPS label name to a callable function
+    in a module, handling both direct label functions and dot-level labels
+    that only exist in _label_lines.
+    """
+
+    def test_direct_label_lookup(self):
+        """Label that has a standalone function resolves directly."""
+        from m2py.runtime import resolve_label_func
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0, "SUB": 5}
+
+        def sub_func(_rt, _scope=None):
+            pass
+
+        module.SUB = sub_func
+
+        result = resolve_label_func(module, "SUB")
+        assert result is sub_func
+
+    def test_dot_level_label_fallback(self):
+        """Dot-level label resolves via _label_lines + _line_map fallback."""
+        from m2py.runtime import resolve_label_func
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0, "PARENT": 5, "CHILD": 8}
+        module._line_map = {
+            1: ("TESTRTN", 0),
+            6: ("PARENT", 0),
+            7: ("PARENT", 1),
+            8: ("PARENT", 2),
+            9: ("PARENT", 3),  # CHILD at offset 3 within PARENT
+        }
+
+        def parent_internal(_rt, state, _scope, _start_offset=0):
+            return (None, state)
+
+        module.PARENT = lambda _rt, _scope=None: None
+        module._PARENT = parent_internal
+        # CHILD has no standalone function
+
+        result = resolve_label_func(module, "CHILD")
+        assert callable(result)
+        assert result is not module.PARENT
+
+    def test_missing_label_raises(self):
+        """Label that doesn't exist at all raises LabelNotFoundError."""
+        from m2py.runtime import resolve_label_func, LabelNotFoundError
+        import types
+
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0}
+
+        with pytest.raises(LabelNotFoundError):
+            resolve_label_func(module, "NOTEXIST")
 
 
 @pytest.mark.runtime

@@ -560,5 +560,92 @@ class TestForSubscriptedVar:
 
 
 # =============================================================================
+# Local $ORDER iteration with zero-step FOR
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestForZeroStepOrderLocal:
+    """F var=0:0 S var=$O(local(var)) patterns.
+
+    The canonical MUMPS idiom for iterating local array keys:
+        F %=0:0 S %=$O(A(%)) Q:%=""  ...body...
+
+    This triggers the $ORDER-iterator optimisation, but for local arrays
+    the optimisation falls back to a while-loop. The loop variable must
+    be initialised from the start expression before the first iteration.
+    Regression: the fallback used to emit bare ``while True:`` without
+    initialising the loop variable, causing KeyError on first access.
+    """
+
+    def test_for_zero_step_order_local_basic(self, execute_mumps):
+        """F %=0:0 S %=$O(A(%)) — iterates all keys of a local array."""
+        result = execute_mumps(
+            "TEST\n"
+            ' S A(1)="a",A(2)="b",A(3)="c"\n'
+            ' F %=0:0 S %=$O(A(%)) Q:%=""  W %," "\n'
+            " Q\n"
+        )
+        assert result.output == "1 2 3 "
+
+    def test_for_zero_step_order_local_empty(self, execute_mumps):
+        """F %=0:0 S %=$O(A(%)) — empty array produces no output."""
+        result = execute_mumps('TEST\n F %=0:0 S %=$O(A(%)) Q:%=""  W %\n Q\n')
+        assert result.output == ""
+
+    def test_for_zero_step_order_local_named_var(self, execute_mumps):
+        """F I=0:0 S I=$O(X(I)) — works with named loop variable."""
+        result = execute_mumps(
+            'TEST\n S X(10)=1,X(20)=2,X(30)=3\n F I=0:0 S I=$O(X(I)) Q:I=""  W I\n Q\n'
+        )
+        assert result.output == "102030"
+
+    def test_for_zero_step_order_local_with_body(self, execute_mumps):
+        """F %=0:0 with accumulator — body runs for each key."""
+        result = execute_mumps(
+            "TEST\n"
+            " S A(10)=1,A(20)=2,A(30)=3 S T=0\n"
+            ' F %=0:0 S %=$O(A(%)) Q:%=""  S T=T+A(%)\n'
+            " W T\n"
+            " Q\n"
+        )
+        assert result.output == "6"
+
+    def test_for_nonzero_start_order_local(self, execute_mumps):
+        """F I=2:0 S I=$O(A(I)) — start at 2, skipping key 1."""
+        result = execute_mumps(
+            "TEST\n"
+            " S A(1)=1,A(2)=2,A(3)=3,A(4)=4\n"
+            ' F I=2:0 S I=$O(A(I)) Q:I=""  W I\n'
+            " Q\n"
+        )
+        assert result.output == "34"
+
+    def test_for_zero_step_order_local_pct_var(self, generate_python):
+        """Codegen: F %=0:0 S %=$O(...) — initialises % before while True."""
+        code = generate_python('TEST\n F %=0:0 S %=$O(A(%)) Q:%=""  W %\n Q\n')
+        # Must have initialisation before the while loop
+        assert "_for_start_" in code or "_pct_" in code
+        # Must NOT be a bare while True without prior initialisation
+        # Find the while True inside the TEST function (skip boilerplate)
+        lines = code.split("\n")
+        in_test_func = False
+        for i, line in enumerate(lines):
+            if "def TEST(" in line:
+                in_test_func = True
+            if in_test_func and "while True:" in line:
+                # Look backwards for initialisation of the loop var
+                found_init = any(
+                    "_pct_" in lines[j] and "=" in lines[j]
+                    for j in range(max(0, i - 5), i)
+                )
+                assert found_init, (
+                    "while True: at line %d has no _pct_ initialisation in "
+                    "the preceding 5 lines" % (i + 1)
+                )
+                break
+
+
+# =============================================================================
 # Multi-target GOTO
 # =============================================================================

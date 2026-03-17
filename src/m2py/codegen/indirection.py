@@ -556,46 +556,43 @@ def generate_data_indirection_name(
 ) -> str:
     """Generate Python expression for $DATA indirection.
 
-    Resolves target name, appends post-resolution subscripts, calls get_data.
+    Resolves target name with proper subscript merging via data_indirected(),
+    paralleling get_indirected() for $GET.  Uses _count_indirection_levels_with_subscripts
+    and _build_per_level_subs_arg so that @VAR@(subs) correctly merges subscripts
+    instead of producing split-parentheses like name("s1")("s2").
     """
     from m2py.asg.expressions import MVariable
     from m2py.parser.textx_classes import LocalVariable as MLocalVariable
     from m2py.parser.textx_classes import GlobalVariable
     from m2py.codegen.expressions import generate_expr
 
-    levels, inner_expr = _count_indirection_levels(var)
-
-    # Build post-resolution subscript string using _format_subscript for proper quoting
-    if var.name_indirection_subscripts:
-        all_subs = []
-        for sub_list in var.name_indirection_subscripts:
-            sub_exprs = [generate_expr(sub, ctx) for sub in sub_list]
-            all_subs.extend(sub_exprs)
-        if len(all_subs) == 1:
-            # Use string concatenation instead of f-string to avoid nested
-            # quote incompatibility on Python 3.10 (PEP 701 is 3.12+)
-            subs_fstr = "'(' + _format_subscript(" + all_subs[0] + ") + ')'"
-        else:
-            # Multiple subscripts: build comma-separated format
-            subs_parts = " + ',' + ".join(
-                "_format_subscript(" + s + ")" for s in all_subs
-            )
-            subs_fstr = "'(' + " + subs_parts + " + ')'"
-    else:
-        subs_fstr = "''"
-
+    levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(var)
     scope_expr = scope_dict_expr(ctx)
 
+    # Build source expression with type-specific handling
     if isinstance(inner_expr, (MVariable, MLocalVariable, GlobalVariable)):
         source_expr = _build_source_expr(inner_expr, ctx)
-        name_expr = (
-            f"_rt.resolve_for_target({source_expr}, {scope_expr}, levels={levels})"
-        )
     else:
+        # Complex expression: result IS first level, so levels-1
         inner_expr_code = generate_expr(inner_expr, ctx)
-        name_expr = f"str({inner_expr_code})"
+        # For @$P(...)@(subs): apply first subscript set to source
+        if all_subscripts and all_subscripts[0]:
+            first_subs = all_subscripts[0]
+            sub_exprs = [generate_expr(s, ctx) for s in first_subs]
+            subs_str = ", ".join(sub_exprs)
+            source_expr = (
+                f"_rt.append_subscripts_to_name(str({inner_expr_code}), [{subs_str}])"
+            )
+            all_subscripts = all_subscripts[1:]
+        else:
+            source_expr = f"str({inner_expr_code})"
+        levels = levels - 1
 
-    return f"_rt.get_data({name_expr} + {subs_fstr}, {scope_expr})"
+    subs_arg = _build_per_level_subs_arg(all_subscripts, ctx)
+
+    return (
+        f"_rt.data_indirected({source_expr}, {scope_expr}, levels={levels}{subs_arg})"
+    )
 
 
 def generate_get_indirection_name(
@@ -788,7 +785,10 @@ def _emit_scope_to_state_sync(ctx: "GeneratorContext") -> None:
     Uses state._locals for dynamic-locals routines, or syncs individual
     state vars for static-field routines.
     """
-    from m2py.codegen.statements import emit_scope_to_state_sync
+    from m2py.codegen.statements import (
+        emit_scope_to_state_sync,
+        emit_scope_var_to_state,
+    )
 
     if ctx.uses_dynamic_locals:
         emit_scope_to_state_sync(ctx)
@@ -797,16 +797,15 @@ def _emit_scope_to_state_sync(ctx: "GeneratorContext") -> None:
 
         for var_name in sorted(ctx.state_vars):
             py_name = translate_name(var_name)
-            ctx.emitter.line(f"if {var_name!r} in _scope:")
-            with ctx.emitter.indented():
-                ctx.emitter.line(
-                    f"state.{py_name} = _scope[{var_name!r}].value if isinstance(_scope.get({var_name!r}), MArray) else _scope[{var_name!r}]"
-                )
+            emit_scope_var_to_state(ctx, var_name, py_name, scope_key=var_name)
 
 
 def _emit_goto_external_catch(ctx: "GeneratorContext") -> None:
     """Emit 'except GotoExternal' block: sync state→scope, run external, sync back."""
-    from m2py.codegen.statements import emit_state_to_scope_sync
+    from m2py.codegen.statements import (
+        emit_state_to_scope_sync,
+        emit_state_var_to_scope,
+    )
 
     ctx.emitter.line("except GotoExternal as _goto:")
     with ctx.emitter.indented():
@@ -817,7 +816,7 @@ def _emit_goto_external_catch(ctx: "GeneratorContext") -> None:
 
             for var_name in sorted(ctx.state_vars):
                 py_name = translate_name(var_name)
-                ctx.emitter.line(f"_scope[{var_name!r}] = state.{py_name}")
+                emit_state_var_to_scope(ctx, var_name, py_name, scope_key=var_name)
         ctx.emitter.line(
             "run_with_goto_support(resolve_goto_target(_goto), _rt, _scope)"
         )
@@ -881,8 +880,24 @@ def generate_indirect_do(
                 ctx.emitter.line("continue")
 
         # External vs local dispatch
+        # When args_str is present (e.g., target was 'GREET("World")^RTN'),
+        # use execute_mumps to handle argument passing via MUMPS evaluation.
+        # The grammar requires standard MUMPS order: D LABEL^ROUTINE(args)
+        # (args come AFTER the routine reference, not before it).
+        ctx.emitter.line("if _call_target.args_str:")
+        with ctx.emitter.indented():
+            ctx.emitter.line('_xecute_target = (_call_target.label or "")')
+            ctx.emitter.line("if _call_target.routine:")
+            with ctx.emitter.indented():
+                ctx.emitter.line(
+                    '_xecute_target = _xecute_target + "^" + _call_target.routine'
+                )
+            ctx.emitter.line("_xecute_target = _xecute_target + _call_target.args_str")
+            ctx.emitter.line(f'_rt.execute_mumps("D " + _xecute_target, {scope_ref})')
+            _emit_scope_to_state_sync(ctx)
+
         ctx.emitter.line(
-            "if _call_target.routine and _call_target.routine != _routine_name:"
+            "elif _call_target.routine and _call_target.routine != _routine_name:"
         )
         with ctx.emitter.indented():
             _emit_external_do_call(ctx)
@@ -894,6 +909,7 @@ def generate_indirect_do(
 
 def _emit_external_do_call(ctx: "GeneratorContext") -> None:
     """Emit external DO call dispatch (import module, find function, call)."""
+    _sd = scope_dict_expr(ctx)
     ctx.emitter.line("import importlib")
     ctx.emitter.line("from m2py.core.names import NameTranslator")
     ctx.emitter.line("_module = importlib.import_module(_call_target.routine)")
@@ -933,11 +949,11 @@ def _emit_external_do_call(ctx: "GeneratorContext") -> None:
         ctx.emitter.line("_target_line = (_label_line + 1) + _call_target.offset")
         ctx.emitter.line("_label_name, _line_offset = _module._line_map[_target_line]")
         ctx.emitter.line(
-            "getattr(_module, _label_name)(_rt, _scope=_scope, _start_offset=_line_offset)"
+            f"getattr(_module, _label_name)(_rt, _scope={_sd}, _start_offset=_line_offset)"
         )
     ctx.emitter.line("else:")
     with ctx.emitter.indented():
-        ctx.emitter.line("_func(_rt, _scope=_scope)")
+        ctx.emitter.line(f"_func(_rt, _scope={_sd})")
 
     # Sync scope back to state after external call in TRAMPOLINE mode
     if ctx.strategy == GotoStrategy.TRAMPOLINE and ctx.uses_dynamic_locals:
@@ -1100,6 +1116,7 @@ def generate_set_argument_indirection(
     Evaluates expression to get SET argument string, executes via execute_mumps.
     """
     from m2py.codegen.expressions import generate_expr
+    from m2py.codegen.statements import emit_scope_to_state_sync
 
     if expr.expression is None:
         raise ValueError("Argument indirection requires an expression")
@@ -1107,6 +1124,7 @@ def generate_set_argument_indirection(
     target_expr = generate_expr(expr.expression, ctx)
     scope_expr = scope_dict_expr(ctx)
     ctx.emitter.line(f'_rt.execute_mumps("S " + str({target_expr}), {scope_expr})')
+    emit_scope_to_state_sync(ctx)
 
 
 def generate_increment_indirection(
@@ -1159,8 +1177,8 @@ def generate_lock_indirection(
     if timeout_expr is not None:
         parts.append(f", timeout={timeout_expr}")
 
-    # Add levels if > 1
-    if levels > 1:
+    # Add levels if not the default (1)
+    if levels != 1:
         parts.append(f", levels={levels}")
 
     # Add subscripts if present

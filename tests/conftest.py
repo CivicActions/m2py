@@ -60,6 +60,7 @@ def _has_cli_opt(args: tuple, short: str, long: str) -> bool:
 # =============================================================================
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_configure(config):
     """Register custom markers, apply smart defaults, and propagate --backend."""
     config.addinivalue_line("markers", "parser: Tests at textX grammar/parser level")
@@ -69,27 +70,54 @@ def pytest_configure(config):
         "markers", "stub: Placeholder test, expected to fail until implemented"
     )
     config.addinivalue_line("markers", "slow: Long-running test, skipped by default")
+    config.addinivalue_line(
+        "markers",
+        "quality: Backend-independent quality/perf tests (separate CI job)",
+    )
     config.addinivalue_line("markers", "pre1995: Tests pre-1995 MUMPS syntax")
     config.addinivalue_line("markers", "ydb: YottaDB-specific extension test")
 
     # ── Smart defaults ────────────────────────────────────────────────
-    # Formerly handled by addopts = "-n auto -m 'not slow'" in
-    # pyproject.toml.  Now applied programmatically so users never need
-    # the awkward -o "addopts=" escape hatch.
+    # Formerly handled by addopts in pyproject.toml.  Now applied
+    # programmatically so users never need the awkward -o "addopts="
+    # escape hatch.
     #
-    # • -n auto   → parallel via pytest-xdist (skip if user passed -n)
+    # • -n auto → parallel via pytest-xdist (skip if user passed -n)
     # • -m 'not slow' → skip slow-marked tests (skip if user passed -m)
     import os
 
     user_args = config.invocation_params.args
 
-    if not _has_cli_opt(user_args, "-n", "--numprocesses"):
+    # Guard: xdist workers set PYTEST_XDIST_WORKER *before* running
+    # _prepareconfig() (which triggers pytest_configure hooks).  Without
+    # this check, every worker would re-apply the numprocesses/dist/tx
+    # settings and try to spawn its own sub-workers — creating an
+    # infinite recursive fork bomb.
+    _is_xdist_worker = os.environ.get("PYTEST_XDIST_WORKER") is not None
+
+    if not _is_xdist_worker and not _has_cli_opt(user_args, "-n", "--numprocesses"):
         if hasattr(config.option, "numprocesses"):  # xdist installed
-            config.option.numprocesses = os.cpu_count() or 1
-            # xdist also needs dist mode enabled (defaults to "no"
-            # when -n is absent from the CLI)
-            if getattr(config.option, "dist", "no") == "no":
-                config.option.dist = "load"
+            backend_name = os.environ.get("M2PY_GLOBAL_BACKEND", "inmemory")
+            if backend_name in ("yottadb", "iris"):
+                # Database backends share a single database across all
+                # xdist workers — parallel execution causes kill_all()
+                # in one worker to wipe another worker's test data.
+                # Force sequential execution for correctness.
+                config.option.numprocesses = 0
+            else:
+                # Use all available CPUs.  Functional tests that spawn
+                # multiprocessing.Process children use the 'spawn' start
+                # method (see tests/functional/conftest.py) so they don't
+                # deadlock inside multi-threaded xdist workers.
+                config.option.numprocesses = os.cpu_count() or 1
+                # xdist also needs dist mode enabled (defaults to "no"
+                # when -n is absent from the CLI)
+                if getattr(config.option, "dist", "no") == "no":
+                    config.option.dist = "load"
+                # xdist requires tx (test execution environments) to be
+                # populated with one entry per worker to create workers
+                if getattr(config.option, "tx", None) == []:
+                    config.option.tx = ["popen"] * config.option.numprocesses
 
     if not _has_cli_opt(user_args, "-m", "--markexpr"):
         config.option.markexpr = "not slow"
@@ -116,6 +144,106 @@ def pytest_addoption(parser):
             "Use 'yottadb' or 'iris' to validate against a real database."
         ),
     )
+
+
+# =============================================================================
+# Backend Global State Cleanup
+# =============================================================================
+
+# Shared backend storage instance for database-backed backends (YDB, IRIS).
+# Reused across tests to avoid reconnecting on every test invocation.
+_backend_storage = None
+
+
+@pytest.fixture(autouse=True)
+def _clean_backend_globals(request):
+    """Kill all globals and release locks around each test for database backends.
+
+    InMemory and SQLite backends create fresh instances per MUMPSRuntime(),
+    so they don't leak state between tests.  YDB and IRIS share a single
+    database, so globals from one test can pollute the next.
+
+    Setup: kill_all() before test (clean slate).
+    Teardown: gc.collect() + disconnect to release IRIS connection-scoped
+    locks left by the test's MUMPSRuntime instances.
+
+    In xdist parallel mode, cleanup is skipped because workers share the
+    same database and would destroy each other's data mid-test.
+    """
+    global _backend_storage
+
+    import os
+
+    backend_name = os.environ.get("M2PY_GLOBAL_BACKEND", "inmemory")
+    if backend_name not in ("yottadb", "iris"):
+        yield
+        return
+
+    # Skip per-test cleanup in xdist parallel mode — workers share the
+    # database and would nuke each other's data.
+    worker_count = request.config.getoption("numprocesses", default=None)
+    if worker_count is not None and worker_count != 0:
+        yield
+        return
+
+    if _backend_storage is None:
+        from m2py.runtime import get_global_storage
+
+        _backend_storage = get_global_storage(backend_name)
+    _backend_storage.kill_all()
+
+    yield  # ---- test runs here ----
+
+    # Teardown: close all IRISGlobalStorage instances created during the test.
+    # Tests create MUMPSRuntime→IRISGlobalStorage which hold connection-scoped
+    # locks. These must be released before the next test to avoid hierarchical
+    # lock conflicts. sys.modules keeps references alive past test scope.
+    if backend_name == "iris":
+        from m2py.runtime.iris_backend import IRISGlobalStorage
+
+        stale = [
+            inst
+            for inst in IRISGlobalStorage._all_instances
+            if inst is not _backend_storage
+        ]
+        for inst in stale:
+            inst.close()
+    # Also disconnect the fixture's own connection to free the license slot.
+    if backend_name == "iris" and hasattr(_backend_storage, "_conn"):
+        try:
+            if _backend_storage._conn is not None:
+                _backend_storage._conn.close()
+                _backend_storage._conn = None
+                _backend_storage._iris = None
+        except Exception:
+            pass
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Clean up shared transpile caches after the test session.
+
+    Only runs on the controller process (not xdist workers) to avoid
+    removing caches while other workers are still using them.
+    """
+    import shutil
+
+    # Skip cleanup on xdist workers — only the controller should clean up
+    if hasattr(session.config, "workerinput"):
+        return
+
+    cache_base = Path(__file__).parent.parent / "tmp"
+    for name in ("mvts_cache", "mugj_cache"):
+        cache_dir = cache_base / name
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir, ignore_errors=True)
+    # Also remove lockfiles
+    for name in ("mvts_cache.lock", "mugj_cache.lock"):
+        lock_file = cache_base / name
+        if lock_file.exists():
+            try:
+                lock_file.unlink()
+            except OSError:
+                pass
 
 
 # =============================================================================

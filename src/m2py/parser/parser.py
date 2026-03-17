@@ -32,6 +32,7 @@ from m2py.asg.statements import (
     MElseStatement,
     MForStatement,
     MIfStatement,
+    MParseErrorStatement,
     MStatement,
 )
 from m2py.asg.type_helpers import get_body_scope
@@ -288,6 +289,17 @@ def _structure_do_blocks(statements: List[MStatement]) -> List[MStatement]:
                 # Mark this as an inline block now that it has body statements
                 stmt.is_inline_block = True
 
+                # MUMPS: all argumentless DOs on the same line share the
+                # same dot-block.  E.g. ``D  F …  D`` — the trailing D
+                # inside the FOR must execute the same block as the leading D.
+                for pds in post_do_same_line:
+                    nested_do = _find_argumentless_do_for_dot_lines(pds)
+                    if nested_do:
+                        nested_do.body.statements = list(stmt.body.statements)
+                        for child in nested_do.body.statements:
+                            child.scope = nested_do.body
+                        nested_do.is_inline_block = True
+
             result.append(stmt)
             # Re-insert same-line post-DO statements after the DO block
             result.extend(post_do_same_line)
@@ -363,9 +375,21 @@ def _mark_unreachable_statements(statements: List[MStatement]) -> None:
 
         # Check if this statement is an unconditional exit
         if isinstance(stmt, (MQuitStatement, MGotoStatement, MHaltStatement)):
-            # Unconditional = no postcondition
+            # Unconditional = no postcondition on the statement itself
             if stmt.postcondition is None:
-                unreachable = True
+                # For GOTO, also check target-level postconditions.
+                # G N:A="" has stmt.postcondition=None but target.postcondition set.
+                # If ALL targets have postconditions, the GOTO is effectively
+                # conditional (none of the conditions may be true) and execution
+                # can fall through to the next statement.
+                if (
+                    isinstance(stmt, MGotoStatement)
+                    and stmt.targets
+                    and all(t.postcondition is not None for t in stmt.targets)
+                ):
+                    pass  # Effectively conditional — don't mark unreachable
+                else:
+                    unreachable = True
 
         # Recursively check nested scopes (FOR body, IF then_scope, etc.)
         # But don't propagate unreachable flag INTO nested scopes - each scope
@@ -608,8 +632,21 @@ class MUMPSParser:
                 if cls_name == "LabelLine" and hasattr(line, "label") and line.label:
                     label = self._build_label(line, line_number, routine)
                     label.line_number = line_number  # Track source line for $TEXT
-                    routine.add_label(label)
-                    current_label = label
+
+                    # Labels at non-zero dot level (e.g. "ID4 . . S X=1") are
+                    # continuation lines within the containing label's dot block,
+                    # NOT separate entry points. Merge their statements into the
+                    # current label's body so _structure_do_blocks nests them
+                    # correctly within the enclosing FOR/DO.  We still record
+                    # the label in _dotted_labels for $TEXT(LABEL+offset) lookup.
+                    if label._dot_level is not None and current_label is not None:
+                        routine._dotted_labels.append(label)
+                        for stmt in label.body.statements:
+                            stmt.scope = current_label.body
+                            current_label.body.statements.append(stmt)
+                    else:
+                        routine.add_label(label)
+                        current_label = label
 
                 # ContLine - continuation line for current label
                 elif cls_name == "ContLine":
@@ -679,9 +716,19 @@ class MUMPSParser:
         # Parse the continuation line content
         commands = parse_commands_from_line(stripped_rest, line_number)
 
-        # Check for parse error
+        # Check for parse error — emit MParseErrorStatement so codegen
+        # generates a runtime error instead of silently dropping the line
         if isinstance(commands, MParseError):
             routine.parse_errors.append(commands)
+            error_stmt = MParseErrorStatement(
+                line_number=line_number,
+                error_message=commands.message,
+                line_content=commands.line_content,
+            )
+            error_stmt.scope = label.body
+            if dot_level > 0:
+                error_stmt._dot_level = dot_level
+            label.body.statements.append(error_stmt)
             return
 
         # Convert to ASG statements and add to label body
@@ -734,6 +781,7 @@ class MUMPSParser:
         # Parse line content using textX command grammar.
         # Parsed commands are stored for later ASG building.
         # Handle dotted block continuation (`. S X=1`) - strip leading dots
+        label_parse_error: Optional[MParseError] = None
         if label._line_rest:
             line_content = label._line_rest.strip()
             dot_level = 0
@@ -750,6 +798,7 @@ class MUMPSParser:
                     routine.parse_errors.append(parsed_content)
                     label._parsed_content = None
                     label._parsed_commands = []
+                    label_parse_error = parsed_content
                 else:
                     label._parsed_content = parsed_content
                     # Get commands from parsed content
@@ -797,6 +846,17 @@ class MUMPSParser:
                 if label._dot_level is not None:
                     stmt._dot_level = label._dot_level
                 label.body.statements.append(stmt)
+        elif label_parse_error is not None:
+            # Label line had a parse error — emit MParseErrorStatement
+            error_stmt = MParseErrorStatement(
+                line_number=line_number,
+                error_message=label_parse_error.message,
+                line_content=label_parse_error.line_content,
+            )
+            error_stmt.scope = label.body
+            if label._dot_level is not None:
+                error_stmt._dot_level = label._dot_level
+            label.body.statements.append(error_stmt)
 
         return label
 

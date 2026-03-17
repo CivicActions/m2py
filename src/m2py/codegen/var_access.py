@@ -76,6 +76,12 @@ def var_write_stmt(var_name: str, value_expr: str, ctx: "GeneratorContext") -> s
     if _is_dynamic(ctx):
         return f"state._locals.setdefault({py!r}, MArray()).value = {value_expr}"
     if _is_static(ctx, var_name):
+        if var_name in ctx.array_vars:
+            # Array vars use .value for scalar SET to preserve MArray type.
+            # Without this, tuple SET like S (DIC,X)=19 would replace the
+            # MArray at state.DIC with a plain string, breaking later
+            # subscripted access like S DIC(0)="LX".
+            return f"state.{py}.value = {value_expr}"
         return f"state.{py} = {value_expr}"
     return f"_scope.setdefault({py!r}, MArray()).value = {value_expr}"
 

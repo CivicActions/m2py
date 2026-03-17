@@ -367,19 +367,24 @@ class TestNewScopeManagerNestedNew:
         assert scope["Z"].value == 3
 
     def test_new_var_dedup_within_scope(self):
-        """Duplicate new_var() for same variable is no-op (first wins)."""
+        """Duplicate new_var() clears variable but keeps first restore point.
+
+        YDB/GT.M behavior: repeated NEW at the same stack level makes the
+        variable undefined again (clears current value/subscripts) but the
+        restore point established by the first NEW is preserved.
+        """
         scope = {"X": MArray(value=1)}
 
         with NewScopeManager(scope) as mgr:
             mgr.new_var("X")
             assert "X" not in scope
             scope["X"] = MArray(value=99)
-            # Second NEW of X should be ignored
+            # Second NEW of X clears X (makes it undefined again)
             mgr.new_var("X")
-            # X should remain 99 (not removed again)
-            assert scope["X"].value == 99
+            # X should be removed (cleared by second NEW)
+            assert "X" not in scope
 
-        # Restores to original
+        # Restores to original value from first NEW
         assert scope["X"].value == 1
 
     def test_new_var_undefined_variable(self):
@@ -524,3 +529,44 @@ class TestHandleEtrap:
         scope = {}
         result = rt._handle_etrap(ZeroDivisionError(), scope)
         assert result is False
+
+    def test_etrap_resolves_caller_globals_for_label_access(self):
+        """$ETRAP handler can find labels in the error-originating routine.
+
+        When $ETRAP is set to "D ERRTRAP" and the error occurs in routine FOO,
+        _handle_etrap must resolve caller_globals from FOO's module so that
+        execute_mumps can find the ERRTRAP label. Without this fix, the
+        execute_mumps call would get KeyError for the label.
+        """
+        import types
+
+        rt = MUMPSRuntime()
+        # Register a mock routine module
+        module = types.ModuleType("TESTRTN")
+        module._routine_name = "TESTRTN"
+        module._label_lines = {"TESTRTN": 0}
+        module._line_map = {1: ("TESTRTN", 0)}
+        rt._routines["TESTRTN"] = module
+        rt._current_routine = "TESTRTN"
+
+        # Set $ETRAP to clear $ECODE (simple handler that works)
+        rt.set_etrap('S $ECODE=""')
+        scope = {}
+        result = rt._handle_etrap(ValueError("test"), scope)
+        assert result is True
+        # Verify the handler ran successfully (cleared $ECODE)
+        assert rt.ecode() == ""
+
+    def test_dispatch_ztrap_passes_caller_globals(self):
+        """_dispatch_ztrap accepts and uses caller_globals parameter.
+
+        $ZTRAP handlers need caller_globals just like $ETRAP ones, so
+        labels from the error-originating routine are accessible.
+        """
+        rt = MUMPSRuntime()
+        # Set $ZTRAP to XECUTE semantics (clear errors)
+        rt.set_ztrap('S $ECODE=""')
+        scope = {}
+        # Should not raise — caller_globals is optional
+        rt._dispatch_ztrap(scope, caller_globals=None)
+        assert rt.ecode() == ""

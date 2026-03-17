@@ -22,13 +22,26 @@ import os
 import subprocess
 import warnings
 from decimal import Decimal, ROUND_HALF_UP, localcontext
-from typing import TYPE_CHECKING, Any, Callable, Tuple
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, Callable, MutableMapping, Tuple
 
 from m2py.core.subscripts import SubscriptCanonicalizer
 
 if TYPE_CHECKING:
     from m2py.runtime import MArray
     from m2py.runtime.globals import GlobalStorageBackend
+
+# Lazily-initialized type reference for MArray (avoids circular import).
+# After _init_marray_type() is called once, m_var_value uses a direct type
+# check instead of getattr, eliminating the descriptor call overhead.
+_MArray_type = None
+
+
+def _init_marray_type() -> None:
+    global _MArray_type
+    from m2py.runtime import MArray as _MA
+
+    _MArray_type = _MA
 
 
 def m_var_value(val: Any) -> Any:
@@ -56,14 +69,26 @@ def m_var_value(val: Any) -> Any:
         >>> m_var_value(None)
         ''
     """
-    # Handle MArray by extracting .value
-    if hasattr(val, "value"):
-        return val.value
-    # Handle None as empty string (MUMPS undefined = empty string)
+    # Type-based fast paths to avoid hasattr call for common types (~650ns saved)
+    t = type(val)
+    if t is str or t is int or t is float or t is bool or t is Decimal:
+        return val
     if val is None:
         return ""
-    # Plain values pass through
-    return val
+    # MArray fast path: direct _value access avoids getattr descriptor overhead.
+    # MArray is imported lazily to avoid circular imports (helpers ← __init__).
+    global _MArray_type
+    if _MArray_type is None:
+        _init_marray_type()
+    if t is _MArray_type:
+        v = val._value
+        return v if v is not None else ""
+    # Other objects with .value (rare) — getattr with None sentinel
+    _v = getattr(val, "value", None)
+    if _v is not None:
+        return _v
+    # Edge case: value attribute IS None (exotic custom types); still pass through
+    return _v if hasattr(val, "value") else val
 
 
 def _canonicalize_subscript(sub: Any) -> str:
@@ -81,43 +106,46 @@ def _canonicalize_subscript(sub: Any) -> str:
     return SubscriptCanonicalizer.canonicalize(sub)
 
 
-def _mumps_collation_key(value: Any) -> Tuple[int, Any]:
+@lru_cache(maxsize=8192)
+def _mumps_collation_key(value: str) -> Tuple[int, Any]:
     """Generate a sort key for MUMPS collation order.
 
     MUMPS collation order:
-    1. Numeric values (sorted numerically, negatives first)
-    2. String values (sorted by ASCII/UTF-8)
+    1. Empty string (sorts before everything)
+    2. Numeric values (sorted numerically, negatives first)
+    3. String values (sorted by ASCII/UTF-8)
 
     The key returns a tuple (type_order, sort_value) where:
-    - type_order: 0 for numeric, 1 for string
+    - type_order: -1 for empty string, 0 for numeric, 1 for string
     - sort_value: the value to compare within the type
 
     CRITICAL: Only CANONICAL numeric strings collate as numbers.
     Non-canonical numeric strings like "-4.", "-4.0", ".0", "01" collate as strings.
 
     Args:
-        value: A subscript value (string, int, float, or Decimal)
+        value: A subscript value (string after canonicalization)
 
     Returns:
         Tuple for comparison in sorted()
     """
-    from m2py.core.subscripts import SubscriptCanonicalizer
+    # Empty string always sorts first in MUMPS
+    if value == "" or value is None:
+        return (-1, "")
 
+    t = type(value)
     # Check if value is numeric (can be int, float, Decimal, or numeric string)
-    if isinstance(value, (int, float, Decimal)):
+    if t is int or t is float:
+        return (0, float(value))
+
+    if t is Decimal:
         return (0, float(value))
 
     # For strings, only canonical numeric strings collate as numbers
-    if isinstance(value, str):
-        # Check if string is a CANONICAL numeric form
-        if SubscriptCanonicalizer.is_canonical_numeric_string(value):
-            # It's canonical, collate as number
-            num = Decimal(value)
-            return (0, float(num))
-        # Non-canonical or non-numeric strings collate as strings
-        return (1, value)
-
-    return (1, str(value))
+    if SubscriptCanonicalizer.is_canonical_numeric_string(value):
+        # It's canonical, collate as number
+        return (0, float(Decimal(value)))
+    # Non-canonical or non-numeric strings collate as strings
+    return (1, value)
 
 
 def m_format_output(value: Any) -> str:
@@ -146,9 +174,12 @@ def m_format_output(value: Any) -> str:
     """
     from decimal import Decimal
 
-    # Handle MArray objects by extracting their value
-    # This is needed for TRAMPOLINE strategy where state._locals contains MArrays
-    # and _rt.write(state._locals.get('V', '')) passes MArray objects
+    # Type-based fast paths to avoid hasattr overhead for common types
+    t = type(value)
+    if t is str:
+        return value
+    if t is int or t is bool:
+        return str(int(value))
     if hasattr(value, "value"):
         return m_format_output(value.value)
 
@@ -319,8 +350,8 @@ def m_set_piece(
 def m_set_extract(
     var_getter: Callable[[], str],
     var_setter: Callable[[str], None],
-    from_pos: int,
-    to_pos: int | None,
+    from_pos: int | Decimal,
+    to_pos: int | Decimal | None,
     value: str,
 ) -> None:
     """Set character(s) of a string variable (LHS $EXTRACT).
@@ -352,9 +383,14 @@ def m_set_extract(
     # Get current value (empty string if undefined/None)
     current = var_getter() or ""
 
+    # Coerce positions to int (may arrive as Decimal from MUMPS arithmetic)
+    from_pos = int(from_pos)
+
     # Normalize to_pos: if None, single position
     if to_pos is None:
         to_pos = from_pos
+    else:
+        to_pos = int(to_pos)
 
     # Per YDB behavior: if from_pos <= 0 AND to_pos <= 0, no modification
     # If from_pos <= 0 but to_pos > 0, treat from_pos as 1
@@ -407,6 +443,13 @@ def m_data(array: MArray | None, subscripts: tuple[Any, ...] = ()) -> int:
     """
     if array is None:
         return 0
+    # Handle non-MArray values (e.g., plain strings/ints from scope sync).
+    # In MUMPS, $D(var) on a defined scalar = 1; $D(var(sub)) = 0 since
+    # a scalar has no descendants.
+    from m2py.runtime import MArray as _MArray
+
+    if not isinstance(array, _MArray):
+        return 1 if not subscripts else 0
     # Navigate to target node via subscripts
     node = array
     for sub in subscripts:
@@ -577,6 +620,7 @@ def _find_next_valued_node(
     current_path: list[str],
     start_path: tuple[str, ...],
     at_start: bool,
+    _sort_cache: "MutableMapping | None" = None,
 ) -> tuple[str, ...] | None:
     """Find the next valued node in depth-first traversal order.
 
@@ -587,12 +631,26 @@ def _find_next_valued_node(
         current_path: Path to this node (for building result)
         start_path: Starting point for search (find nodes after this)
         at_start: True if we should search from beginning of this subtree
+        _sort_cache: Optional WeakKeyDictionary for caching per-node sorted keys.
+            Pass the storage's _sort_cache to avoid re-sorting across
+            repeated $QUERY calls on the same global.
 
     Returns:
         Tuple of subscripts to next valued node, or None if no more nodes
     """
-    # Get children in collation order
-    keys = sorted(node._children.keys(), key=_mumps_collation_key)
+    # Get children in collation order — use cache when available to avoid
+    # O(N log N) sorting on every $QUERY call for the same parent node.
+    if _sort_cache is not None:
+        cached = _sort_cache.get(node)
+        if cached is None:
+            sorted_fwd = sorted(node._children.keys(), key=_mumps_collation_key)
+            sorted_ck = [_mumps_collation_key(k) for k in sorted_fwd]
+            _sort_cache[node] = (sorted_fwd, sorted_ck)
+            keys = sorted_fwd
+        else:
+            keys = cached[0]
+    else:
+        keys = sorted(node._children.keys(), key=_mumps_collation_key)
 
     for key in keys:
         str_key = str(key)
@@ -609,7 +667,11 @@ def _find_next_valued_node(
         elif str_key == start_path[0]:
             # This key matches start path - recurse deeper
             result = _find_next_valued_node(
-                child, child_path, start_path[1:], at_start=False
+                child,
+                child_path,
+                start_path[1:],
+                at_start=False,
+                _sort_cache=_sort_cache,
             )
             if result is not None:
                 return result
@@ -628,7 +690,13 @@ def _find_next_valued_node(
                 return tuple(child_path)
 
             # Recursively search children
-            result = _find_next_valued_node(child, child_path, (), at_start=True)
+            result = _find_next_valued_node(
+                child,
+                child_path,
+                (),
+                at_start=True,
+                _sort_cache=_sort_cache,
+            )
             if result is not None:
                 return result
 
@@ -911,6 +979,17 @@ def m_get(
     """
     if array is None:
         return default
+
+    # Handle plain values from GOTO trampoline state variables.
+    # In the trampoline codegen path, scalar state vars may hold plain
+    # values (str/int/Decimal) instead of MArray when the var is not
+    # tracked as an array.  $G(VAR) still needs to work correctly.
+    from m2py.runtime import MArray as _MArray
+
+    if not isinstance(array, _MArray):
+        if subscripts:
+            return default
+        return str(array)
 
     if not subscripts:
         # Check root value - None means undefined
@@ -1723,10 +1802,41 @@ class NewScopeManager:
         This runs on both normal return and exceptions, ensuring
         MUMPS NEW semantics are preserved.
 
+        **Exception**: When a ``GotoExternal`` propagates through, the scope
+        is NOT restored.  In MUMPS, an external GOTO (``G LABEL^ROUTINE``)
+        from within a DO frame with NEW'd params transfers control but
+        stays in the same execution level — the NEW'd variables must
+        remain visible to the GOTO target.  The ``run_with_goto_support``
+        trampoline then dispatches to the target with the preserved scope.
+
         Process restore actions in reverse order to properly
         unwind nested NEW scopes (argumentless/exclusive NEW within
         functions that have formal param NEWs).
         """
+        # GotoExternal is a control-flow signal — the GOTO target needs the
+        # scope variables that were NEW'd in this frame (e.g., function
+        # parameters).  Restoring them would cause KeyError in the target.
+        if exc_type is not None:
+            from m2py.runtime import GotoExternal
+
+            if issubclass(exc_type, GotoExternal):
+                # Save pending restore actions to _rt._pending_new_entries
+                # so they can be unwound when the GOTO chain eventually QUITs.
+                # This preserves MUMPS semantics: NEWed variables remain active
+                # for the GOTO target but are restored when the stack level pops.
+                if self._restore_actions:
+                    _rt = exc_val._rt if exc_val is not None else None
+                    if _rt is not None and hasattr(_rt, "_pending_new_entries"):
+                        # Convert restore actions to pending format (they're
+                        # already in forward order; extend preserves ordering
+                        # so outer caller's entries come first in the list)
+                        for action in self._restore_actions:
+                            if action[0] == "scope":
+                                _rt._pending_new_entries.append(("all", action[1]))
+                            else:
+                                _rt._pending_new_entries.append(action)
+                return  # Preserve scope for the GOTO target
+
         # Process restore actions in reverse (LIFO) for correct unwinding
         for action in reversed(self._restore_actions):
             if action[0] == "scope":
@@ -1752,7 +1862,10 @@ class NewScopeManager:
         """NEW a single variable - save and remove from scope.
 
         If the variable has already been individually NEWed at the current
-        scope level, this is a no-op (first NEW wins per MUMPS spec).
+        scope level, the restore point is preserved (first NEW wins) but
+        the variable is still cleared from scope.  YDB/GT.M behavior:
+        repeated NEW at the same level makes the variable undefined again
+        without adding another restore entry.
 
         Uses _individually_newed set for dedup tracking, and
         appends to _restore_actions list for proper stack-based unwinding.
@@ -1761,7 +1874,10 @@ class NewScopeManager:
             var_name: The translated Python variable name (as stored in _scope)
         """
         if var_name in self._individually_newed:
-            # Already NEWed at this scope level - skip
+            # Already NEWed at this scope level — don't stack again,
+            # but DO clear the variable (make it undefined).
+            if var_name in self._scope:
+                del self._scope[var_name]
             return
         self._individually_newed.add(var_name)
 
@@ -1833,6 +1949,30 @@ class NewScopeManager:
         setter("")
 
 
+def _unwind_one_new_entry(state, entry) -> None:
+    """Unwind a single NEW stack entry, restoring the variable."""
+    if isinstance(entry, dict):
+        # Legacy format: argumentless NEW (full snapshot)
+        state._locals.clear()
+        state._locals.update(entry)
+    elif entry[0] == "all":
+        state._locals.clear()
+        state._locals.update(entry[1])
+    elif entry[0] == "excl":
+        keep_vars = entry[1]
+        saved = entry[2]
+        current_kept = {k: v for k, v in state._locals.items() if k in keep_vars}
+        state._locals.clear()
+        state._locals.update(saved)
+        state._locals.update(current_kept)
+    elif entry[0] == "var":
+        name, saved_value = entry[1], entry[2]
+        if saved_value is not None:
+            state._locals[name] = saved_value
+        else:
+            state._locals.pop(name, None)
+
+
 def unwind_new_stack(state) -> None:
     """Unwind all NEW frames in state._new_stack on subroutine exit.
 
@@ -1848,27 +1988,24 @@ def unwind_new_stack(state) -> None:
     """
     while state._new_stack:
         entry = state._new_stack.pop()
-        if isinstance(entry, dict):
-            # Legacy format: argumentless NEW (full snapshot)
-            state._locals.clear()
-            state._locals.update(entry)
-        elif entry[0] == "all":
-            state._locals.clear()
-            state._locals.update(entry[1])
-        elif entry[0] == "excl":
-            keep_vars = entry[1]
-            saved = entry[2]
-            # Keep current values of kept variables
-            current_kept = {k: v for k, v in state._locals.items() if k in keep_vars}
-            state._locals.clear()
-            state._locals.update(saved)
-            state._locals.update(current_kept)
-        elif entry[0] == "var":
-            name, saved_value = entry[1], entry[2]
-            if saved_value is not None:
-                state._locals[name] = saved_value
-            else:
-                state._locals.pop(name, None)
+        _unwind_one_new_entry(state, entry)
+
+
+def unwind_new_stack_to_mark(state, mark: int) -> None:
+    """Unwind NEW stack entries back to a saved mark.
+
+    Used in TRAMPOLINE mode to unwind NEW'd variables when a dot block
+    exits.  The mark is the len(state._new_stack) captured before the
+    dot block started.  All entries pushed since then are unwound in
+    LIFO order.
+
+    Args:
+        state: RoutineState with _new_stack and _locals
+        mark: Target stack depth to unwind to
+    """
+    while len(state._new_stack) > mark:
+        entry = state._new_stack.pop()
+        _unwind_one_new_entry(state, entry)
 
 
 # =============================================================================
@@ -2056,7 +2193,7 @@ _YDB_ERROR_MESSAGES: dict[int, str] = {
 }
 
 
-def m_zmessage(code: int | str) -> str:
+def m_zmessage(code: int | float | Decimal | str) -> str:
     """Return error message text for a YDB error code.
 
     Lookup table of common YDB error codes.
@@ -2457,7 +2594,16 @@ def m_zparse(path: str, item: str = "") -> str:
     item_upper = item.upper()
 
     if not item or item_upper == "FULL":
-        return os.path.abspath(path) if path else ""
+        if not path:
+            # YDB returns the default/current directory with trailing /
+            return os.getcwd() + "/"
+        if path.endswith("/"):
+            # Directory path — validate existence, preserve trailing /
+            return path if os.path.isdir(path) else ""
+        # File path — validate that containing directory exists
+        resolved = os.path.abspath(path)
+        parent = os.path.dirname(resolved)
+        return resolved if os.path.isdir(parent) else ""
 
     if item_upper == "DIRECTORY":
         return os.path.dirname(path)
@@ -2691,3 +2837,28 @@ def m_zgetsyi(keyword: str) -> str:
     if kw == "NODENAME":
         return platform.node()
     return ""
+
+
+def _m19_check(src_subs: tuple, dest_subs: tuple) -> None:
+    """Raise M19 error if MERGE source and dest have ancestor/descendant overlap.
+
+    Per the MUMPS 1995 standard (8.2.13): "If glvn1 is a descendant of
+    glvn2 or if glvn2 is a descendant of glvn1 an error condition occurs
+    with ecode='M19'."
+
+    Self-merge (identical subscript tuples) is allowed — it's a no-op.
+    Only strict ancestor/descendant relationships trigger the error.
+    """
+    from m2py.runtime.exceptions import MRuntimeError
+
+    if src_subs == dest_subs:
+        return  # Self-merge is OK
+    shorter, longer = (
+        (src_subs, dest_subs)
+        if len(src_subs) <= len(dest_subs)
+        else (dest_subs, src_subs)
+    )
+    if longer[: len(shorter)] == shorter:
+        raise MRuntimeError(
+            "M19", "MERGE operands have ancestor/descendant relationship"
+        )

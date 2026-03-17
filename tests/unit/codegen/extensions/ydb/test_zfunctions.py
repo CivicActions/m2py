@@ -76,6 +76,26 @@ class TestYdbSpecialVariablesCodegen:
         result = generate_python(code)
         assert "_rt.zstatus()" in result
 
+    def test_zs_abbreviation_generates_zstatus(self):
+        """$ZS abbreviation maps to $ZSTATUS, not $ZSEARCH.
+
+        In MUMPS, $ZS without parentheses is the abbreviation for $ZSTATUS.
+        $ZSEARCH requires parentheses: $ZS(expr).
+        This was a bug where $ZS was parsed as IntrinsicFunctionNoArgs
+        and mapped to $ZSEARCH instead of SpecialVariable $ZSTATUS.
+        """
+        code = "TEST\n W $ZS\n Q"
+        result = generate_python(code)
+        assert "_rt.zstatus()" in result
+        assert "zsearch" not in result.lower()
+
+    def test_zs_lowercase_abbreviation_generates_zstatus(self):
+        """$zs (lowercase) maps to $ZSTATUS — grammar is case-insensitive."""
+        code = "TEST\n W $zs\n Q"
+        result = generate_python(code)
+        assert "_rt.zstatus()" in result
+        assert "zsearch" not in result.lower()
+
     def test_zsystem_variable_generates_exit_code(self):
         """$ZSYSTEM generates zsystem_exit() call."""
         code = "TEST\n W $ZSYSTEM\n Q"
@@ -565,10 +585,83 @@ class TestPhase10RuntimeHelpers:
         assert m_zparse("/tmp/test.m", "NODE") == ""
 
     def test_m_zparse_empty(self):
-        """m_zparse with empty path returns empty string."""
+        """m_zparse with empty path returns current directory with trailing /."""
+        from m2py.runtime.helpers import m_zparse
+        import os
+
+        result = m_zparse("")
+        assert result == os.getcwd() + "/"
+
+    def test_m_zparse_dir_trailing_slash_exists(self, tmp_path):
+        """m_zparse preserves trailing / for existing directories."""
         from m2py.runtime.helpers import m_zparse
 
-        assert m_zparse("") == ""
+        path = str(tmp_path) + "/"
+        assert m_zparse(path) == path
+
+    def test_m_zparse_dir_trailing_slash_nonexistent(self):
+        """m_zparse returns empty for non-existent directory with trailing /."""
+        from m2py.runtime.helpers import m_zparse
+
+        assert m_zparse("/nonexistent_dir_12345/") == ""
+
+    def test_m_zparse_file_parent_exists(self):
+        """m_zparse returns resolved path when parent directory exists."""
+        from m2py.runtime.helpers import m_zparse
+
+        result = m_zparse("/tmp/somefile.txt")
+        assert result == "/tmp/somefile.txt"
+
+    def test_m_zparse_file_parent_nonexistent(self):
+        """m_zparse returns empty when parent directory doesn't exist."""
+        from m2py.runtime.helpers import m_zparse
+
+        assert m_zparse("/nonexistent_dir_12345/file.txt") == ""
+
+    def test_m_zparse_relative_path(self):
+        """m_zparse resolves relative paths to absolute."""
+        from m2py.runtime.helpers import m_zparse
+        import os
+
+        result = m_zparse("somefile.txt")
+        assert result == os.path.join(os.getcwd(), "somefile.txt")
+
+    def test_m_zparse_root_slash(self):
+        """m_zparse with '/' returns '/' (root always exists)."""
+        from m2py.runtime.helpers import m_zparse
+
+        assert m_zparse("/") == "/"
+
+    def test_m_zparse_nested_nonexistent(self):
+        """m_zparse returns empty for deeply nested non-existent dir."""
+        from m2py.runtime.helpers import m_zparse
+
+        assert m_zparse("/no/such/path/here/") == ""
+
+    def test_m_zparse_dir_no_trailing_slash(self):
+        """m_zparse with existing dir without trailing / returns resolved path."""
+        from m2py.runtime.helpers import m_zparse
+
+        # /tmp exists as a directory; without trailing slash it's treated as a file path
+        result = m_zparse("/tmp")
+        assert result == "/tmp"
+
+    def test_m_zparse_empty_with_item(self):
+        """m_zparse with empty path and DIRECTORY item returns dirname of cwd."""
+        from m2py.runtime.helpers import m_zparse
+
+        result = m_zparse("", "DIRECTORY")
+        # empty path → dirname of "" → ""
+        assert result == ""
+
+    def test_m_zparse_dir_trailing_slash_with_spaces_in_name(self, tmp_path):
+        """m_zparse handles directories with spaces."""
+        from m2py.runtime.helpers import m_zparse
+
+        subdir = tmp_path / "my dir"
+        subdir.mkdir()
+        path = str(subdir) + "/"
+        assert m_zparse(path) == path
 
     def test_m_zbitand_basic(self):
         """m_zbitand performs byte-by-byte AND."""
@@ -1154,12 +1247,17 @@ class TestZdirectorySetExecution:
     def test_set_and_get_zd(self, execute_mumps):
         """SET $ZD changes directory, GET $ZD reads it back."""
         result = execute_mumps('TEST\n S $ZD="/tmp" W $ZD\n Q')
-        assert result.output == "/tmp"
+        # On macOS, /tmp is a symlink to /private/tmp; os.getcwd() resolves it
+        import os
+
+        assert result.output == os.path.realpath("/tmp")
 
     def test_set_zdirectory_changes_dir(self, execute_mumps):
         """SET $ZDIRECTORY changes directory."""
         result = execute_mumps('TEST\n S $ZDIRECTORY="/tmp" W $ZD\n Q')
-        assert result.output == "/tmp"
+        import os
+
+        assert result.output == os.path.realpath("/tmp")
 
 
 # ── $ZPIECE alias ─────────────────────────────────────────────────────

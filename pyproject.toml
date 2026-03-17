@@ -5,7 +5,7 @@ description = "MUMPS to Python transpiler"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pyright>=1.1.408",
+    "click>=8.3.1",
     "ruff>=0.15.0",
     "textX>=4.0",
 ]
@@ -16,6 +16,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/m2py"]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "$version"
+version_scheme = "pep440"
+version_provider = "uv"
+update_changelog_on_bump = true
 
 [project.scripts]
 m2py = "m2py.cli:main"
@@ -32,18 +39,19 @@ backend = [
 
 [dependency-groups]
 dev = [
+    "filelock>=3.25.2",
     "pre-commit>=4.5.1",
-    "pyright>=1.1.408",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
     "pytest-xdist>=3.8.0",
+    "ty>=0.0.20",
 ]
 yottadb = [
     "yottadb>=2.0.0",
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "pre1995: marks tests for pre-1995 MUMPS syntax backward compatibility",
@@ -65,6 +73,11 @@ markers = [
     "backend_inmemory: marks tests requiring inmemory backend",
     "backend_yottadb: marks tests requiring yottadb backend",
     "backend_iris: marks tests requiring iris backend",
+    "quality: marks backend-independent quality/perf tests (separate CI job)",
+    "munit: marks M-Unit VistA integration tests (require VistA deps)",
+]
+filterwarnings = [
+    "error",
 ]
 
 [tool.ruff.lint]

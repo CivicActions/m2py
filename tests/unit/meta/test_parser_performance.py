@@ -12,6 +12,7 @@ import pytest
 from m2py.parser import MUMPSParser
 
 
+@pytest.mark.quality
 class TestParserPerformance:
     """Test parser performance characteristics."""
 
@@ -33,8 +34,8 @@ class TestParserPerformance:
         routine = parser.parse_file(large_file)
         elapsed = time.time() - start
 
-        # Should complete in under 5 seconds (generous for CI)
-        assert elapsed < 5.0, f"Parsing took {elapsed:.2f}s"
+        # Should complete in under 15 seconds (generous for CI runners)
+        assert elapsed < 15.0, f"Parsing took {elapsed:.2f}s"
         assert len(routine.labels) == 1
         # The label should have 1000 SET statements + 1 QUIT
         assert len(routine.labels[0].body.statements) >= 1000

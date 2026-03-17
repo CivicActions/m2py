@@ -111,6 +111,46 @@ class TestInMemoryGlobalStorageEdgeCases:
         assert indicator is not None
         assert indicator[0] == "G"
 
+    def test_query_naked_indicator_uses_result_subscripts(self):
+        """query() updates naked indicator with RESULT subscripts, not input.
+
+        Per MUMPS standard §8.2.19, $QUERY updates the naked indicator
+        to reflect the result node. If we query from ("1",), and the result
+        is ("2","A"), the naked indicator should reflect ("2","A").
+        """
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.set("G", ("1",), "first")
+        backend.set("G", ("2", "A"), "second")
+
+        # Query from ("1",) should find ("2","A") as next valued node
+        result = backend.query("G", ("1",))
+        assert result == '^G(2,"A")'
+
+        indicator = backend.get_naked_indicator()
+        assert indicator is not None
+        name, subs = indicator
+        assert name == "G"
+        # Naked indicator should be the RESULT subscripts, not ("1",)
+        assert "2" in subs
+
+    def test_query_naked_indicator_not_updated_when_no_result(self):
+        """query() with no next node keeps naked indicator from input."""
+        from m2py.runtime import InMemoryGlobalStorage
+
+        backend = InMemoryGlobalStorage()
+        backend.set("G", ("1",), "only")
+
+        # Query from ("1",) — no more nodes after ("1",)
+        result = backend.query("G", ("1",))
+        assert result == ""
+
+        indicator = backend.get_naked_indicator()
+        assert indicator is not None
+        name, _ = indicator
+        assert name == "G"
+
 
 @pytest.mark.runtime
 class TestInMemoryGlobalStorageGetTree:
@@ -289,7 +329,7 @@ class TestLockOperations:
         result = backend.lock("PATIENT", ("123",), lock_type="+")
         assert result is True
         assert ("PATIENT", ("123",)) in backend._lock_table
-        assert backend._lock_table[("PATIENT", ("123",))][1] == 1
+        assert backend._lock_table[("PATIENT", ("123",))] == 1
 
     def test_lock_increment(self):
         """Multiple lock acquires increment the count."""
@@ -298,7 +338,7 @@ class TestLockOperations:
         backend = InMemoryGlobalStorage()
         backend.lock("PATIENT", ("123",), lock_type="+")
         backend.lock("PATIENT", ("123",), lock_type="+")
-        assert backend._lock_table[("PATIENT", ("123",))][1] == 2
+        assert backend._lock_table[("PATIENT", ("123",))] == 2
 
     def test_lock_decrement(self):
         """Lock release decrements the count."""
@@ -308,7 +348,7 @@ class TestLockOperations:
         backend.lock("PATIENT", ("123",), lock_type="+")
         backend.lock("PATIENT", ("123",), lock_type="+")
         backend.lock("PATIENT", ("123",), lock_type="-")
-        assert backend._lock_table[("PATIENT", ("123",))][1] == 1
+        assert backend._lock_table[("PATIENT", ("123",))] == 1
 
     def test_lock_release_removes_entry(self):
         """Lock release to 0 removes the entry."""
@@ -327,7 +367,7 @@ class TestLockOperations:
         backend.lock("X", (), lock_type="+")
         backend.lock("X", (), lock_type="+")
         backend.unlock("X", ())
-        assert backend._lock_table[("X", ())][1] == 1
+        assert backend._lock_table[("X", ())] == 1
 
     def test_unlock_all(self):
         """unlock_all() clears all locks."""

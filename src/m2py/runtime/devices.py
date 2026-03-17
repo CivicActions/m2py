@@ -409,6 +409,9 @@ class FileDevice(MUMPSDevice):
         After a successful read of a complete line, $KEY is set to $C(10).
         After EOF, $KEY is set to "" and $ZEOF is set to True.
 
+        In GT.M/YDB, reading from a write-only file returns empty immediately
+        (EOF). We replicate this by catching ``io.UnsupportedOperation``.
+
         Args:
             maxlen: Maximum number of characters to read. None for full line.
             timeout: Ignored for file devices (reads are immediate).
@@ -416,8 +419,21 @@ class FileDevice(MUMPSDevice):
         Returns:
             Tuple of (data, terminator_key).
         """
+        import io as _io
+
+        try:
+            if maxlen is not None:
+                data = self._file.read(maxlen)
+            else:
+                data = self._file.readline()
+        except _io.UnsupportedOperation:
+            # File opened in write-only mode — treat as immediate EOF
+            # (matches GT.M/YDB behaviour for READ on write-only device)
+            self.key = ""
+            self.zeof = True
+            return ("", "")
+
         if maxlen is not None:
-            data = self._file.read(maxlen)
             if not data:
                 # EOF
                 self.key = ""
@@ -431,21 +447,20 @@ class FileDevice(MUMPSDevice):
                 self.key = ""
             return (data, self.key)
         else:
-            line = self._file.readline()
-            if not line:
+            if not data:
                 # EOF
                 self.key = ""
                 self.zeof = True
                 return ("", "")
             # Strip trailing newline
-            if line.endswith("\n"):
-                line = line[:-1]
+            if data.endswith("\n"):
+                data = data[:-1]
                 self.key = chr(10)
             else:
                 # Last line without trailing newline — still data, but
                 # next read will be EOF
                 self.key = chr(10)
-            return (line, self.key)
+            return (data, self.key)
 
     def read_char(self) -> str:
         """Read a single character from file (READ *X).
@@ -453,7 +468,15 @@ class FileDevice(MUMPSDevice):
         Returns:
             Single character, or empty string on EOF.
         """
-        ch = self._file.read(1)
+        import io as _io
+
+        try:
+            ch = self._file.read(1)
+        except _io.UnsupportedOperation:
+            # Write-only file — treat as EOF
+            self.zeof = True
+            self.key = ""
+            return ""
         if not ch:
             self.zeof = True
             self.key = ""

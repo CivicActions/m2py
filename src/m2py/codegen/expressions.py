@@ -7,7 +7,7 @@ extrinsic functions, and intrinsic function dispatch ($LENGTH, $PIECE, etc.).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Dict, List
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, cast
 
 from m2py.asg.enums import LiteralType, PassingMode
 from m2py.asg.expressions import (
@@ -220,9 +220,9 @@ def generate_expr(
         # Defensive handlers for textX parser nodes that should have been
         # unwrapped by the semantic analyzer but survived into codegen.
         # These are dynamically-typed textX classes, not MExpr subclasses,
-        # so we cast to Any to access their attributes without type errors.
+        # so we use cast(Any, ...) to break type narrowing for attribute access.
         expr_type = type(expr).__name__
-        textx_node: Any = expr  # type: ignore[assignment]
+        textx_node: Any = cast(Any, expr)
         if expr_type == "ParenExpr":
             # ParenExpr wraps (expr) — unwrap and recurse
             return generate_expr(
@@ -708,7 +708,8 @@ def _generate_special_variable(var: MSpecialVariable, ctx: "GeneratorContext") -
     # $PRINCIPAL / $P - principal I/O device
     # Returns the principal device identifier.
     # $P without arguments is $PRINCIPAL (not $PIECE which requires args).
-    if name in ("PRINCIPAL", "P", "PIOR", "PIOREFERENCE"):
+    # $PRINCIPLE is a common misspelling found in VistA-M v1.5 MASH Utilities.
+    if name in ("PRINCIPAL", "PRINCIPLE", "P", "PIOR", "PIOREFERENCE"):
         return "_rt.principal()"
 
     # $KEY / $K - terminal input key
@@ -1127,21 +1128,28 @@ def _generate_extrinsic(expr: MExtrinsicFunction, ctx: "GeneratorContext") -> st
     # Translate label name to Python function name
     func_name = translate_name(label_name)
 
+    # Use _globals[func_name] to avoid shadowing by formal parameters.
+    # In MUMPS, labels and variables live in separate namespaces, so $$ATT(.ATT)
+    # calls label ATT passing variable ATT by-ref.  In Python, a formal parameter
+    # named ATT would shadow the module-level function ATT, so we look it up
+    # explicitly via _globals.
+    func_ref = f"_globals[{func_name!r}]"
+
     # For internal calls with by-ref, need _scope for by-ref unpacking
     if byref_names:
         if args:
             return (
-                f"_call_extrinsic(_rt, {func_name}, {args}, _scope=_scope{byref_param})"
+                f"_call_extrinsic(_rt, {func_ref}, {args}, _scope=_scope{byref_param})"
             )
         else:
-            return f"_call_extrinsic(_rt, {func_name}, _scope=_scope{byref_param})"
+            return f"_call_extrinsic(_rt, {func_ref}, _scope=_scope{byref_param})"
 
     # Generate: _call_extrinsic(_rt, FUNC, arg1, arg2, _scope=_scope)
     # Always pass _scope for cross-routine variable visibility
     if args:
-        return f"_call_extrinsic(_rt, {func_name}, {args}, _scope=_scope)"
+        return f"_call_extrinsic(_rt, {func_ref}, {args}, _scope=_scope)"
     else:
-        return f"_call_extrinsic(_rt, {func_name}, _scope=_scope)"
+        return f"_call_extrinsic(_rt, {func_ref}, _scope=_scope)"
 
 
 def _generate_external_function(
@@ -1205,9 +1213,12 @@ def _generate_extrinsic_arguments_with_byref(
             # descendants and param(sub) accesses caller's tree.
             has_byref = True
             if arg.variable_name:
-                # Direct by-ref (.X): pass the MArray object from scope
-                var_name = arg.variable_name
-                parts.append(f"_scope.get({var_name!r}, MArray())")
+                # Direct by-ref (.X): pass the MArray object from scope.
+                # Must use setdefault so the MArray is stored in _scope —
+                # the callee modifies subscripts on this same object and
+                # those mutations must be visible to the caller after return.
+                var_name = translate_name(arg.variable_name)
+                parts.append(f"_scope.setdefault({var_name!r}, MArray())")
                 byref_names.append(var_name)
             elif arg.expression and isinstance(arg.expression, MIndirection):
                 # Indirected by-ref (.@IX): resolve indirection to MArray.
@@ -1363,9 +1374,13 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
     # Check if it's a local or global variable
     if isinstance(var, LocalVariable):
-        # Local variable: m_get(_scope.get('VAR', None), subscripts, default)
-        python_name = translate_name(var_name)
-        return f"m_get(_scope.get({python_name!r}), {subscripts_tuple}, {default_code})"
+        # Local variable: m_get(var_base, subscripts, default)
+        # Uses var_base_expr for strategy-aware scope dispatch
+        # (state._locals for TRAMPOLINE, _scope for SIMPLE_FUNCTIONS)
+        from m2py.codegen.var_access import var_base_expr
+
+        base = var_base_expr(var_name, ctx)
+        return f"m_get({base}, {subscripts_tuple}, {default_code})"
     elif isinstance(var, GlobalVariable):
         # Global variable: use lambda to evaluate subscripts once and pre-set
         # naked indicator before evaluating default, so global refs in default
@@ -1393,8 +1408,11 @@ def _gen_get(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         )
     else:
         # Fallback for any other variable type - treat as local
-        python_name = translate_name(var_name)
-        return f"m_get(_scope.get({python_name!r}), {subscripts_tuple}, {default_code})"
+        # Uses var_base_expr for strategy-aware scope dispatch
+        from m2py.codegen.var_access import var_base_expr
+
+        base = var_base_expr(var_name, ctx)
+        return f"m_get({base}, {subscripts_tuple}, {default_code})"
 
 
 def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
@@ -1442,6 +1460,9 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         from m2py.codegen.indirection import (
             _count_indirection_levels_with_subscripts,
         )
+        from m2py.codegen.var_access import scope_dict_expr
+
+        _sd = scope_dict_expr(ctx)
 
         levels, inner_expr, all_subscripts = _count_indirection_levels_with_subscripts(
             var
@@ -1485,9 +1506,9 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
 
                 return (
                     f"_rt.get_order("
-                    f"_rt.resolve_order_name({name_expr}, _scope, "
+                    f"_rt.resolve_order_name({name_expr}, {_sd}, "
                     f"levels_remaining={levels - 1}{pls_arg}), "
-                    f"_scope, {direction_code})"
+                    f"{_sd}, {direction_code})"
                 )
             else:
                 # Single level: use get_order with additional_subscripts
@@ -1501,7 +1522,7 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
                     additional_subs_arg = ""
 
                 return (
-                    f"_rt.get_order({name_expr}, _scope, "
+                    f"_rt.get_order({name_expr}, {_sd}, "
                     f"{direction_code}{additional_subs_arg})"
                 )
         elif isinstance(inner_expr, (MVariable, MLocalVariable)):
@@ -1514,10 +1535,16 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
                 sub_exprs = [generate_expr(sub, ctx) for sub in inner_subscripts]
                 if len(sub_exprs) == 1:
                     full_name_expr = (
-                        "'" + base_name + "(' + str(" + sub_exprs[0] + ") + ')'"
+                        "'"
+                        + base_name
+                        + "(' + _format_subscript("
+                        + sub_exprs[0]
+                        + ") + ')'"
                     )
                 else:
-                    subs_parts = " + ',' + ".join("str(" + s + ")" for s in sub_exprs)
+                    subs_parts = " + ',' + ".join(
+                        "_format_subscript(" + s + ")" for s in sub_exprs
+                    )
                     full_name_expr = "'" + base_name + "(' + " + subs_parts + " + ')'"
             else:
                 full_name_expr = f'"{base_name}"'
@@ -1525,7 +1552,7 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
             # Use resolve_for_target (unified method) to get the variable NAME.
             # $ORDER/$NEXT just need the name to find the next subscript.
             name_expr = (
-                f"_rt.resolve_for_target({full_name_expr}, _scope, levels={levels})"
+                f"_rt.resolve_for_target({full_name_expr}, {_sd}, levels={levels})"
             )
         else:
             name_expr_base = generate_expr(inner_expr, ctx)
@@ -1546,7 +1573,7 @@ def _gen_order(expr: MIntrinsicFunction, ctx: "GeneratorContext") -> str:
         # Use _rt.get_order which handles indirected variable names
         # Pass additional_subscripts separately for proper merging
         return (
-            f"_rt.get_order({name_expr}, _scope, {direction_code}{additional_subs_arg})"
+            f"_rt.get_order({name_expr}, {_sd}, {direction_code}{additional_subs_arg})"
         )
 
     # Generate subscript tuple for non-indirection cases

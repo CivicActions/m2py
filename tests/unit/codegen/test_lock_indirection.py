@@ -8,9 +8,12 @@ with the appropriate arguments for lock operations, timeouts, and
 multi-level indirection.
 """
 
+import pytest
+
 from m2py.codegen import generate_python
 
 
+@pytest.mark.codegen
 class TestGenerateLockIndirectionCode:
     """Tests for generated LOCK indirection code patterns."""
 
@@ -101,6 +104,7 @@ class TestGenerateLockIndirectionCode:
         assert 'per_level_subscripts=["1", "2"]' in code
 
 
+@pytest.mark.codegen
 class TestLockIndirectionCodegenIntegration:
     """Integration tests for LOCK indirection code generation."""
 
@@ -144,6 +148,31 @@ class TestLockIndirectionCodegenIntegration:
         assert "lock_indirected" in code
 
 
+@pytest.mark.codegen
+class TestLockIndirectionExpressionLevels:
+    """Tests for expression-based LOCK indirection generating levels=0."""
+
+    def _run_codegen_for_lock(self, mumps_code: str) -> str:
+        """Helper to transpile MUMPS code and return Python."""
+        return generate_python(mumps_code)
+
+    def test_expression_indirection_sets_levels_zero(self):
+        r"""LOCK @("+"_X_":"_Y) produces levels=0 (pre-evaluated)."""
+        code = self._run_codegen_for_lock('TEST L @("+"_X_":"_Y) Q')
+
+        assert "lock_indirected" in code
+        assert "levels=0" in code
+
+    def test_simple_variable_indirection_default_levels(self):
+        """LOCK @X does not emit levels=0 (uses default levels=1)."""
+        code = self._run_codegen_for_lock("TEST L @X Q")
+
+        assert "lock_indirected" in code
+        # levels=1 is the default, so it should NOT appear in the call
+        assert "levels=0" not in code
+
+
+@pytest.mark.codegen
 class TestLockIndirectionStmtLevelPattern:
     """Tests for statement-level lock patterns with indirection."""
 
@@ -151,13 +180,30 @@ class TestLockIndirectionStmtLevelPattern:
         """Helper to transpile MUMPS code and return Python."""
         return generate_python(mumps_code)
 
-    def test_exclusive_lock_indirection_releases_first(self):
-        """L @X (exclusive) should emit unlock_all() before lock."""
+    def test_exclusive_lock_indirection_defers_unlock(self):
+        """L @X (exclusive) should defer unlock_all() to lock_indirected().
+
+        When ALL targets are indirected, the codegen cannot know at compile
+        time whether the indirection will evaluate to an exclusive or
+        incremental lock (e.g., LOCK @("+"_REF_":timeout") evaluates to
+        LOCK +ref:timeout — incremental, not exclusive).  So unlock_all()
+        must be deferred to the runtime lock_indirected() method which
+        parses the resolved string and decides.
+        """
         code = self._run_codegen_for_lock('TEST S X="^GLO" L @X Q')
 
-        # Exclusive lock without + releases all first
-        assert "unlock_all" in code
+        # Should NOT emit unlock_all() at codegen level — deferred to runtime
+        lines = code.split("\n")
+        unlock_lines = [line for line in lines if "unlock_all" in line]
+        assert len(unlock_lines) == 0, (
+            "Expected no unlock_all in codegen for all-indirect exclusive LOCK; "
+            "unlock_all should be deferred to lock_indirected() at runtime"
+        )
+
+        # Should pass lockop="" to lock_indirected so it can handle
+        # exclusive semantics at runtime
         assert "lock_indirected" in code
+        assert 'lockop=""' in code
 
     def test_incremental_lock_no_release(self):
         """L +@X (incremental) should NOT emit unlock_all()."""

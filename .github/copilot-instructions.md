@@ -105,7 +105,7 @@ This is useful for testing IRIS/Caché-specific functions (e.g., `$ZCONVERT`, `$
 
 ## Running with IRIS Container
 
-Use `utils/iris.sh` to auto-start the IRIS Docker container and run commands with connection env vars exported. Unlike `ydb.sh`, commands run locally (IRIS SDK connects over TCP).
+Use `utils/iris.sh` to auto-start the IRIS Docker container and run commands with connection env vars exported. Unlike `ydb.sh`, commands run locally (IRIS SDK connects over TCP). The custom image is auto-built on first use from `Dockerfile.iris` and `iris-merge.cpf`, which bake in VistA-compatible settings (null subscripts, password config).
 
 ```bash
 # Run tests with IRIS container available
@@ -115,6 +115,7 @@ bash utils/iris.sh uv run pytest tests/ -x -n0
 bash utils/iris.sh --start    # Start container only
 bash utils/iris.sh --stop     # Stop and remove container
 bash utils/iris.sh --status   # Show container status
+bash utils/iris.sh --rebuild  # Force rebuild image and recreate container
 ```
 
 Exported env vars: `IRIS_HOST`, `IRIS_PORT`, `IRIS_NAMESPACE`, `IRIS_USER`, `IRIS_PASSWORD`.

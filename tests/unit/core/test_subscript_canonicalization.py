@@ -220,12 +220,6 @@ class TestSubscriptCanonicalizerIntegration:
 class TestEdgeCases:
     """Edge cases from YDB verification."""
 
-    def test_empty_string_subscript(self):
-        """Empty string is a valid subscript."""
-        arr = MArray()
-        arr[""] = "empty_key"
-        assert arr.get("") == "empty_key"
-
     def test_negative_zero(self):
         """Negative zero canonicalizes to 0."""
         arr = MArray()

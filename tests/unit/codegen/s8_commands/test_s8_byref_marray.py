@@ -21,8 +21,10 @@ class TestCallByReferenceCodegen:
         """
         code = 'TEST S X="val" W $$FN(.X) Q\nFN(A) Q A'
         result = generate_python(code)
-        # Should pass MArray object, NOT m_var_value() wrapper
-        assert "_scope.get('X', MArray())" in result
+        # Should pass MArray object, NOT m_var_value() wrapper.
+        # Uses setdefault so the MArray is created in _scope if absent,
+        # ensuring callee mutations are visible to the caller after return.
+        assert "_scope.setdefault('X', MArray())" in result
         assert "_byref=" in result
 
     def test_byref_parameter_aliasing(self, execute_mumps):

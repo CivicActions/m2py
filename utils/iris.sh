@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # utils/iris.sh — Run commands with an IRIS Docker container available
 #
-# Auto-starts the persistent IRIS container if not running, exports
-# connection env vars, then runs the given command locally.
+# Auto-builds a custom IRIS image (from Dockerfile.iris) on first use,
+# then starts a persistent container if not running, exports connection
+# env vars, and runs the given command locally.
 #
 # Usage:
 #   bash utils/iris.sh uv run pytest tests/ -x -n0
@@ -16,17 +17,24 @@
 #   bash utils/iris.sh --start    # Start container only (no command)
 #   bash utils/iris.sh --stop     # Stop and remove the container
 #   bash utils/iris.sh --status   # Show container status
+#   bash utils/iris.sh --rebuild  # Force rebuild image and recreate container
 
 set -euo pipefail
 
 CONTAINER_NAME="m2py-iris"
+IMAGE_NAME="m2py-iris-img"
+DOCKERFILE="Dockerfile.iris"
 
-# Select Docker image based on CPU architecture
+# Find project root (directory containing this script's parent)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Select base Docker image based on CPU architecture
 ARCH="$(uname -m)"
 if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
-    IMAGE="intersystems/iris-community-arm64:latest-cd"
+    BASE_IMAGE="intersystems/iris-community-arm64:latest-cd"
 else
-    IMAGE="intersystems/iris-community:latest-cd"
+    BASE_IMAGE="intersystems/iris-community:latest-cd"
 fi
 
 # --- Connection defaults (override via env) ---
@@ -38,6 +46,19 @@ export IRIS_PASSWORD="${IRIS_PASSWORD:-SYS}"
 
 # --- Set backend ---
 export M2PY_GLOBAL_BACKEND=iris
+
+# --- Image build helper ---
+build_image() {
+    if ! docker image inspect "$IMAGE_NAME" > /dev/null 2>&1; then
+        echo "==> Building $IMAGE_NAME image (first time only)..."
+        docker build \
+            -f "$PROJECT_ROOT/$DOCKERFILE" \
+            --build-arg "BASE_IMAGE=$BASE_IMAGE" \
+            -t "$IMAGE_NAME" \
+            "$PROJECT_ROOT"
+        echo "==> Image built successfully."
+    fi
+}
 
 # --- Container helpers ---
 container_status() {
@@ -78,35 +99,38 @@ start_container() {
         return 0
     fi
 
+    # Ensure the custom image is built
+    build_image
+
     if [[ "$status" == "stopped" ]]; then
         echo "==> Starting existing IRIS container..."
         docker start "$CONTAINER_NAME" > /dev/null
     else
-        echo "==> Creating IRIS container (first time may pull image)..."
+        echo "==> Creating IRIS container..."
         docker run -d \
             --name "$CONTAINER_NAME" \
             -p "${IRIS_PORT}:1972" \
-            "$IMAGE" \
+            "$IMAGE_NAME" \
             --check-caps false > /dev/null
     fi
 
     wait_for_ready
 
-    # Fix password-change-required on fresh containers
-    setup_password
-}
-
-setup_password() {
-    # On fresh IRIS community images the default password is expired.
-    # Set it to our expected value and mark it never-expiring.
-    echo -e "set p(\"Password\")=\"${IRIS_PASSWORD}\"\nset p(\"PasswordNeverExpires\")=1\nset sc=##class(Security.Users).Modify(\"${IRIS_USER}\",.p)\nhalt" \
-        | docker exec -i "$CONTAINER_NAME" iris session IRIS -U "%SYS" > /dev/null 2>&1 || true
+    # Password and null subscripts are baked into the image via
+    # Dockerfile.iris, so no runtime setup is needed.
 }
 
 stop_container() {
     echo "==> Stopping IRIS container..."
     docker rm -f "$CONTAINER_NAME" > /dev/null 2>&1 || true
     echo "==> Stopped."
+}
+
+rebuild_image() {
+    echo "==> Forcing rebuild of $IMAGE_NAME..."
+    stop_container
+    docker rmi -f "$IMAGE_NAME" > /dev/null 2>&1 || true
+    build_image
 }
 
 # --- Handle management commands ---
@@ -119,10 +143,14 @@ case "${1:-}" in
         stop_container
         exit 0
         ;;
+    --rebuild)
+        rebuild_image
+        exit 0
+        ;;
     --status)
         echo "Container: $CONTAINER_NAME"
         echo "Status: $(container_status)"
-        echo "Image: $IMAGE"
+        echo "Image: $IMAGE_NAME (base: $BASE_IMAGE)"
         echo "Connection: $IRIS_USER@$IRIS_HOST:$IRIS_PORT/$IRIS_NAMESPACE"
         exit 0
         ;;

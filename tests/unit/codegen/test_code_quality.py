@@ -1,6 +1,6 @@
 """Tests for generated code quality (Phase 5 T026, Phase 6 T029).
 
-Validates that transpiled Python code passes pyright basic mode type checking
+Validates that transpiled Python code passes ty type checking
 with zero errors. Tests representative MUMPS patterns including arithmetic,
 string operations, functions with return values, and control flow.
 
@@ -14,7 +14,8 @@ Reference: spec 023-cli-codegen-quality, US3, US4
 
 from __future__ import annotations
 
-import json
+import re
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -25,166 +26,6 @@ import pytest
 from m2py.codegen import generate_python
 from m2py.cli.transpile import transpile_sources
 from m2py.core.names import NameTranslator
-
-
-@pytest.mark.codegen
-@pytest.mark.skipif(
-    subprocess.run(
-        [sys.executable, "-m", "pyright", "--version"],
-        capture_output=True,
-    ).returncode
-    != 0,
-    reason="pyright not available via python -m pyright",
-)
-class TestPyrightBasicValidation:
-    """Transpiled code passes pyright basic with zero errors."""
-
-    @pytest.fixture
-    def pyright_dir(self, tmp_path: Path) -> Path:
-        """Create a temp directory with pyrightconfig.json for basic mode."""
-        config = {
-            "include": ["."],
-            "typeCheckingMode": "basic",
-            "pythonVersion": "3.10",
-            "pythonPlatform": "Linux",
-            "reportMissingTypeStubs": False,
-            "reportMissingImports": False,
-            "reportMissingModuleSource": False,
-        }
-        config_path = tmp_path / "pyrightconfig.json"
-        config_path.write_text(json.dumps(config))
-        return tmp_path
-
-    def _transpile_and_check(
-        self, pyright_dir: Path, name: str, mumps_source: str
-    ) -> None:
-        """Transpile MUMPS source and run pyright basic on it.
-
-        Args:
-            pyright_dir: Directory with pyrightconfig.json
-            name: Output filename (without .py)
-            mumps_source: MUMPS source code
-        """
-        code = generate_python(mumps_source)
-        (pyright_dir / f"{name}.py").write_text(code)
-
-        result = subprocess.run(
-            [sys.executable, "-m", "pyright", "--project", str(pyright_dir)],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, (
-            f"pyright basic failed on {name}.py:\n{result.stdout}\n{result.stderr}"
-        )
-
-    def test_arithmetic_operations(self, pyright_dir: Path) -> None:
-        """Integer division and exponentiation use type-safe helpers."""
-        source = textwrap.dedent("""\
-            arith
-             N X,Y,Z
-             S X=10,Y=3
-             S Z=X\\Y
-             W Z,!
-             S Z=X**Y
-             W Z,!
-             S Z=X#Y
-             W Z,!
-             S Z=X/Y
-             W Z,!
-             S Z=X+Y*2
-             W Z,!
-             Q
-        """).strip()
-        self._transpile_and_check(pyright_dir, "arith", source)
-
-    def test_string_operations(self, pyright_dir: Path) -> None:
-        """String concatenation, comparison, and intrinsic functions."""
-        source = textwrap.dedent("""\
-            strops
-             N S,T,R
-             S S="Hello"
-             S T="World"
-             S R=S_", "_T
-             W R,!
-             W $L(R),!
-             W $E(R,1,5),!
-             W S]T,!
-             Q
-        """).strip()
-        self._transpile_and_check(pyright_dir, "strops", source)
-
-    def test_functions_with_return_types(self, pyright_dir: Path) -> None:
-        """Functions get return type annotations from QUIT expression types."""
-        source = textwrap.dedent("""\
-            funcs
-             W $$ADD(3,4),!
-             W $$GREET("World"),!
-             W $$ISPOS(5),!
-             Q
-            ADD(a,b)
-             Q a+b
-            GREET(name)
-             Q "Hello, "_name
-            ISPOS(x)
-             Q x>0
-        """).strip()
-        self._transpile_and_check(pyright_dir, "funcs", source)
-
-    def test_control_flow(self, pyright_dir: Path) -> None:
-        """IF/ELSE, FOR loops, and conditional QUIT pass type checking."""
-        source = textwrap.dedent("""\
-            flow
-             N I,X
-             S X=0
-             F I=1:1:10 D
-             . S X=X+I
-             W X,!
-             I X>50 W "big",!
-             E  W "small",!
-             Q
-        """).strip()
-        self._transpile_and_check(pyright_dir, "flow", source)
-
-    def test_all_representative_files(self, pyright_dir: Path) -> None:
-        """Combined test: transpile multiple routines, run pyright once."""
-        sources = {
-            "arith": textwrap.dedent("""\
-                arith
-                 N A,B,C
-                 S A=10,B=3
-                 S C=A\\B W C,!
-                 S C=A**B W C,!
-                 S C=A#B W C,!
-                 Q
-            """).strip(),
-            "strings": textwrap.dedent("""\
-                strings
-                 N S
-                 S S="ABC"_"DEF"
-                 W $L(S),!
-                 W $E(S,2,4),!
-                 Q
-            """).strip(),
-            "funcs": textwrap.dedent("""\
-                funcs
-                 W $$SQ(5),!
-                 Q
-                SQ(n)
-                 Q n*n
-            """).strip(),
-        }
-        for name, src in sources.items():
-            code = generate_python(src)
-            (pyright_dir / f"{name}.py").write_text(code)
-
-        result = subprocess.run(
-            [sys.executable, "-m", "pyright", "--project", str(pyright_dir)],
-            capture_output=True,
-            text=True,
-        )
-        assert result.returncode == 0, (
-            f"pyright basic failed:\n{result.stdout}\n{result.stderr}"
-        )
 
 
 @pytest.mark.codegen
@@ -203,7 +44,7 @@ class TestReturnTypeHints:
         assert "-> str | None:" in code
 
     def test_numeric_return_type(self) -> None:
-        """Function returning arithmetic gets -> int | Decimal | None."""
+        """Function returning arithmetic gets -> int | float | Decimal | None."""
         source = textwrap.dedent("""\
             test
              Q
@@ -211,7 +52,7 @@ class TestReturnTypeHints:
              Q a+b
         """).strip()
         code = generate_python(source)
-        assert "-> int | Decimal | None:" in code
+        assert "-> int | float | Decimal | None:" in code
 
     def test_boolean_return_type(self) -> None:
         """Function returning comparison gets -> int | None."""
@@ -291,23 +132,20 @@ class TestArithmeticHelperCodegen:
 
 
 @pytest.mark.slow
+@pytest.mark.quality
 @pytest.mark.codegen
 @pytest.mark.skipif(
-    subprocess.run(
-        [sys.executable, "-m", "pyright", "--version"],
-        capture_output=True,
-    ).returncode
-    != 0,
-    reason="pyright not available via python -m pyright",
+    shutil.which("ty") is None,
+    reason="ty not available on PATH",
 )
-class TestPyrightAllFunctionalFiles:
-    """ALL transpiled MUMPS functional test files pass pyright basic (T025o).
+class TestTyAllFunctionalFiles:
+    """ALL transpiled MUMPS functional test files pass ty type checking.
 
     This test transpiles every .m file under tests/functional/*/inref/ and
-    merge-routines/, runs pyright basic on ALL outputs in a single invocation,
-    and asserts zero type-checking errors.
+    merge-routines/, runs ty check on ALL outputs in a single invocation,
+    and asserts zero type-checking errors (excluding unresolved-import).
 
-    Marked @slow because it transpiles ~1200+ files and runs pyright (~2 min).
+    Marked @slow because it transpiles ~1400+ files and runs ty (~20s).
     """
 
     FUNCTIONAL_DIR = Path(__file__).resolve().parents[2] / "functional"
@@ -328,25 +166,13 @@ class TestPyrightAllFunctionalFiles:
             m_files.extend(sorted(com_dir.glob("*.m")))
         return m_files
 
-    def test_all_transpiled_files_pass_pyright(self, tmp_path: Path) -> None:
-        """Transpile all functional .m files and assert pyright basic passes."""
+    def test_all_transpiled_files_pass_ty(self, tmp_path: Path) -> None:
+        """Transpile all functional .m files and assert ty check passes."""
         m_files = self._collect_m_files()
         assert len(m_files) > 1000, (
             f"Expected 1000+ .m files but found {len(m_files)} — "
             "test setup may be broken"
         )
-
-        # Write pyrightconfig.json
-        config = {
-            "include": ["."],
-            "typeCheckingMode": "basic",
-            "pythonVersion": "3.10",
-            "pythonPlatform": "Linux",
-            "reportMissingTypeStubs": False,
-            "reportMissingImports": False,
-            "reportMissingModuleSource": False,
-        }
-        (tmp_path / "pyrightconfig.json").write_text(json.dumps(config))
 
         # Read all sources and batch-transpile in parallel
         sources: list[tuple[str, str]] = []
@@ -388,41 +214,59 @@ class TestPyrightAllFunctionalFiles:
             + "\n".join(f"  {p.name}: {e}" for p, e in failed_transpile[:10])
         )
 
-        # Run pyright on all transpiled files at once
+        # Generate stub files for cross-routine imports (DO ^ROUTINE / GOTO ^ROUTINE).
+        # These reference external routines not in our test corpus. Scan all
+        # transpiled files for bare `import <name>` inside function bodies and
+        # create minimal stubs so ty can resolve them.
+        existing = {p.stem for p in tmp_path.glob("*.py")}
+        stub_template = (
+            "from typing import Any\ndef __getattr__(name: str) -> Any: ...\n"
+        )
+        import_re = re.compile(r"^\s+import (\w+)\s*$", re.MULTILINE)
+        for py_file in tmp_path.glob("*.py"):
+            for match in import_re.finditer(py_file.read_text()):
+                mod = match.group(1)
+                if mod not in existing and mod not in {"re", "os", "time", "importlib"}:
+                    (tmp_path / f"{mod}.py").write_text(stub_template)
+                    existing.add(mod)
+
+        # Run ty check on all transpiled files.
+        # --extra-search-path: lets ty resolve bare `import <sibling>` between
+        # transpiled files in the same directory (cross-routine calls).
         result = subprocess.run(
-            [sys.executable, "-m", "pyright", "--project", str(tmp_path)],
+            [
+                "ty",
+                "check",
+                "--python-version",
+                "3.10",
+                "--error-on-warning",
+                "--python",
+                str(Path(sys.executable).parent.parent),
+                "--extra-search-path",
+                str(tmp_path),
+                str(tmp_path),
+            ],
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=120,
         )
 
         if result.returncode != 0:
-            # Parse error count from output for a clear message
+            # Parse error lines for a clear message
             lines = result.stdout.strip().split("\n")
-            error_summary = [
-                l
-                for l in lines
-                if "error" in l.lower()
-                and ("found" in l.lower() or "reported" in l.lower())
-            ]
-            summary_msg = (
-                error_summary[-1]
-                if error_summary
-                else lines[-1]
-                if lines
-                else "unknown"
-            )
-
-            # Show first 40 error lines for debugging
-            error_lines = [
-                l for l in lines if ": error:" in l or "error:" in l.lower()
-            ][:40]
+            error_lines = [l for l in lines if "error" in l.lower()][:40]
             error_detail = (
                 "\n".join(error_lines) if error_lines else result.stdout[:3000]
             )
 
+            # Count total errors from last line (ty format: "Found N diagnostics")
+            summary_lines = [
+                l for l in lines if "found" in l.lower() and "diagnostic" in l.lower()
+            ]
+            summary_msg = summary_lines[-1] if summary_lines else "unknown"
+
             pytest.fail(
-                f"pyright basic failed on {transpiled} transpiled files.\n"
+                f"ty check failed on {transpiled} transpiled files.\n"
                 f"Summary: {summary_msg}\n"
                 f"First errors:\n{error_detail}"
             )
@@ -570,6 +414,7 @@ class TestRuffLintValidation:
 
 
 @pytest.mark.slow
+@pytest.mark.quality
 @pytest.mark.codegen
 class TestRuffAllFunctionalFiles:
     """ALL transpiled MUMPS functional test files pass ruff check (T029).
@@ -754,7 +599,7 @@ class TestFormatValidation:
         assert len(code) > 0, "generate_python should produce non-empty code"
 
         # Verify it contains expected Python constructs (shows it's valid Python)
-        assert "def " in code or "# pyright:" in code
+        assert "def " in code or "import " in code
 
     def test_no_format_flag_produces_unformatted_output(self, tmp_path: Path) -> None:
         """T031: verify --no-format flag skips formatting.
@@ -894,6 +739,7 @@ class TestFormatValidation:
 
 
 @pytest.mark.slow
+@pytest.mark.quality
 @pytest.mark.codegen
 class TestFormatAllFunctionalFiles:
     """ALL transpiled functional test files are pre-formatted (T032 comprehensive).

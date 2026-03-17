@@ -11,9 +11,17 @@ These are imported into generated code to ensure correct MUMPS behavior.
 
 from __future__ import annotations
 
+import math
 import re
-from decimal import Decimal
+from decimal import Context, Decimal, InvalidOperation, ROUND_HALF_EVEN, localcontext
+from functools import lru_cache
 from typing import Any, Union
+
+# Pre-compiled regex for m_num string parsing (avoids per-call recompilation)
+_M_NUM_RE = re.compile(r"(\d*\.?\d*)(E[+-]?\d+)?")
+
+# Pre-built 18-digit precision context shared across arithmetic calls
+_CTX18 = Context(prec=18, rounding=ROUND_HALF_EVEN)
 
 
 def m_str(value: Any) -> str:
@@ -47,23 +55,33 @@ def m_str(value: Any) -> str:
         >>> m_str(Decimal("9999997799E14"))
         '999999779900000000000000'
     """
-    # Handle MArray objects by extracting their value.
-    # In TRAMPOLINE strategy, state._locals contains MArrays and expressions
-    # like m_str(state._locals.get('V', '')) receive MArray objects.
+    # Type-based fast paths before hasattr (avoids ~650ns hasattr call for common types)
+    t = type(value)
+    if t is str:
+        return value
+    if t is int or t is bool:
+        return str(int(value))
     if hasattr(value, "value"):
         # Recursively extract value in case of nested MArrays
         return m_str(value.value)
     # Handle Decimal type directly for precise large numbers
-    if isinstance(value, Decimal):
+    if t is Decimal:
         d = value
         # Handle negative zero - MUMPS doesn't distinguish -0 from 0
         if d == 0:
             return "0"
-    elif isinstance(value, int):
-        # Integer values: simple string conversion
-        return str(value)
-    elif isinstance(value, float):
+    elif t is float:
         # Float values: convert to Decimal for precise formatting
+        if value == 0.0:
+            return "0"
+        d = Decimal(str(value))
+    elif isinstance(value, Decimal):
+        d = value
+        if d == 0:
+            return "0"
+    elif isinstance(value, (int, bool)):
+        return str(int(value))
+    elif isinstance(value, float):
         if value == 0.0:
             return "0"
         d = Decimal(str(value))
@@ -116,6 +134,44 @@ def m_str(value: Any) -> str:
     return result
 
 
+@lru_cache(maxsize=16384)
+def _m_num_str(s: str) -> Union[int, float, Decimal]:
+    """Cached MUMPS numeric coercion for string inputs.
+
+    Same logic as m_num for strings, but cached so repeated values
+    (e.g. county codes, FIPS codes, field numbers) avoid re-parsing.
+    """
+    if not s:
+        return 0
+
+    # Process leading signs
+    sign = 1
+    while s and s[0] in "+-":
+        if s[0] == "-":
+            sign = -sign
+        s = s[1:]
+
+    if not s:
+        return 0
+
+    match = _M_NUM_RE.match(s)
+    assert match is not None
+    num_str = match.group(1)
+    exp_str = match.group(2) or ""
+    if not num_str or num_str == ".":
+        return 0
+
+    full_num_str = num_str + exp_str
+
+    if "." in num_str or exp_str:
+        result = Decimal(full_num_str) * sign
+        if result == int(result):
+            return int(result)
+        return result
+    else:
+        return int(num_str) * sign
+
+
 def m_num(value: Any) -> Union[int, float, Decimal]:
     """Convert a value to its MUMPS numeric interpretation.
 
@@ -158,74 +214,20 @@ def m_num(value: Any) -> Union[int, float, Decimal]:
         >>> m_num("3.14ABC")
         3.14
     """
-    # Handle MArray objects by extracting their value.
-    # In TRAMPOLINE strategy, state._locals contains MArrays.
-    if hasattr(value, "value"):
+    # Type-based fast paths — avoids hasattr/isinstance overhead on hot path
+    t = type(value)
+    if t is int or t is bool:
+        return int(value)
+    if t is str:
+        return _m_num_str(value)
+    if t is float:
+        return int(value) if value == int(value) else value
+    elif hasattr(value, "value"):
         return m_num(value.value)
-
-    # Decimal values - keep as Decimal for precision (large numbers)
-    if isinstance(value, Decimal):
-        # Normalize: if it's an integer value, return int
-        # But only if it fits in int range without precision loss
-        if value == int(value):
-            return int(value)
-        return value
-
-    # Already numeric - normalize float to int if it's a whole number
-    if isinstance(value, float):
-        if value == int(value):
-            return int(value)
-        return value
-    if isinstance(value, int):
-        return value
-
-    # Convert to string for processing
-    s = str(value)
-
-    # Empty string → 0
-    if not s:
-        return 0
-
-    # Process leading signs and reduce them
-    sign = 1
-    while s and s[0] in "+-":
-        if s[0] == "-":
-            sign = -sign
-        s = s[1:]
-
-    # Empty after sign processing → 0
-    if not s:
-        return 0
-
-    # Find longest numeric prefix including optional exponential notation
-    # Pattern: optional digits, optional decimal point, optional more digits,
-    # optional exponent (E followed by optional sign and digits)
-    # MUMPS SPEC: Only uppercase E is recognized for scientific notation!
-    # "123e2" → 123, "123E2" → 12300
-    match = re.match(r"(\d*\.?\d*)(E[+-]?\d+)?", s)
-    assert match is not None  # re.match with this pattern always matches
-    num_str = match.group(1)
-    exp_str = match.group(2) or ""
-
-    # Empty numeric part or just decimal point → 0
-    if not num_str or num_str == ".":
-        return 0
-
-    # Combine mantissa and exponent
-    full_num_str = num_str + exp_str
-
-    # Parse and apply sign
-    if "." in num_str or exp_str:
-        # Use Decimal for precise handling - preserves exact precision
-        # and avoids scientific notation on output (m_format_output handles Decimal)
-        result = Decimal(full_num_str) * sign
-        # Normalize: if it's an integer value, return int
-        if result == int(result):
-            return int(result)
-        # Keep as Decimal to preserve precision and formatting
-        return result
+    elif t is Decimal:
+        return int(value) if value == int(value) else value
     else:
-        return int(num_str) * sign
+        return _m_num_str(str(value))
 
 
 def m_truth(value: Any) -> bool:
@@ -318,19 +320,14 @@ def m_add(left: Any, right: Any) -> Union[int, Decimal]:
         >>> m_add(0.001, 0.001)
         Decimal('0.002')
     """
-    from decimal import localcontext
-
     left_num = m_num(left)
     right_num = m_num(right)
-
-    with localcontext() as ctx:
-        ctx.prec = 18
-        left_dec = (
-            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
-        )
-        right_dec = (
-            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
-        )
+    # Fast path: integer-only addition (no Decimal overhead)
+    if type(left_num) is int and type(right_num) is int:
+        return left_num + right_num
+    with localcontext(_CTX18):
+        left_dec = left_num if type(left_num) is Decimal else Decimal(str(left_num))
+        right_dec = right_num if type(right_num) is Decimal else Decimal(str(right_num))
         result = left_dec + right_dec
         # Normalize: return int for whole numbers
         if result == int(result):
@@ -357,19 +354,14 @@ def m_sub(left: Any, right: Any) -> Union[int, Decimal]:
         >>> m_sub(0.003, 0.001)
         Decimal('0.002')
     """
-    from decimal import localcontext
-
     left_num = m_num(left)
     right_num = m_num(right)
-
-    with localcontext() as ctx:
-        ctx.prec = 18
-        left_dec = (
-            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
-        )
-        right_dec = (
-            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
-        )
+    # Fast path: integer-only subtraction (no Decimal overhead)
+    if type(left_num) is int and type(right_num) is int:
+        return left_num - right_num
+    with localcontext(_CTX18):
+        left_dec = left_num if type(left_num) is Decimal else Decimal(str(left_num))
+        right_dec = right_num if type(right_num) is Decimal else Decimal(str(right_num))
         result = left_dec - right_dec
         # Normalize: return int for whole numbers
         if result == int(result):
@@ -396,19 +388,14 @@ def m_mul(left: Any, right: Any) -> Union[int, Decimal]:
         >>> m_mul(0.01, 0.02)
         Decimal('0.0002')
     """
-    from decimal import localcontext
-
     left_num = m_num(left)
     right_num = m_num(right)
-
-    with localcontext() as ctx:
-        ctx.prec = 18
-        left_dec = (
-            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
-        )
-        right_dec = (
-            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
-        )
+    # Fast path: integer-only multiplication (no Decimal overhead)
+    if type(left_num) is int and type(right_num) is int:
+        return left_num * right_num
+    with localcontext(_CTX18):
+        left_dec = left_num if type(left_num) is Decimal else Decimal(str(left_num))
+        right_dec = right_num if type(right_num) is Decimal else Decimal(str(right_num))
         result = left_dec * right_dec
         # Normalize: return int for whole numbers
         if result == int(result):
@@ -438,19 +425,18 @@ def m_int_div(left: Any, right: Any) -> int:
         >>> m_int_div("10", "3")
         3
     """
-    from decimal import localcontext
-
     left_num = m_num(left)
     right_num = m_num(right)
-
-    with localcontext() as ctx:
-        ctx.prec = 18
-        left_dec = (
-            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
-        )
-        right_dec = (
-            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
-        )
+    # Fast path: integer-only division (truncation towards zero)
+    if type(left_num) is int and type(right_num) is int:
+        # Python // is floor division; for truncation towards zero adjust negative results
+        q = left_num // right_num
+        if (left_num < 0) ^ (right_num < 0) and q * right_num != left_num:
+            q += 1
+        return q
+    with localcontext(_CTX18):
+        left_dec = left_num if type(left_num) is Decimal else Decimal(str(left_num))
+        right_dec = right_num if type(right_num) is Decimal else Decimal(str(right_num))
         return int(left_dec / right_dec)
 
 
@@ -478,19 +464,14 @@ def m_pow(left: Any, right: Any) -> Union[int, Decimal]:
         >>> m_pow(0, 0)
         1
     """
-    from decimal import InvalidOperation, localcontext
-
     left_num = m_num(left)
     right_num = m_num(right)
-
-    with localcontext() as ctx:
-        ctx.prec = 18
-        left_dec = (
-            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
-        )
-        right_dec = (
-            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
-        )
+    # Fast path: integer exponentiation with non-negative integer exponent
+    if type(left_num) is int and type(right_num) is int and right_num >= 0:
+        return left_num**right_num
+    with localcontext(_CTX18):
+        left_dec = left_num if type(left_num) is Decimal else Decimal(str(left_num))
+        right_dec = right_num if type(right_num) is Decimal else Decimal(str(right_num))
         try:
             result = left_dec**right_dec
         except InvalidOperation:
@@ -528,23 +509,16 @@ def m_mod(left: Any, right: Any) -> Union[int, float, Decimal]:
         >>> m_mod(-7, 3)
         2
     """
-    import math
-    from decimal import localcontext
-
     left_num = m_num(left)
     right_num = m_num(right)
-
+    # Fast path: integer modulo — Python % uses floor division, same as MUMPS #
+    if type(left_num) is int and type(right_num) is int:
+        return left_num % right_num
     # Use high precision for Decimal operations
-    with localcontext() as ctx:
-        ctx.prec = 18
-
+    with localcontext(_CTX18):
         # Convert both to Decimal for consistent precision
-        left_dec = (
-            Decimal(str(left_num)) if not isinstance(left_num, Decimal) else left_num
-        )
-        right_dec = (
-            Decimal(str(right_num)) if not isinstance(right_num, Decimal) else right_num
-        )
+        left_dec = left_num if type(left_num) is Decimal else Decimal(str(left_num))
+        right_dec = right_num if type(right_num) is Decimal else Decimal(str(right_num))
 
         # MUMPS modulo: dividend - (divisor * floor(dividend / divisor))
         # Decimal's % uses truncation, but MUMPS wants floor division

@@ -13,7 +13,7 @@ Each class inherits from an ASG class and overrides ``__init__`` to adapt
 to textX's calling convention.
 """
 
-from typing import List, Optional, Type
+from typing import Optional
 
 from m2py.asg.expressions import (
     MExpr,
@@ -834,18 +834,18 @@ COMMAND_CLASSES = [
 ]
 
 
-def get_expression_classes() -> List[Type]:
+def get_expression_classes() -> list[type]:
     """Get list of custom expression classes for textX registration.
 
     Only includes classes from expressions.tx grammar.
     """
-    return EXPRESSION_CLASSES.copy()
+    return list(EXPRESSION_CLASSES)
 
 
-def get_all_classes() -> List[Type]:
+def get_all_classes() -> list[type]:
     """Get all custom classes (expressions + commands) for textX registration.
 
     This includes expression classes, command expression classes, and command classes.
     Use this when loading the full command grammar.
     """
-    return EXPRESSION_CLASSES + COMMAND_EXPRESSION_CLASSES + COMMAND_CLASSES
+    return list(EXPRESSION_CLASSES + COMMAND_EXPRESSION_CLASSES + COMMAND_CLASSES)

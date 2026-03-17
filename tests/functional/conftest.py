@@ -457,6 +457,12 @@ def _run_m2py_worker(
         )
 
 
+# Use 'spawn' context to avoid deadlocks when forking inside multi-threaded
+# xdist worker processes.  The default 'fork' start method copies lock states
+# from other threads, which can cause the child to hang.
+_MP_CTX = multiprocessing.get_context("spawn")
+
+
 def run_mumps(
     source: str,
     timeout: int = DEFAULT_TIMEOUT,
@@ -475,8 +481,8 @@ def run_mumps(
     Returns:
         ExecutionResult with output and status
     """
-    result_queue: multiprocessing.Queue = multiprocessing.Queue()
-    process = multiprocessing.Process(
+    result_queue: multiprocessing.Queue = _MP_CTX.Queue()
+    process = _MP_CTX.Process(
         target=_run_m2py_worker,
         args=(source, result_queue, args, helper_sources),
     )
@@ -497,6 +503,9 @@ def run_mumps(
             if process.is_alive():
                 process.kill()
                 process.join(timeout=1)
+        # Clean up Queue resources (pipe fd + feeder thread)
+        result_queue.close()
+        result_queue.join_thread()
 
     return ExecutionResult(
         output="",

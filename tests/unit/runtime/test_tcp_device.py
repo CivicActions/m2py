@@ -34,6 +34,7 @@ def echo_server():
     server.bind(("127.0.0.1", 0))  # Let OS pick a free port
     server.listen(5)
     host, port = server.getsockname()
+    shutdown = threading.Event()
 
     def handle_client(conn: socket.socket) -> None:
         try:
@@ -48,28 +49,28 @@ def echo_server():
             conn.close()
 
     def serve() -> None:
-        server.settimeout(5.0)
+        server.settimeout(0.5)
+        while not shutdown.is_set():
+            try:
+                conn, _ = server.accept()
+                t = threading.Thread(target=handle_client, args=(conn,), daemon=True)
+                t.start()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
         try:
-            while True:
-                try:
-                    conn, _ = server.accept()
-                    t = threading.Thread(
-                        target=handle_client, args=(conn,), daemon=True
-                    )
-                    t.start()
-                except socket.timeout:
-                    break
-                except OSError:
-                    break
-        finally:
             server.close()
+        except OSError:
+            pass
 
     thread = threading.Thread(target=serve, daemon=True)
     thread.start()
 
     yield (host, port)
 
-    server.close()
+    shutdown.set()
+    thread.join(timeout=5)
 
 
 @pytest.fixture

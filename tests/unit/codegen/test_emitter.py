@@ -226,3 +226,62 @@ class TestCodeEmitterGetCode:
         emitter = CodeEmitter()
         emitter.line("x = 1")
         assert emitter.get_code().endswith("\n")
+
+
+# =============================================================================
+# Tests for Deferred Functions
+# =============================================================================
+
+
+@pytest.mark.codegen
+class TestCodeEmitterDeferredFunctions:
+    """Tests for emit_deferred_functions() support."""
+
+    def test_deferred_functions_initially_empty(self):
+        """Deferred functions list starts empty."""
+        emitter = CodeEmitter()
+        assert emitter._deferred_functions == []
+
+    def test_emit_deferred_appends_to_output(self):
+        """emit_deferred_functions() appends deferred code to output lines."""
+        emitter = CodeEmitter()
+        emitter.line("import foo")
+        emitter._deferred_functions.append("def helper():\n    pass")
+        emitter.emit_deferred_functions()
+        code = emitter.get_code()
+        assert "def helper():" in code
+        assert "    pass" in code
+        assert code.index("import foo") < code.index("def helper():")
+
+    def test_emit_deferred_clears_list(self):
+        """After emit, the deferred list is cleared."""
+        emitter = CodeEmitter()
+        emitter._deferred_functions.append("def f(): pass")
+        emitter.emit_deferred_functions()
+        assert emitter._deferred_functions == []
+
+    def test_emit_deferred_multiple_functions(self):
+        """Multiple deferred functions are all emitted in order."""
+        emitter = CodeEmitter()
+        emitter._deferred_functions.append("def first():\n    return 1")
+        emitter._deferred_functions.append("def second():\n    return 2")
+        emitter.emit_deferred_functions()
+        code = emitter.get_code()
+        assert code.index("def first():") < code.index("def second():")
+
+    def test_emit_deferred_noop_when_empty(self):
+        """Calling emit_deferred_functions with no deferred code is a no-op."""
+        emitter = CodeEmitter()
+        emitter.line("x = 1")
+        emitter.emit_deferred_functions()
+        assert emitter.get_code() == "x = 1\n"
+
+    def test_deferred_functions_separated_by_blank_line(self):
+        """Each deferred function is preceded by a blank line."""
+        emitter = CodeEmitter()
+        emitter.line("# main code")
+        emitter._deferred_functions.append("def helper():\n    pass")
+        emitter.emit_deferred_functions()
+        lines = emitter._lines
+        helper_idx = next(i for i, l in enumerate(lines) if "def helper" in l)
+        assert lines[helper_idx - 1] == ""

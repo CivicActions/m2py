@@ -1,4 +1,3 @@
-# pyright: reportGeneralTypeIssues=false
 from m2py.codegen.helpers import m_str, m_num, m_truth, m_compare, m_add, m_sub
 from m2py.runtime import (
     MUMPSRuntime,

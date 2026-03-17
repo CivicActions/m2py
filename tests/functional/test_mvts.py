@@ -24,11 +24,14 @@ Usage:
 
 from __future__ import annotations
 
+import io
+import json
 import os
 import re
 import sys
 import tempfile
 import types
+import warnings
 from dataclasses import dataclass
 
 import pytest
@@ -196,6 +199,11 @@ def _load_all_mvts_routines() -> tuple[
     Transpiled Python files are written to a cache directory on disk so that
     subprocess-based JOB can import them via PYTHONPATH.
 
+    Under pytest-xdist, multiple workers share the same deterministic cache
+    directory.  A filelock ensures only one worker transpiles; others wait
+    and reuse the cached .py files, avoiding a thundering-herd of redundant
+    grammar compilations.
+
     Note: Files starting with _ (like _.m, _1A.m) are registered with _pct_
     prefix module names since they represent MUMPS % routines and codegen
     generates imports like `import _pct_` for `D ^%`.
@@ -203,35 +211,117 @@ def _load_all_mvts_routines() -> tuple[
     Returns:
         Tuple of (routine_modules dict, transpile_errors dict, cache_dir path)
     """
+    import hashlib
+
+    from filelock import FileLock
+
     from m2py.codegen import generate_python
 
-    # Create cache directory for transpiled .py files (subprocess needs disk access)
+    # Compute a fingerprint of the codegen + helpers source so we
+    # auto-invalidate the cache when the transpiler changes.
+    def _codegen_fingerprint() -> str:
+        import m2py.codegen as _cg
+        import m2py.runtime.helpers as _rh
+
+        h = hashlib.sha256()
+        for mod in (_cg, _rh):
+            src_path = getattr(mod, "__file__", None)
+            if src_path and os.path.isfile(src_path):
+                with open(src_path, "rb") as fh:
+                    h.update(fh.read())
+        return h.hexdigest()[:16]
+
+    codegen_hash = _codegen_fingerprint()
+
+    # Deterministic cache directory (shared across xdist workers)
     _WORKSPACE_TMP.mkdir(exist_ok=True)
-    cache_dir = tempfile.mkdtemp(prefix="m2py_mvts_", dir=str(_WORKSPACE_TMP))
+    cache_dir = str(_WORKSPACE_TMP / "mvts_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    manifest_path = os.path.join(cache_dir, "_manifest.json")
+    lock_path = str(_WORKSPACE_TMP / "mvts_cache.lock")
 
     all_routine_files = list(MVTS_INREF.glob("*.m"))
     routine_modules: dict[str, types.ModuleType | None] = {}
     transpile_errors: dict[str, str] = {}
 
+    # Acquire lock — first worker transpiles, others wait and reuse
+    with FileLock(lock_path, timeout=300):
+        manifest_valid = False
+        if os.path.exists(manifest_path):
+            with open(manifest_path) as f:
+                manifest = json.load(f)
+            # Reuse only if the codegen hasn't changed since last transpile
+            if manifest.get("codegen_hash") == codegen_hash:
+                manifest_valid = True
+                transpile_errors = manifest.get("errors", {})
+
+        if not manifest_valid:
+            # (Re-)transpile all routines — first worker or stale cache
+            for source_path in all_routine_files:
+                filename_stem = source_path.stem
+                module_name = filename_to_module_name(filename_stem)
+                source = source_path.read_text()
+
+                try:
+                    # Suppress UNRESOLVED GOTO warnings from codegen —
+                    # routines like V3ALDO1/V3ALDO2 intentionally test
+                    # unreachable code paths.
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", message="UNRESOLVED GOTO")
+                        python_code = generate_python(source)
+
+                    py_path = os.path.join(cache_dir, f"{module_name}.py")
+                    with open(py_path, "w") as f:
+                        f.write(python_code)
+                except Exception as e:
+                    transpile_errors[module_name] = str(e)
+
+            # Write manifest so other workers know transpilation is done
+            with open(manifest_path, "w") as f:
+                json.dump({"errors": transpile_errors, "codegen_hash": codegen_hash}, f)
+
+    # Load modules from disk (each worker does this independently since
+    # module objects aren't shared across processes).
+    #
+    # Two-pass loading: MUGJ and MVTS share 176 routine names (V1BOA,
+    # V1AC, etc.) but with different source code.  If MUGJ ran first, its
+    # modules are still in sys.modules.  During exec(), transpiled code
+    # uses `import V1BOA1` to call other routines — which resolves from
+    # sys.modules.  A single-pass loop that registers + execs each module
+    # sequentially can hit MUGJ's stale entry for modules not yet processed.
+    #
+    # Pass 1: register empty shells so every `import RoutineName` inside
+    #         exec() resolves to the MVTS module (even if not yet populated).
+    # Pass 2: exec() code into each shell.
+    module_code: dict[str, str] = {}
     for source_path in all_routine_files:
         filename_stem = source_path.stem
         module_name = filename_to_module_name(filename_stem)
-        source = source_path.read_text()
 
+        if module_name in transpile_errors:
+            routine_modules[module_name] = None
+            continue
+
+        py_path = os.path.join(cache_dir, f"{module_name}.py")
         try:
-            python_code = generate_python(source)
-
-            # Write to disk so subprocess JOB can import via PYTHONPATH
-            py_path = os.path.join(cache_dir, f"{module_name}.py")
-            with open(py_path, "w") as f:
-                f.write(python_code)
-
+            with open(py_path) as f:
+                module_code[module_name] = f.read()
             module = types.ModuleType(module_name)
             sys.modules[module_name] = module
-            exec(python_code, module.__dict__)
             routine_modules[module_name] = module
         except Exception as e:
-            # Mark routine as failed to transpile
+            routine_modules[module_name] = None
+            transpile_errors[module_name] = str(e)
+
+    # Pass 2: execute code into the pre-registered shells
+    for module_name, python_code in module_code.items():
+        module = routine_modules[module_name]
+        if module is None:
+            continue
+        try:
+            exec(python_code, module.__dict__)
+        except Exception as e:
             routine_modules[module_name] = None
             transpile_errors[module_name] = str(e)
 
@@ -364,6 +454,13 @@ class TestMvtsSuite:
             if not entry_func or not callable(entry_func):
                 pytest.xfail(f"No entry point for {routine_name}")
 
+            # Redirect stdin so interactive MVTS prompts get a safe default
+            # answer instead of raising EOFError in CI.  V1GVN, for example,
+            # asks "DO YOU MIND IF GLOBAL ... IS KILLD (Y/N)?" when %-prefixed
+            # globals pre-exist on IRIS; "N" means "go ahead and kill them".
+            saved_stdin = sys.stdin
+            sys.stdin = io.StringIO("N\n" * 100)
+
             try:
                 run_with_goto_support(entry_func, runtime, {})
                 output = runtime.get_output()
@@ -371,6 +468,8 @@ class TestMvtsSuite:
                 # Capture partial output even on crash — allows tests that crash
                 # mid-execution to still validate passes collected before the crash
                 output = runtime.get_output()
+            finally:
+                sys.stdin = saved_stdin
         finally:
             # Kill any orphaned JOB child processes before closing storage
             runtime.kill_job_processes()

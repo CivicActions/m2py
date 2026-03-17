@@ -11,6 +11,7 @@ Provides the core transpilation logic:
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor
@@ -442,18 +443,22 @@ def transpile_paths(
     output_dir: Optional[str] = None,
     no_format: bool = False,
     verbose: bool = False,
+    overrides_dir: Optional[str] = None,
 ) -> TranspileSummary:
     """Resolve paths, discover .m files, and transpile each.
 
     For files: transpile directly.
     For directories: recursively glob for *.m files.
     When output_dir is specified, mirror input directory structure.
+    When overrides_dir is specified, .py files matching an input .m
+    stem are copied to the output instead of transpiling.
 
     Args:
         paths: List of file/directory path strings
         output_dir: Optional output directory (mirrors input structure)
         no_format: If True, skip ruff processing
         verbose: If True, print file-by-file progress
+        overrides_dir: Optional directory of .py override files
 
     Returns:
         TranspileSummary with aggregate results
@@ -494,9 +499,50 @@ def transpile_paths(
     results: list[TranspileResult] = list(not_found_results)
     out_dir = Path(output_dir).resolve() if output_dir else None
 
+    # Index override files by upper-cased stem
+    overrides: dict[str, Path] = {}
+    if overrides_dir is not None:
+        ov_dir = Path(overrides_dir).resolve()
+        for py_file in ov_dir.glob("*.py"):
+            if not py_file.name.startswith("_"):
+                overrides[py_file.stem.upper()] = py_file
+
     # Build list of (input_path, output_path, source) for batch transpilation
     file_specs: list[tuple[Path, Path, str]] = []
     for input_path, base_dir in m_files:
+        routine_name = input_path.stem.upper()
+        override_py = overrides.get(routine_name)
+        if override_py is not None:
+            # Copy override file instead of transpiling
+            o_path = _compute_output_path(input_path, base_dir, out_dir)
+            try:
+                o_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(override_py, o_path)
+                results.append(
+                    TranspileResult(
+                        input_path=input_path,
+                        output_path=o_path,
+                        success=True,
+                        error=None,
+                        routine_name=routine_name,
+                    )
+                )
+                if verbose:
+                    print(
+                        f"  Override: {input_path.name} → {override_py.name}",
+                        file=sys.stderr,
+                    )
+            except OSError as e:
+                results.append(
+                    TranspileResult(
+                        input_path=input_path,
+                        output_path=None,
+                        success=False,
+                        error=f"Cannot copy override: {e}",
+                        routine_name=routine_name,
+                    )
+                )
+            continue
         output_path = _compute_output_path(input_path, base_dir, out_dir)
         try:
             try:

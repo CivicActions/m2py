@@ -19,7 +19,7 @@ All Phase 1 deliverables (`core/values.py`, `core/parsing.py`, `core/tokenizer.p
 **Language/Version**: Python 3.10+
 **Primary Dependencies**: textX ≥4.0 (parser), pytest ≥7.0 (testing)
 **Storage**: N/A (transpiler — no persistent storage)
-**Testing**: pytest with `uv run pytest` (5,883 tests, `-n auto` parallel execution)
+**Testing**: pytest with `uv run pytest` (5,883 tests, `-n 4` parallel execution)
 **Target Platform**: Linux (dev container, Ubuntu 24.04)
 **Project Type**: Single project — MUMPS-to-Python transpiler
 **Performance Goals**: All 5,883 tests pass in <60s; no transpilation performance regression

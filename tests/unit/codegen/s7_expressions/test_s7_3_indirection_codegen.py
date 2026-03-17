@@ -554,17 +554,18 @@ class TestGenerateNameIndirectionUnified:
 
 @pytest.mark.codegen
 class TestGenerateDataIndirectionName:
-    """Tests for generate_data_indirection_name() subscript quoting.
+    """Tests for generate_data_indirection_name() subscript merging.
 
-    The fix uses _format_subscript() to properly quote string subscripts
-    in f-string construction. Without this, f'({"A"})' evaluates to '(A)'
-    instead of '("A")'.
+    Uses data_indirected() with per_level_subscripts to properly merge
+    post-resolution subscripts into the resolved name.  This avoids the
+    split-parentheses bug where '@X@("A")' produced 'name("sub")("A")'
+    instead of 'name("sub","A")'.
 
-    Fixed suite: V4MERGE (17 fails → 0)
+    Fixed suite: V4MERGE (17 fails → 0), %uttcovr (13 fails → 0)
     """
 
-    def test_data_indirection_uses_format_subscript(self, mock_ctx):
-        """$D(@X@(1)) generates code using _format_subscript."""
+    def test_data_indirection_uses_per_level_subscripts(self, mock_ctx):
+        """$D(@X@(1)) generates code using data_indirected with per_level_subscripts."""
         from m2py.codegen.indirection import generate_data_indirection_name
 
         var = MVariable(name="X")
@@ -575,7 +576,8 @@ class TestGenerateDataIndirectionName:
         )
 
         result = generate_data_indirection_name(inner, mock_ctx)
-        assert "_format_subscript" in result
+        assert "data_indirected" in result
+        assert "per_level_subscripts" in result
 
 
 @pytest.mark.codegen

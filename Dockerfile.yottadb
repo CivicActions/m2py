@@ -21,6 +21,33 @@ ENV UV_LINK_MODE=copy
 # Set backend
 ENV M2PY_GLOBAL_BACKEND=yottadb
 
+# Configure database with VistA-compatible settings.
+# Based on WorldVistA/docker-vista createVistaInstance.sh (Sam Habiel et al.).
+# Key tunings vs YDB defaults:
+#   BLOCK_SIZE=4096, RECORD_SIZE=16368, KEY_SIZE=1019  — VistA data needs large records/keys
+#   GLOBAL_BUFFER_COUNT=4096  — 16 MB buffer cache (vs 1024 default) for heavy ^DD traversal
+#   ALLOCATION=200000, EXTENSION_COUNT=1024  — pre-allocate to reduce file growth overhead
+#   LOCK_SPACE=4096  — DMUFINIT acquires ~580 concurrent locks during package installation
+#   null_subscripts=always  — required by VistA code (e.g., ^TMP("MXMLPRSE",$J,"ELE",""))
+#   TEMP segment (MM access)  — memory-mapped I/O for transient globals (^TMP, ^UTILITY, etc.)
+RUN bash -c '\
+    source /opt/yottadb/current/ydb_env_set && \
+    { echo "change -segment DEFAULT -ACCESS_METHOD=BG -BLOCK_SIZE=4096 -ALLOCATION=200000 -EXTENSION_COUNT=1024 -GLOBAL_BUFFER_COUNT=4096 -LOCK_SPACE=4096"; \
+      echo "change -region DEFAULT -RECORD_SIZE=16368 -KEY_SIZE=1019 -NULL_SUBSCRIPTS=ALWAYS"; \
+      echo "add -segment TEMP -ACCESS_METHOD=MM -BLOCK_SIZE=4096 -ALLOCATION=10000 -EXTENSION_COUNT=1024 -GLOBAL_BUFFER_COUNT=4096 -LOCK_SPACE=400 -FILE=$ydb_dir/$ydb_rel/g/temp.dat"; \
+      echo "add -region TEMP -RECORD_SIZE=16368 -KEY_SIZE=1019 -NULL_SUBSCRIPTS=ALWAYS -NOJOURNAL -DYNAMIC_SEGMENT=TEMP"; \
+      echo "add -name TMP -region=TEMP"; \
+      echo "add -name TEMP -region=TEMP"; \
+      echo "add -name UTILITY -region=TEMP"; \
+      echo "add -name XTMP -region=TEMP"; \
+      echo "add -name XUTL -region=TEMP"; \
+      echo "add -name HLTMP -region=TEMP"; \
+      echo "show -all"; \
+    } | yottadb -run GDE && \
+    mupip create -region=TEMP && \
+    mupip set -null_subscripts=always -region DEFAULT && \
+    mupip set -lock_space=4096 -region DEFAULT'
+
 # Source YDB env on every bash invocation
 RUN echo 'source /opt/yottadb/current/ydb_env_set' >> /root/.bashrc
 

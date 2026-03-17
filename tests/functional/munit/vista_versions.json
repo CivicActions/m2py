@@ -1,0 +1,13 @@
+{
+  "_comment": "Pinned VistA dependency versions for M-Unit integration tests. Update commits and re-run setup_deps.py to refresh cached data.",
+  "VistA": {
+    "repo": "WorldVistA/VistA",
+    "commit": "6c18f1bf98a3c2b33aa0c61ced6282a42c72e1aa",
+    "url": "https://github.com/WorldVistA/VistA/archive/6c18f1bf98a3c2b33aa0c61ced6282a42c72e1aa.zip"
+  },
+  "VistA-M": {
+    "repo": "WorldVistA/VistA-M",
+    "commit": "b7aecb9029f9bb8639a7bfa63b635469065ab44d",
+    "url": "https://github.com/WorldVistA/VistA-M/archive/b7aecb9029f9bb8639a7bfa63b635469065ab44d.zip"
+  }
+}

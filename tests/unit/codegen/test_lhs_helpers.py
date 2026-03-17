@@ -24,11 +24,13 @@ pytestmark = pytest.mark.codegen
 def _make_ctx(
     strategy: GotoStrategy = GotoStrategy.SIMPLE_FUNCTIONS,
     state_vars: set | None = None,
+    uses_dynamic_locals: bool = False,
 ) -> MagicMock:
     """Create a mock GeneratorContext."""
     ctx = MagicMock()
     ctx.strategy = strategy
     ctx.state_vars = state_vars or set()
+    ctx.uses_dynamic_locals = uses_dynamic_locals
     ctx.emitter = MagicMock()
     return ctx
 
@@ -185,6 +187,28 @@ class TestMVariable:
         getter, setter = _build_lhs_getter_setter(target, ctx)
         assert "getattr(state" in getter
         assert "setattr(state" in setter
+
+    def test_trampoline_state_var_with_dynamic_locals(self):
+        """When uses_dynamic_locals is True, even state_vars must use _scope.
+
+        In trampoline routines with dynamic locals (execute_mumps / indirection),
+        variables live in state._locals (exposed as _scope), not as state attrs.
+        SET $PIECE must use _scope-based getter/setter to read/write the correct
+        location — otherwise the field value update silently operates on a
+        non-existent state attribute while the real variable is untouched.
+        """
+        ctx = _make_ctx(
+            strategy=GotoStrategy.TRAMPOLINE,
+            state_vars={"DV"},
+            uses_dynamic_locals=True,
+        )
+        target = _make_local_var("DV")
+        getter, setter = _build_lhs_getter_setter(target, ctx)
+        # Must use _scope (state._locals), NOT getattr(state, ...)
+        assert "getattr(state" not in getter
+        assert "setattr(state" not in setter
+        assert "_scope" in getter
+        assert "_scope" in setter
 
     def test_trampoline_non_state_var(self):
         ctx = _make_ctx(strategy=GotoStrategy.TRAMPOLINE, state_vars={"Y"})

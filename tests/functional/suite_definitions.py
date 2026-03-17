@@ -423,8 +423,8 @@ MVTS_VV1_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition(
         "152.1---V1IDARG",
         "V1IDARG",
-        expected_passes=27,
-        expected_fails=5,
+        expected_passes=36,
+        expected_fails=10,
     ),
     RoutineDefinition("158.1---V1XECA", "V1XECA", expected_passes=22),
     RoutineDefinition("161---V1XECB", "V1XECB", expected_passes=7),
@@ -521,7 +521,7 @@ MVTS_VV3_ROUTINES: list[RoutineDefinition] = [
     ),
     RoutineDefinition("43.1---V3FN2", "V3FN2", expected_passes=403),
     RoutineDefinition("65.1---V3FN3", "V3FN3", expected_passes=49),
-    RoutineDefinition("70.1---V3NEW", "V3NEW", expected_passes=156),
+    RoutineDefinition("70.1---V3NEW", "V3NEW", expected_passes=159),
     RoutineDefinition("136---V3FP", "V3FP", expected_passes=4),
     RoutineDefinition("137---V3DWP", "V3DWP", expected_passes=6, expected_fails=0),
     RoutineDefinition("138---V3ESV", "V3ESV", expected_passes=4),
@@ -540,7 +540,7 @@ MVTS_VV4_ROUTINES: list[RoutineDefinition] = [
     RoutineDefinition("31.1---V4NAME", "V4NAME", expected_passes=95, expected_fails=0),
     RoutineDefinition("45.1---V4QLEN", "V4QLEN", expected_passes=51),
     RoutineDefinition("53.1---V4QSUB", "V4QSUB", expected_passes=113, expected_fails=0),
-    RoutineDefinition("68.1---V4SVQ", "V4SVQ", expected_passes=28),
+    RoutineDefinition("68.1---V4SVQ", "V4SVQ", expected_passes=30),
     RoutineDefinition(
         "74.1---V4MERGE", "V4MERGE", expected_passes=68, expected_fails=0
     ),

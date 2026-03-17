@@ -174,8 +174,20 @@ class MLabel(ASGElement):
             return False
 
         # Check if it's an unconditional exit
-        if isinstance(last_stmt, (MQuitStatement, MGotoStatement, MHaltStatement)):
+        if isinstance(last_stmt, (MQuitStatement, MHaltStatement)):
             return last_stmt.postcondition is None
+
+        if isinstance(last_stmt, MGotoStatement):
+            if last_stmt.postcondition is not None:
+                return False
+            # G target1:pc1,target2:pc2 — if ALL targets have postconditions,
+            # the GOTO is effectively conditional (execution can fall through
+            # when none of the conditions are met).
+            if last_stmt.targets and all(
+                t.postcondition is not None for t in last_stmt.targets
+            ):
+                return False
+            return True
 
         return False
 
@@ -261,6 +273,12 @@ class MRoutine(ASGElement):
     # True if any DO call in the routine passes arguments by-reference (.X)
     # The calling routine needs dynamic_locals so its state._locals holds MArrays
     has_byref_calls: bool = False
+
+    # Labels that appear within dot blocks (non-zero dot level).
+    # These are NOT top-level entry points — their statements are merged into
+    # the containing label's body.  Stored here only for $TEXT(LABEL+offset)
+    # support so _label_lines can map their names to line numbers.
+    _dotted_labels: List["MLabel"] = field(default_factory=list, repr=False)
 
     def get_label(self, name: str) -> Optional[MLabel]:
         """Look up label by name.

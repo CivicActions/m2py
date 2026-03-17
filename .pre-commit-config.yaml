@@ -1,21 +1,25 @@
-# Pre-commit configuration for M2PY
-# See https://pre-commit.com for more information
-# See https://docs.astral.sh/ruff/integrations/#pre-commit for Ruff integration
-
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff version - keep in sync with pyproject.toml if pinned there
-    rev: v0.11.11
-    hooks:
-      # Run the linter with auto-fix
-      - id: ruff
-        args: [--fix]
-      # Run the formatter
-      - id: ruff-format
-
-  - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.408
-    hooks:
-      - id: pyright
-        # Only check src/ directory (tests/utils excluded in pyrightconfig.json)
-        files: ^src/
+- hooks:
+  - args:
+    - --fix
+    id: ruff
+  - id: ruff-format
+  repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.11.11
+- hooks:
+  - entry: uv run ty check --python-version 3.10 --error-on-warning --exclude src/m2py/runtime/yottadb_backend.py
+      --exclude src/m2py/runtime/iris_backend.py src/
+    id: ty
+    language: system
+    name: ty type check
+    pass_filenames: false
+    types:
+    - python
+  repo: local
+- hooks:
+  - id: commitizen
+  - id: commitizen-branch
+    stages:
+    - pre-push
+  repo: https://github.com/commitizen-tools/commitizen
+  rev: v4.13.9

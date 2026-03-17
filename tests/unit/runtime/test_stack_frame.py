@@ -324,6 +324,51 @@ class TestFreezeStackSnapshot:
         assert rt._stack_frames[0].label == "A"
         assert rt._stack_frames[0].mcode == " D A^R"
 
+    def test_snapshot_uses_shallow_copy_not_deepcopy(self):
+        """Snapshot uses dataclasses.replace (shallow), not copy.deepcopy.
+
+        StackFrame fields are all immutable (str/int), so shallow copy
+        is sufficient and avoids the O(n) deepcopy cost.
+        Commit 14026e58.
+        """
+        rt = MUMPSRuntime()
+        rt.push_stack_frame("DO", routine="R", label="A", offset=5, mcode=" D")
+        rt.push_stack_frame("$$", routine="S", label="B", offset=0)
+        rt._stack_frames[-1].ecode = ",M6,"
+        rt._freeze_stack_snapshot()
+
+        # Snapshot frames are distinct objects
+        assert rt._stack_snapshot[0] is not rt._stack_frames[0]
+        assert rt._stack_snapshot[1] is not rt._stack_frames[1]
+
+        # But have identical content
+        for snap, live in zip(rt._stack_snapshot, rt._stack_frames):
+            assert snap.frame_type == live.frame_type
+            assert snap.routine == live.routine
+            assert snap.label == live.label
+            assert snap.offset == live.offset
+            assert snap.mcode == live.mcode
+            assert snap.ecode == live.ecode
+
+    def test_freeze_repeated_rapidly_only_first_takes(self):
+        """Rapidly calling _freeze_stack_snapshot only captures first state.
+
+        Simulates the $ETRAP cycling pattern in DMUDIC00 where $ECODE
+        transitions from empty to non-empty thousands of times per second.
+        """
+        rt = MUMPSRuntime()
+        rt.push_stack_frame("DO", label="A")
+        rt._freeze_stack_snapshot()  # First freeze captures 1 frame
+
+        # Push more frames and freeze many more times
+        for i in range(100):
+            rt.push_stack_frame("DO", label=f"L{i}")
+            rt._freeze_stack_snapshot()  # All no-ops
+
+        # Snapshot still has exactly 1 frame from first freeze
+        assert len(rt._stack_snapshot) == 1
+        assert rt._stack_snapshot[0].label == "A"
+
 
 # =============================================================================
 # _format_zstatus
