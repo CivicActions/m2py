@@ -17,6 +17,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/m2py"]
 
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "$version"
+version_scheme = "pep440"
+version_provider = "uv"
+update_changelog_on_bump = true
+
 [project.scripts]
 m2py = "m2py.cli:main"
 
@@ -32,6 +39,7 @@ backend = [
 
 [dependency-groups]
 dev = [
+    "filelock>=3.25.2",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",

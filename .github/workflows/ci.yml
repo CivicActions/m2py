@@ -1,7 +1,7 @@
 # CI — lint + test matrix (backend × split)
 #
 # Runs 17 parallel jobs:
-#   - lint: ruff + ty
+#   - lint: prek (ruff + ty hooks)
 #   - test: 3 backends × 6 splits - 2 exclusions = 16 test jobs
 #
 # Backends: inmemory (parallel via xdist), yottadb (Docker), iris (Docker, custom image)
@@ -35,24 +35,11 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+      # uv sync needed for the local ty hook (language: system)
       - run: uv sync
-
-      - name: Ruff lint
-        run: uv run ruff check src/ tests/
-
-      - name: Ruff format check
-        run: uv run ruff format --check src/ tests/
-
-      - name: ty type check
-        # Exclude backend files with lazy-loaded SDK imports (iris/yottadb)
-        # that produce unresolvable unresolved-attribute errors.
-        # Everything else is checked at maximum strictness.
-        run: >-
-          uv run ty check --python-version 3.10
-          --error-on-warning
-          --exclude 'src/m2py/runtime/yottadb_backend.py'
-          --exclude 'src/m2py/runtime/iris_backend.py'
-          src/
+      - uses: j178/prek-action@v1
+        with:
+          extra-args: --all-files
 
   # -----------------------------------------------------------------------
   # Tests — backend × split matrix
