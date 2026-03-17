@@ -282,7 +282,19 @@ def _load_all_mvts_routines() -> tuple[
                 json.dump({"errors": transpile_errors, "codegen_hash": codegen_hash}, f)
 
     # Load modules from disk (each worker does this independently since
-    # module objects aren't shared across processes)
+    # module objects aren't shared across processes).
+    #
+    # Two-pass loading: MUGJ and MVTS share 176 routine names (V1BOA,
+    # V1AC, etc.) but with different source code.  If MUGJ ran first, its
+    # modules are still in sys.modules.  During exec(), transpiled code
+    # uses `import V1BOA1` to call other routines — which resolves from
+    # sys.modules.  A single-pass loop that registers + execs each module
+    # sequentially can hit MUGJ's stale entry for modules not yet processed.
+    #
+    # Pass 1: register empty shells so every `import RoutineName` inside
+    #         exec() resolves to the MVTS module (even if not yet populated).
+    # Pass 2: exec() code into each shell.
+    module_code: dict[str, str] = {}
     for source_path in all_routine_files:
         filename_stem = source_path.stem
         module_name = filename_to_module_name(filename_stem)
@@ -294,11 +306,21 @@ def _load_all_mvts_routines() -> tuple[
         py_path = os.path.join(cache_dir, f"{module_name}.py")
         try:
             with open(py_path) as f:
-                python_code = f.read()
+                module_code[module_name] = f.read()
             module = types.ModuleType(module_name)
             sys.modules[module_name] = module
-            exec(python_code, module.__dict__)
             routine_modules[module_name] = module
+        except Exception as e:
+            routine_modules[module_name] = None
+            transpile_errors[module_name] = str(e)
+
+    # Pass 2: execute code into the pre-registered shells
+    for module_name, python_code in module_code.items():
+        module = routine_modules[module_name]
+        if module is None:
+            continue
+        try:
+            exec(python_code, module.__dict__)
         except Exception as e:
             routine_modules[module_name] = None
             transpile_errors[module_name] = str(e)
